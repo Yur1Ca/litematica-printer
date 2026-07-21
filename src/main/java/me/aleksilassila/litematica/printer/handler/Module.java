@@ -71,12 +71,15 @@ public abstract class Module extends ConfigUtils {
     private PrinterBox activeDirtyScanBox;
     private boolean currentIterationDidWork;
     private boolean currentIterationFoundCandidate;
+<<<<<<< HEAD
     private int lazyProbeTicks;
     private boolean inventoryFingerprintInitialized;
     private int lastInventoryFingerprint;
     private boolean schematicIdentityInitialized;
     @Nullable
     private Object lastSchematicIdentity;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -120,11 +123,14 @@ public abstract class Module extends ConfigUtils {
         this.iterationConsumedEffectiveExecution = true;
         this.currentIterationDidWork = false;
         this.currentIterationFoundCandidate = false;
+<<<<<<< HEAD
         this.lazyProbeTicks = 0;
         this.inventoryFingerprintInitialized = false;
         this.lastInventoryFingerprint = 0;
         this.schematicIdentityInitialized = false;
         this.lastSchematicIdentity = null;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         this.lastTickTime = -1L;
         this.onRuntimeReset();
     }
@@ -149,12 +155,18 @@ public abstract class Module extends ConfigUtils {
             this.resetPlayerTracking();
             return;
         }
+<<<<<<< HEAD
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         ScanCache.INSTANCE.beginTick(this.level, schematic, context.gameTime);
         this.wakeForSchematicChange(schematic);
         this.updatePlayerInteractionBox();
         this.preprocess(); // 运行前处理的事情
         this.wakeForInventoryChange();
+=======
+        ScanCache.INSTANCE.beginTick(this.level, SchematicWorldHandler.getSchematicWorld(), context.gameTime);
+        this.updatePlayerInteractionBox();
+        this.preprocess(); // 运行前处理的事情
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (!this.isConfigAllowExecute()) {
             this.resetScanRuntime();
             this.resetPlayerTracking();
@@ -207,6 +219,7 @@ public abstract class Module extends ConfigUtils {
         this.interactionBoxTracker.update(this.player);
     }
 
+<<<<<<< HEAD
     private void wakeForInventoryChange() {
         int fingerprint = 1;
         for (int slot = 0; slot < this.player.getInventory().getContainerSize(); slot++) {
@@ -241,6 +254,8 @@ public abstract class Module extends ConfigUtils {
         }
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     private boolean runIterationIfNeeded() {
         if (this.playerInteractionBox == null || !this.canExecute()) {
             this.updateExternalScanBox(null);
@@ -313,11 +328,14 @@ public abstract class Module extends ConfigUtils {
             this.refreshDirtyScanQueue(playerInteractionBox);
         }
         if (this.scanState == ScanState.LAZY) {
+<<<<<<< HEAD
             int fallbackProbeInterval = Math.max(40, Configs.Core.LAZY_ENTER_TICKS.getIntegerValue() * 10);
             if (++this.lazyProbeTicks < fallbackProbeInterval) {
                 return false;
             }
             this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return this.runLazyProbeIteration(playerInteractionBox);
         }
         if (this.scanState == ScanState.FULL) {
@@ -338,7 +356,10 @@ public abstract class Module extends ConfigUtils {
         if (this.currentIterationDidWork || this.currentIterationFoundCandidate) {
             this.scanState = ScanState.FULL;
             this.idleScanTicks = 0;
+<<<<<<< HEAD
             this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return interrupt;
         }
         this.scanState = ScanState.LAZY;
@@ -420,7 +441,10 @@ public abstract class Module extends ConfigUtils {
         if (++this.idleScanTicks >= lazyThreshold) {
             this.scanState = ScanState.LAZY;
             this.idleScanTicks = 0;
+<<<<<<< HEAD
             this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             this.clearDirtyScanQueue();
         }
     }
@@ -433,7 +457,10 @@ public abstract class Module extends ConfigUtils {
         if (!this.hasPendingPartialScan()) {
             this.scanState = ScanState.LAZY;
             this.idleScanTicks = 0;
+<<<<<<< HEAD
             this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             this.pendingDirtyRegionCount = 0;
         }
     }
@@ -499,14 +526,20 @@ public abstract class Module extends ConfigUtils {
     protected final void requestFullScan() {
         this.scanState = ScanState.FULL;
         this.idleScanTicks = 0;
+<<<<<<< HEAD
         this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         this.clearDirtyScanQueue();
     }
 
     private void resetScanRuntime() {
         this.scanState = ScanState.FULL;
         this.idleScanTicks = 0;
+<<<<<<< HEAD
         this.lazyProbeTicks = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         this.lastScanSourceBox = null;
         this.lastScanSourceBoxes = List.of();
         this.updateExternalScanBox(null);

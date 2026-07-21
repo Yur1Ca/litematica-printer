@@ -111,7 +111,10 @@ public class FillHandler extends Module {
         if (this.observedFillScanConfigHash != Integer.MIN_VALUE
                 && this.observedFillScanConfigHash != scanConfigHash) {
             this.clearFillTargets();
+<<<<<<< HEAD
             ScanCache.INSTANCE.resetOwner(NAME);
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             this.requestFullScan();
         }
         this.observedFillScanConfigHash = scanConfigHash;
@@ -139,6 +142,14 @@ public class FillHandler extends Module {
     }
 
     @Override
+<<<<<<< HEAD
+=======
+    protected boolean usesDirtyRegionWakeup() {
+        return false;
+    }
+
+    @Override
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     protected boolean iterationPositionsPrefilterReachAndSelection() {
         return true;
     }
@@ -311,6 +322,7 @@ public class FillHandler extends Module {
         }
         BlockPos clickTarget = Configs.Print.PLACE_IN_AIR.getBooleanValue() ? blockPos : blockPos.relative(side);
         Direction clickSide = side.getOpposite();
+<<<<<<< HEAD
         Item[] expectedItems = handheld
                 ? new Item[]{player.getMainHandItem().getItem()}
                 : this.fillModeItemList;
@@ -345,6 +357,19 @@ public class FillHandler extends Module {
         HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
         HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
         HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
+=======
+        ActionManager.INSTANCE.queueClick(clickTarget, clickSide, Vec3.ZERO, false);
+        ActionManager.INSTANCE.setLook(new PlayerLook(clickSide));
+        ActionManager.INSTANCE.setWaitForHorizontalLook(false);
+        HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
+        if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");
+            skipIteration.set(true);
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
+        }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
     }
 

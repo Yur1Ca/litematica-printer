@@ -88,6 +88,12 @@ final class MineBreakExecutor {
         if (player == null || !this.shouldResolveBestTool()) {
             return true;
         }
+<<<<<<< HEAD
+=======
+        if (target.bestToolItem == player.getMainHandItem().getItem()) {
+            return true;
+        }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         return target.currentProgress >= target.bestProgress * CURRENT_TOOL_MIN_EFFICIENCY_RATIO;
     }
 

@@ -1,7 +1,10 @@
 package me.aleksilassila.litematica.printer.utils.mods;
 
 import net.fabricmc.loader.api.FabricLoader;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.Reference;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.NonNullList;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
@@ -29,7 +32,10 @@ public final class TakeItOutUtils {
     private static Item localPendingItem;
     private static long localPendingStartedAtMs;
     private static int localPendingSettleTicks = -1;
+<<<<<<< HEAD
     private static boolean apiFailureLogged;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     private TakeItOutUtils() {
     }
@@ -45,8 +51,12 @@ public final class TakeItOutUtils {
         try {
             Field field = Class.forName(CLIENT_CLASS).getField("AUTOTAKEOUT");
             return field.getBoolean(null);
+<<<<<<< HEAD
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("读取自动取货配置", exception);
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return false;
         }
     }
@@ -89,6 +99,7 @@ public final class TakeItOutUtils {
     private static boolean tryRequestFromWorldContainers(ItemStack required) {
         try {
             Class<?> sourcesClass = Class.forName(SOURCES_CLASS);
+<<<<<<< HEAD
             Method requestStack;
             Object result;
             try {
@@ -109,16 +120,30 @@ public final class TakeItOutUtils {
                 );
                 result = requestStack.invoke(null, client, singleStack(required), isSingleItemMode());
             }
+=======
+            Method requestStack = sourcesClass.getMethod(
+                    "requestStack",
+                    Minecraft.class,
+                    ItemStack.class,
+                    boolean.class,
+                    boolean.class
+            );
+            Object result = requestStack.invoke(null, client, singleStack(required), isSingleItemMode(), false);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             if (Boolean.TRUE.equals(result)) {
                 beginLocalPending(required.getItem());
                 return true;
             }
             return false;
+<<<<<<< HEAD
         } catch (ClassNotFoundException | NoSuchMethodException ignored) {
             // 旧版 Take It Out 只有背包潜影盒取货，没有世界容器 API。
             return false;
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("请求世界容器", exception);
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return false;
         }
     }
@@ -146,7 +171,12 @@ public final class TakeItOutUtils {
     private static boolean sendShulkerRequest(int innerSlot, int shulkerSlot, ItemStack required) {
         try {
             Class<?> payloadClass = Class.forName(SHULKER_PAYLOAD_CLASS);
+<<<<<<< HEAD
             Object payload = createShulkerPayload(payloadClass, innerSlot, shulkerSlot);
+=======
+            Constructor<?> constructor = payloadClass.getConstructor(int.class, int.class, boolean.class);
+            Object payload = constructor.newInstance(innerSlot, shulkerSlot, isSingleItemMode());
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             if (!canSend(payloadClass)) {
                 return false;
             }
@@ -154,13 +184,18 @@ public final class TakeItOutUtils {
             sendPayload(payload);
             beginLocalPending(required.getItem());
             return true;
+<<<<<<< HEAD
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("请求背包潜影盒", exception);
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             clearAwaitingStackIfSameItem(required);
             return false;
         }
     }
 
+<<<<<<< HEAD
     private static Object createShulkerPayload(
             Class<?> payloadClass,
             int innerSlot,
@@ -179,6 +214,8 @@ public final class TakeItOutUtils {
         }
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     private static boolean canSend(Class<?> payloadClass) {
         try {
             Field idField = payloadClass.getField("ID");
@@ -194,11 +231,18 @@ public final class TakeItOutUtils {
                 Object result = method.invoke(null, id);
                 return Boolean.TRUE.equals(result);
             }
+<<<<<<< HEAD
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("检查网络通道", exception);
             return false;
         }
         return false;
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return true;
+        }
+        return true;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private static void beginLocalPending(Item item) {
@@ -274,11 +318,15 @@ public final class TakeItOutUtils {
         try {
             Field field = Class.forName(CLIENT_CLASS).getField("TAKE_SINGLE_ITEM_MODE");
             return field.getBoolean(null);
+<<<<<<< HEAD
         } catch (NoSuchFieldException ignored) {
             // 旧版 payload 不支持单物品模式。
             return false;
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("读取单物品模式", exception);
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return false;
         }
     }
@@ -290,8 +338,12 @@ public final class TakeItOutUtils {
         try {
             Object value = Class.forName(CLIENT_CLASS).getField("awaitingStack").get(null);
             return value instanceof ItemStack stack ? stack : ItemStack.EMPTY;
+<<<<<<< HEAD
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("读取等待物品", exception);
+=======
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             return ItemStack.EMPTY;
         }
     }
@@ -334,6 +386,7 @@ public final class TakeItOutUtils {
         copy.setCount(1);
         return copy;
     }
+<<<<<<< HEAD
 
     private static void logApiFailure(String operation, Throwable exception) {
         if (apiFailureLogged) {
@@ -342,4 +395,6 @@ public final class TakeItOutUtils {
         apiFailureLogged = true;
         Reference.LOGGER.warn("Take It Out API 调用异常，{}失败；已跳过该取货路径", operation, exception);
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

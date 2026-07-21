@@ -78,6 +78,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Unique
     private BlockState litematica_printer$pendingBreakSoundState;
 
+<<<<<<< HEAD
     @Override
     public void litematica_printer$resetRuntime() {
         LocalPlayer player = this.minecraft.player;
@@ -114,6 +115,12 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 return;
             }
             this.minecraft.level.destroyBlockProgress(playerId, pos, -1);
+=======
+    @Unique
+    private void litematica_printer$clearDestroyProgress(LocalPlayer player, BlockPos pos) {
+        if (player != null && pos != null && this.minecraft.level != null) {
+            this.minecraft.level.destroyBlockProgress(player.getId(), pos, -1);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
     }
 

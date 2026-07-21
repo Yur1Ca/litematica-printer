@@ -5,7 +5,10 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
@@ -27,6 +30,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Optional;
+<<<<<<< HEAD
+=======
+import java.util.concurrent.CompletableFuture;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
 @Mixin(LocalPlayer.class)
 public class MixinLocalPlayer extends AbstractClientPlayer {
@@ -60,7 +67,11 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
             this.litematica_printer$runtimeResetDone = true;
         }
         if (Configs.Core.UPDATE_CHECK.getBooleanValue() && !updateChecked) {
+<<<<<<< HEAD
             UpdateCheckerUtils.checkForUpdates();
+=======
+            CompletableFuture.runAsync(UpdateCheckerUtils::checkForUpdates);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         updateChecked = true;
     }
@@ -87,10 +98,13 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
 
     @Unique
     public void openEditSignScreen(SignBlockEntity sign, boolean front, CallbackInfo ci) {
+<<<<<<< HEAD
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()
                 || !ActionManager.INSTANCE.isPrintInteractionActive()) {
             return;
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         getTargetSignEntity(sign).ifPresent(signBlockEntity ->
         {
             //#if MC > 11904

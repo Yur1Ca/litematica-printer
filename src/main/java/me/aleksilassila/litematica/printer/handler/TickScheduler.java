@@ -20,9 +20,12 @@ final class TickScheduler {
     private int packetTick;
     private int packetEpoch;
     private String lastPauseReason;
+<<<<<<< HEAD
     private boolean runtimeActive;
     private int executionScopeHash = Integer.MIN_VALUE;
     private int roundRobinOffset;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     TickScheduler(ImmutableList<Module> modules) {
         this.modules = modules;
@@ -31,6 +34,7 @@ final class TickScheduler {
     void tick() {
         HudStatsManager.INSTANCE.tick();
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
+<<<<<<< HEAD
             if (this.runtimeActive) {
                 ClientPlayerTickManager.resetRuntime("work_switch_disabled");
             }
@@ -48,6 +52,10 @@ final class TickScheduler {
             this.runtimeActive = true;
             this.executionScopeHash = currentScopeHash;
             return;
+=======
+            HudStatsManager.INSTANCE.resetAll();
+            this.lastPauseReason = null;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         if (this.pauseForInventoryState("shared_precheck")) {
             return;
@@ -62,6 +70,7 @@ final class TickScheduler {
         TickContext context = TickContext.capture();
         this.resume();
         for (Module handler : this.modules) {
+<<<<<<< HEAD
             if (handler instanceof GuiHandler) {
                 handler.tick(context);
             }
@@ -76,6 +85,12 @@ final class TickScheduler {
             Module handler = this.modules.get(1 + (startIndex + offset) % actionableCount);
             if (this.pauseForHandlerPrecheck(handler)) {
                 return;
+=======
+            if (!(handler instanceof GuiHandler)) {
+                if (this.pauseForHandlerPrecheck(handler)) {
+                    return;
+                }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             }
             handler.tick(context);
         }
@@ -102,9 +117,12 @@ final class TickScheduler {
         this.packetTick = 0;
         this.packetEpoch++;
         this.lastPauseReason = null;
+<<<<<<< HEAD
         this.runtimeActive = false;
         this.executionScopeHash = Integer.MIN_VALUE;
         this.roundRobinOffset = 0;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     String getLastPauseReason() {
@@ -169,6 +187,7 @@ final class TickScheduler {
         }
         return false;
     }
+<<<<<<< HEAD
 
     private int currentExecutionScopeHash() {
         int result = Configs.Core.WORK_MODE.getOptionListValue().hashCode();
@@ -180,4 +199,6 @@ final class TickScheduler {
         result = 31 * result + Boolean.hashCode(Configs.Hotkeys.BEDROCK.getBooleanValue());
         return result;
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

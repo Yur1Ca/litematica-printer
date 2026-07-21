@@ -34,13 +34,23 @@ public abstract class MixinAbstractCraftingMenu<TYPE, WIDGET extends WidgetListE
                     cir.setReturnValue(true);
                     return;
                 }
+<<<<<<< HEAD
                 for (String s2 : PinYinSearchUtils.getPinYin(fullName)) {
                     if (s2.contains(filterText)) {
                         cir.setReturnValue(true);
                         return;
+=======
+                for (String s2 : PinYinSearchUtils.getPinYin(fullName).stream().distinct().toList()) {
+                    if (s2.contains(filterText)) {
+                        cir.setReturnValue(true);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                     }
                 }
             }
         }
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)

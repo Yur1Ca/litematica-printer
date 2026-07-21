@@ -10,6 +10,7 @@ public record PrintPlacementResult(
         return new PrintPlacementResult(consumedEffectiveExecution, skipIteration, TaskEvent.FAILURE, -1);
     }
 
+<<<<<<< HEAD
     public static PrintPlacementResult cancelled(boolean skipIteration) {
         return new PrintPlacementResult(false, skipIteration, TaskEvent.CANCELLED, -1);
     }
@@ -18,6 +19,11 @@ public record PrintPlacementResult(
         SUCCESS,
         QUEUED,
         CANCELLED,
+=======
+    public enum TaskEvent {
+        SUCCESS,
+        QUEUED,
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         FAILURE
     }
 }

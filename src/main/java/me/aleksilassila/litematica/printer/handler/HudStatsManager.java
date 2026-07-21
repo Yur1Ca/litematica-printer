@@ -1,7 +1,10 @@
 package me.aleksilassila.litematica.printer.handler;
 
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.RttReplayController;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -75,6 +78,7 @@ public final class HudStatsManager {
         if (mode != Mode.PRINT || pos == null || expectedState == null) {
             return;
         }
+<<<<<<< HEAD
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         this.pendingPrintStates.put(
                 pos.immutable(),
@@ -95,6 +99,14 @@ public final class HudStatsManager {
             return false;
         }
         return true;
+=======
+        Minecraft client = Minecraft.getInstance();
+        if (client.level != null && client.level.getBlockState(pos).equals(expectedState)) {
+            return;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        this.pendingPrintStates.put(pos.immutable(), new PendingBlockState(expectedState, now + PRINT_CONFIRM_TIMEOUT_TICKS));
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     public void trackExpectedMineClear(Mode mode, BlockPos pos) {
@@ -138,8 +150,14 @@ public final class HudStatsManager {
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         BlockState currentState = client.level.getBlockState(pos);
 
+<<<<<<< HEAD
         PendingBlockState printPending = this.pendingPrintStates.remove(pos);
         if (printPending != null && currentState.equals(printPending.expectedState())) {
+=======
+        PendingBlockState printPending = this.pendingPrintStates.get(pos);
+        if (printPending != null && currentState.equals(printPending.expectedState())) {
+            this.pendingPrintStates.remove(pos);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             this.stats.get(Mode.PRINT).recordConfirmedUnit(now, 1);
         }
 
@@ -182,7 +200,10 @@ public final class HudStatsManager {
     }
 
     private void flushConfirmedPrintPlacements(Minecraft client, long now, int maxChecks) {
+<<<<<<< HEAD
         int confirmationFloorTicks = this.getPrintConfirmationFloorTicks();
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         for (int checked = 0; checked < maxChecks && !this.pendingPrintStates.isEmpty(); checked++) {
             Iterator<Map.Entry<BlockPos, PendingBlockState>> iterator = this.pendingPrintStates.entrySet().iterator();
             Map.Entry<BlockPos, PendingBlockState> entry = iterator.next();
@@ -192,16 +213,24 @@ public final class HudStatsManager {
             if (now > pending.expireTick()) {
                 continue;
             }
+<<<<<<< HEAD
             if (now - pending.sentTick() < confirmationFloorTicks) {
                 this.pendingPrintStates.put(pos, pending);
                 continue;
             }
             if (client.level.getBlockState(pos).equals(pending.expectedState())) {
                 this.stats.get(Mode.PRINT).recordConfirmedUnit(now, 1);
+=======
+            if (client.level.getBlockState(pos).equals(pending.expectedState())) {
+                this.stats.get(Mode.PRINT).recordConfirmedUnit(now, 1);
+            } else {
+                this.pendingPrintStates.put(pos, pending);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             }
         }
     }
 
+<<<<<<< HEAD
     private int getPrintConfirmationFloorTicks() {
         int safetyPercent = Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue()
                 ? Configs.Placement.RTT_SAFETY_PERCENT.getIntegerValue()
@@ -212,6 +241,8 @@ public final class HudStatsManager {
         );
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     private void flushConfirmedMineClears(Minecraft client, long now, int maxChecks) {
         for (int checked = 0; checked < maxChecks && !this.pendingMineTargets.isEmpty(); checked++) {
             Iterator<Map.Entry<BlockPos, Long>> iterator = this.pendingMineTargets.entrySet().iterator();
@@ -362,7 +393,11 @@ public final class HudStatsManager {
         }
     }
 
+<<<<<<< HEAD
     private record PendingBlockState(BlockState expectedState, long sentTick, long expireTick) {
+=======
+    private record PendingBlockState(BlockState expectedState, long expireTick) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private record PendingStateChange(BlockState originalState, long expireTick) {

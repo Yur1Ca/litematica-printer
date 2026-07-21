@@ -5,9 +5,13 @@ import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+=======
+import me.aleksilassila.litematica.printer.handler.Module;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementResult;
@@ -41,7 +45,10 @@ public class PrintHandler extends Module {
 
     private List<String> printSkipListCache = List.of();
     private String[] printSkipFilters = new String[0];
+<<<<<<< HEAD
     private int observedActionConfigHash = Integer.MIN_VALUE;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     public PrintHandler() {
         super(NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
@@ -79,6 +86,7 @@ public class PrintHandler extends Module {
     @Override
     protected void preprocess() {
         this.updatePrintSkipCache();
+<<<<<<< HEAD
         int actionConfigHash = this.getActionConfigHash();
         if (this.observedActionConfigHash != Integer.MIN_VALUE
                 && this.observedActionConfigHash != actionConfigHash) {
@@ -88,6 +96,8 @@ public class PrintHandler extends Module {
             this.requestFullScan();
         }
         this.observedActionConfigHash = actionConfigHash;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override
@@ -97,7 +107,10 @@ public class PrintHandler extends Module {
         this.ctx = null;
         this.printTasks.clear();
         this.sortedTargets.clear();
+<<<<<<< HEAD
         this.observedActionConfigHash = Integer.MIN_VALUE;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override
@@ -130,9 +143,12 @@ public class PrintHandler extends Module {
         this.printTaskAction = null;
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
+<<<<<<< HEAD
         if (HudStatsManager.INSTANCE.isPrintPlacementPending(blockPos)) {
             return false;
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos) && !this.printTasks.isActiveTaskPos(blockPos)) {
             return false;
         }
@@ -167,6 +183,7 @@ public class PrintHandler extends Module {
         this.printSkipFilters = this.printSkipListCache.toArray(new String[0]);
     }
 
+<<<<<<< HEAD
     private int getActionConfigHash() {
         int result = Boolean.hashCode(Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue());
         result = 31 * result + Boolean.hashCode(Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue());
@@ -188,6 +205,8 @@ public class PrintHandler extends Module {
         return result;
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     private boolean shouldSkipRequiredState(BlockState requiredState) {
         if (!Configs.Print.PRINT_SKIP.getBooleanValue() || this.printSkipFilters.length == 0) {
             return false;
@@ -222,7 +241,10 @@ public class PrintHandler extends Module {
         switch (taskEvent) {
             case SUCCESS -> this.printTasks.onActionSuccess(taskAction, this.ctx, this.action);
             case QUEUED -> this.printTasks.onActionQueued(taskAction, this.ctx, this.action);
+<<<<<<< HEAD
             case CANCELLED -> taskAction.onCancelled(this.ctx, this.action);
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             case FAILURE -> this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
         }
     }

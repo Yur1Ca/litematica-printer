@@ -87,6 +87,7 @@ public class CropsGuide extends Guide {
     protected Result onBuildActionWrongBlock(BlockMatchResult state) {
         String requiredKey = BlockUtils.getKeyString(requiredBlock);
         String currentKey = BlockUtils.getKeyString(currentBlock);
+<<<<<<< HEAD
         boolean wrongStem = requiredKey.contains("pumpkin_stem") && !currentKey.contains("pumpkin_stem")
                 || requiredKey.contains("melon_stem") && !currentKey.contains("melon_stem");
         if (wrongStem
@@ -97,5 +98,13 @@ public class CropsGuide extends Guide {
             return Result.SKIP;
         }
         return Result.PASS;
+=======
+        if (requiredKey.contains("pumpkin_stem") && !currentKey.contains("pumpkin_stem")) {
+            InteractionUtils.INSTANCE.add(context);
+        } else if (requiredKey.contains("melon_stem") && !currentKey.contains("melon_stem")) {
+            InteractionUtils.INSTANCE.add(context);
+        }
+        return Result.SKIP;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 }

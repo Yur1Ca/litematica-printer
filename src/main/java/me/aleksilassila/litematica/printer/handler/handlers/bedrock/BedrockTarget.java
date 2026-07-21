@@ -17,7 +17,10 @@ public class BedrockTarget {
     private static final int POWERED_STALL_RECOVERY_TICKS = 2;
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
+<<<<<<< HEAD
     private static final int INITIALIZE_SYNC_TIMEOUT_TICKS = 40;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
     private static final int POST_EXECUTE_RESIDUE_CLEANUP_INTERVAL_TICKS = 4;
     private static final int POLLUTED_MACHINE_CLEANUP_INTERVAL_TICKS = 4;
@@ -153,13 +156,21 @@ public class BedrockTarget {
                 if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getPrimingFacing())) {
                     break;
                 }
+<<<<<<< HEAD
                 this.initializeTick = this.tickTimes;
                 markThroughputAction();
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 if (this.torchSupportPos != null && !hasOwnedTorchPowerSource()) {
                     if (!placeTorch()) {
                         break;
                     }
                 }
+<<<<<<< HEAD
+=======
+                this.initializeTick = this.tickTimes;
+                markThroughputAction();
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             }
             case EXTENDED -> {
                 if (!allowExecute) {
@@ -632,12 +643,15 @@ public class BedrockTarget {
             this.status = Status.NEEDS_WAITING;
             return;
         }
+<<<<<<< HEAD
         if (!this.hasTried
                 && this.initializeTick >= 0
                 && this.tickTimes - this.initializeTick <= INITIALIZE_SYNC_TIMEOUT_TICKS) {
             this.status = Status.NEEDS_WAITING;
             return;
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (!this.hasTried && hasAnyTransientMachineResidue()) {
             this.status = Status.NEEDS_WAITING;
             return;

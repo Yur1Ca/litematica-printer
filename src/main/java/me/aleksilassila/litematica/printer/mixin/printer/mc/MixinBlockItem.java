@@ -2,7 +2,10 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import fi.dy.masa.litematica.util.PlacementHandler;
 import me.aleksilassila.litematica.printer.config.Configs;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -28,8 +31,12 @@ public abstract class MixinBlockItem extends Item {
 
     @Inject(method = "getPlacementState", at = @At("HEAD"), cancellable = true)
     private void modifyPlacementState(BlockPlaceContext ctx, CallbackInfoReturnable<BlockState> cir) {
+<<<<<<< HEAD
         if (Configs.Print.EASY_PLACE_PROTOCOL.getBooleanValue()
                 && ActionManager.INSTANCE.isEasyPlaceProtocolActive()) {
+=======
+        if (Configs.Print.EASY_PLACE_PROTOCOL.getBooleanValue()) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             BlockState stateOrig = this.getBlock().getStateForPlacement(ctx);
             if (stateOrig != null && this.canPlace(ctx, stateOrig)) {
                 PlacementHandler.UseContext context = PlacementHandler.UseContext.from(ctx, ctx.getHand());
@@ -37,4 +44,8 @@ public abstract class MixinBlockItem extends Item {
             }
         }
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)

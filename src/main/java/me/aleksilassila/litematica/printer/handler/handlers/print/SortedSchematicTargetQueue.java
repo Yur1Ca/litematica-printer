@@ -40,6 +40,7 @@ public final class SortedSchematicTargetQueue {
     }
 
     private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+<<<<<<< HEAD
         if (!this.queue.isEmpty()) {
             return;
         }
@@ -64,6 +65,44 @@ public final class SortedSchematicTargetQueue {
             }
             if (queuedKeys.add(ScanCache.key(candidate))) {
                 positions.add(candidate);
+=======
+        int collectLimit = scanGuardLimit > 0 ? scanGuardLimit : Integer.MAX_VALUE;
+        boolean previousHasMoreSource = this.hasMoreSource;
+        List<BlockPos> positions = new ArrayList<>();
+        Set<Long> queuedKeys = new HashSet<>();
+        while (!this.queue.isEmpty()) {
+            BlockPos queued = this.queue.removeFirst();
+            if (!containsAny(sourceBoxes, queued)) {
+                continue;
+            }
+            positions.add(queued);
+            queuedKeys.add(ScanCache.key(queued));
+        }
+        this.hasMoreSource = positions.size() >= collectLimit && previousHasMoreSource;
+        if (positions.size() < collectLimit) {
+            Iterable<BlockPos> candidates = ScanCache.INSTANCE.iterable(
+                    "print_sorted",
+                    sourceBoxes,
+                    level,
+                    schematic,
+                    player,
+                    scanGuardLimit,
+                    ScanIntent.PRINT,
+                    pos -> true
+            );
+            for (BlockPos candidate : candidates) {
+                if (candidate == null) {
+                    this.hasMoreSource = true;
+                    break;
+                }
+                if (positions.size() >= collectLimit) {
+                    this.hasMoreSource = true;
+                    break;
+                }
+                if (queuedKeys.add(ScanCache.key(candidate))) {
+                    positions.add(candidate);
+                }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             }
         }
         positions.sort(createComparator(schematic, player));

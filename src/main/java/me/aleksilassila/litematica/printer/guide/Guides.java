@@ -1,6 +1,9 @@
 package me.aleksilassila.litematica.printer.guide;
 
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.Reference;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.guide.guides.*;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
@@ -227,6 +230,7 @@ public class Guides {
         registrations.add(new GuideRegistration(guideClass, supportedBlocks));
     }
 
+<<<<<<< HEAD
     public final Optional<Action> buildAction(SchematicBlockContext context) {
         BlockMatchResult blockMatchResult = BlockMatchResult.compare(context);
         for (GuideRegistration registration : this.registrations) {
@@ -243,6 +247,39 @@ public class Guides {
             if (!guide.canExecute()) {
                 continue;
             }
+=======
+    @SuppressWarnings("CallToPrintStackTrace")
+    private List<Guide> getGuides(SchematicBlockContext context) {
+        List<Guide> guides = new ArrayList<>();
+        for (GuideRegistration reg : registrations) {
+            boolean matches = reg.blockClass.length == 0;
+            if (!matches) {
+                for (Class<? extends Block> clazz : reg.blockClass) {
+                    if (clazz.isInstance(context.requiredState.getBlock())) {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
+            if (matches) {
+                try {
+                    Guide guide = reg.create(context);
+                    if (guide.canExecute()) {
+                        guides.add(guide);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return guides;
+    }
+
+    public final Optional<Action> buildAction(SchematicBlockContext context) {
+        BlockMatchResult blockMatchResult = BlockMatchResult.compare(context);
+        List<Guide> guides = this.getGuides(context);
+        for (Guide guide : guides) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             Result result = guide.buildAction(blockMatchResult);
             if (result.hasAction()) {
                 return result.toOptional();
@@ -272,6 +309,7 @@ public class Guides {
         public Guide create(SchematicBlockContext context) throws ReflectiveOperationException {
             return this.constructor.newInstance(context);
         }
+<<<<<<< HEAD
 
         public boolean matches(Block block) {
             if (this.blockClass.length == 0) {
@@ -288,5 +326,7 @@ public class Guides {
         public String guideName() {
             return this.constructor.getDeclaringClass().getName();
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 }

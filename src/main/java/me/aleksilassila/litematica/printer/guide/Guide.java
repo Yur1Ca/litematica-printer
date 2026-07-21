@@ -59,7 +59,13 @@ public abstract class Guide extends BlockStateUtils {
 
         // 水生植物（海草等）需要水环境才能放置
         if (BlockStateUtils.requiresWaterToPlace(requiredBlock)) {
+<<<<<<< HEAD
             if (!BlockStateUtils.hasSourceWaterFluid(level.getBlockState(blockPos))) {
+=======
+            BlockPos waterPos = requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
+                    ? blockPos : blockPos.above();
+            if (!BlockStateUtils.hasSourceWaterFluid(level.getBlockState(waterPos))) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 return Result.PASS;
             }
         }

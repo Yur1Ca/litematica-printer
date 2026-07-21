@@ -1,7 +1,12 @@
 plugins {
     id("maven-publish")
+<<<<<<< HEAD
     id("net.fabricmc.fabric-loom") version "1.16.3" apply false
     id("net.fabricmc.fabric-loom-remap") version "1.16.3" apply false
+=======
+    id("net.fabricmc.fabric-loom") version "1.15-SNAPSHOT" apply false
+    id("net.fabricmc.fabric-loom-remap") version "1.15-SNAPSHOT" apply false
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     // https://github.com/ReplayMod/preprocessor
     // https://github.com/Fallen-Breath/preprocessor
@@ -38,6 +43,10 @@ preprocess {
     mc12103.link(mc12104, null)
     mc12104.link(mc12105, file("versions/mapping-1.21.4-1.21.5.txt"))
     mc12105.link(mc12106, null)
+<<<<<<< HEAD
+=======
+    mc12105.link(mc12106, null)
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     mc12106.link(mc12109, null)
     mc12109.link(mc12111, file("versions/mapping-1.21.10-1.21.11.txt"))
     mc12111.link(mc260100, file("versions/mapping-1.21.11-26.1.txt"))

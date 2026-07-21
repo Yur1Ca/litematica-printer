@@ -49,6 +49,7 @@ public abstract class MixinConfigBase<T extends IConfigBase> implements IConfigB
 
     @Inject(method = "getComment", at = @At("HEAD"), cancellable = true)
     public void litematica_printer$getComment(CallbackInfoReturnable<String> cir) {
+<<<<<<< HEAD
         boolean hasCommentKey = litematica_printer$translateCommentKey != null && !litematica_printer$translateCommentKey.isEmpty();
         boolean hasNameKey = litematica_printer$translateNameKey != null && !litematica_printer$translateNameKey.isEmpty();
         if (!hasCommentKey && !hasNameKey) {
@@ -60,6 +61,13 @@ public abstract class MixinConfigBase<T extends IConfigBase> implements IConfigB
             comment = StringUtils.getTranslatedOrFallback(litematica_printer$translateCommentKey, null);
         }
         if (comment == null && hasNameKey) {
+=======
+        @Nullable String comment = null;
+        if (litematica_printer$translateCommentKey != null && !litematica_printer$translateCommentKey.isEmpty()) {
+            comment = StringUtils.getTranslatedOrFallback(litematica_printer$translateCommentKey, null);
+        }
+        if (comment == null && litematica_printer$translateNameKey != null && !litematica_printer$translateNameKey.isEmpty()) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             comment = StringUtils.getTranslatedOrFallback(litematica_printer$translateNameKey, null);
         }
         if (comment == null) {

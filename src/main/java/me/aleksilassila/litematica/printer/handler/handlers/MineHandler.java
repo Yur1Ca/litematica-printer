@@ -89,7 +89,11 @@ public class MineHandler extends Module {
 
     @Override
     protected int getTickInterval() {
+<<<<<<< HEAD
         return Configs.Break.BREAK_INTERVAL.getIntegerValue();
+=======
+        return 0;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override
@@ -145,6 +149,7 @@ public class MineHandler extends Module {
     }
 
     @Override
+<<<<<<< HEAD
     protected boolean iterationPositionsPrefilterReachAndSelection() {
         return true;
     }
@@ -160,6 +165,8 @@ public class MineHandler extends Module {
     }
 
     @Override
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     public boolean canIterationBlockPos(BlockPos pos) {
         return this.isMineScanCandidate(pos);
     }

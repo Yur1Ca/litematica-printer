@@ -114,6 +114,7 @@ public class FilterUtils {
             return false;
         }
 
+<<<<<<< HEAD
         if (matchString(targetDisplayName, coreName, matchRules)
                 || matchString(targetRegistryName, coreName, matchRules)) {
             return true;
@@ -121,6 +122,19 @@ public class FilterUtils {
         return PinYinSearchUtils.getPinYin(targetDisplayName)
                 .stream()
                 .anyMatch(pinyin -> matchString(pinyin, coreName, matchRules));
+=======
+        // 中文名称匹配
+        boolean displayNameMatch = matchString(targetDisplayName, coreName, matchRules);
+        // 拼音匹配
+        boolean pinyinMatch = PinYinSearchUtils.getPinYin(targetDisplayName)
+                .stream()
+                .anyMatch(pinyin -> matchString(pinyin, coreName, matchRules));
+        // 注册表名称匹配
+        boolean registryNameMatch = matchString(targetRegistryName, coreName, matchRules);
+
+        // 任一匹配成功即返回 true
+        return displayNameMatch || pinyinMatch || registryNameMatch;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private static ParsedFilter parseExpectedName(String expectedName) {
@@ -225,6 +239,7 @@ public class FilterUtils {
             return false;
         }
 
+<<<<<<< HEAD
         if (matchString(targetDisplayName, coreName, matchRules)
                 || matchString(targetRegistryName, coreName, matchRules)) {
             return true;
@@ -232,6 +247,15 @@ public class FilterUtils {
         return PinYinSearchUtils.getPinYin(targetDisplayName)
                 .stream()
                 .anyMatch(pinyin -> matchString(pinyin, coreName, matchRules));
+=======
+        boolean displayNameMatch = matchString(targetDisplayName, coreName, matchRules);
+        boolean pinyinMatch = PinYinSearchUtils.getPinYin(targetDisplayName)
+                .stream()
+                .anyMatch(pinyin -> matchString(pinyin, coreName, matchRules));
+        boolean registryNameMatch = matchString(targetRegistryName, coreName, matchRules);
+
+        return displayNameMatch || pinyinMatch || registryNameMatch;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private static Property<?> findPropertyByName(BlockState blockState, String propertyName) {

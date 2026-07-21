@@ -4,7 +4,10 @@ import com.google.common.collect.ImmutableList;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.RttReplayController;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
@@ -55,9 +58,12 @@ public class ClientPlayerTickManager {
 
     public static void resetRuntime(String reason) {
         ActionManager.INSTANCE.clearQueue();
+<<<<<<< HEAD
         if (mc.gameMode instanceof MultiPlayerGameModeExtension extension) {
             extension.litematica_printer$resetRuntime();
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         NetworkUtils.clearScopedLookOverride();
         RttReplayController.INSTANCE.reset();
         ScanCache.INSTANCE.clear();

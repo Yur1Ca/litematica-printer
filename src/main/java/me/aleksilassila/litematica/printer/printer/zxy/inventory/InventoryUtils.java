@@ -1,7 +1,10 @@
 package me.aleksilassila.litematica.printer.printer.zxy.inventory;
 
 import me.aleksilassila.litematica.printer.I18n;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.Reference;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils;
@@ -117,6 +120,7 @@ public class InventoryUtils {
         ModLoadUtils.closeScreen = 0;
     }
 
+<<<<<<< HEAD
     static int shulkerInventoryMenuSlot = -1;
 
     public static void switchInv() {
@@ -125,11 +129,18 @@ public class InventoryUtils {
             clearSwitchRequest();
             return;
         }
+=======
+    static int shulkerBoxSlot = -1;
+
+    public static void switchInv() {
+        LocalPlayer player = Minecraft.getInstance().player;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         AbstractContainerMenu sc = player.containerMenu;
         if (sc.equals(player.inventoryMenu)) {
             return;
         }
         NonNullList<Slot> slots = sc.slots;
+<<<<<<< HEAD
         if (slots.isEmpty()) {
             clearSwitchRequest();
             player.closeContainer();
@@ -138,6 +149,10 @@ public class InventoryUtils {
         for (Item item : lastNeedItemList) {
             int containerSize = Math.min(slots.size(), slots.get(0).container.getContainerSize());
             for (int y = 0; y < containerSize; y++) {
+=======
+        for (Item item : lastNeedItemList) {
+            for (int y = 0; y < slots.get(0).container.getContainerSize(); y++) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 if (slots.get(y).getItem().getItem().equals(item)) {
                     String[] str = fi.dy.masa.litematica.config.Configs.Generic.PICK_BLOCKABLE_SLOTS.getStringValue().split(",");
                     if (str.length == 0) return;
@@ -150,10 +165,15 @@ public class InventoryUtils {
                                 MessageUtils.setOverlayMessage(I18n.INVENTORY_SHULKER_OCCUPIED.getName(), false);
                                 continue;
                             }
+<<<<<<< HEAD
+=======
+                            SwitchItem.newItem(slots.get(y).getItem(), y, shulkerBoxSlot);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                             int a = InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory()) == -1 ?
                                     InventoryUtilsAccessor.getPickBlockTargetSlot(player) :
                                     InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory());
                             c = a == -1 ? c : a;
+<<<<<<< HEAD
                             ItemStack retrievedStack = slots.get(y).getItem().copy();
                             ItemStack sourceShulker = player.inventoryMenu.slots
                                     .get(shulkerInventoryMenuSlot).getItem().copy();
@@ -167,14 +187,30 @@ public class InventoryUtils {
                                     shulkerInventoryMenuSlot,
                                     c
                             );
+=======
+                            ZxyUtils.switchPlayerInvToHotbarAir(c);
+                            fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                             me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
                             me.aleksilassila.litematica.printer.utils.InventoryUtils.syncSelectedHotbarSlot();
                             me.aleksilassila.litematica.printer.utils.InventorySwitchGuard.markSwitchIfNeeded(item);
                             player.closeContainer();
+<<<<<<< HEAD
                             clearSwitchRequest();
                             return;
                         } catch (Exception e) {
                             Reference.LOGGER.warn("Quick Shulker 物品切换失败", e);
+=======
+                            //刷新濳影盒
+                            if (shulkerBoxSlot != -1) {
+                                client.gameMode.handleContainerInput(sc.containerId, shulkerBoxSlot, 0, ContainerInput.PICKUP, client.player);
+                                client.gameMode.handleContainerInput(sc.containerId, shulkerBoxSlot, 0, ContainerInput.PICKUP, client.player);
+                            }
+                            clearSwitchRequest();
+                            return;
+                        } catch (Exception e) {
+                            System.out.println("Item switch error");
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                         }
                     }
                 }
@@ -200,9 +236,15 @@ public class InventoryUtils {
                     NonNullList<ItemStack> items1 = fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(stack, -1);
                     if (items1.stream().anyMatch(s1 -> s1.getItem().equals(item))) {
                         try {
+<<<<<<< HEAD
                             shulkerInventoryMenuSlot = i;
                             if (!ShulkerUtils.openShulker(stack, shulkerInventoryMenuSlot)) {
                                 shulkerInventoryMenuSlot = -1;
+=======
+                            shulkerBoxSlot = i;
+                            if (!ShulkerUtils.openShulker(stack, shulkerBoxSlot)) {
+                                shulkerBoxSlot = -1;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                                 continue;
                             }
                             ModLoadUtils.closeScreen++;
@@ -220,7 +262,10 @@ public class InventoryUtils {
     }
 
     public static void tick() {
+<<<<<<< HEAD
         SwitchItem.tick();
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (ModLoadUtils.closeScreen > 0) {
             ModLoadUtils.closeScreen--;
         }
@@ -233,7 +278,11 @@ public class InventoryUtils {
     }
 
     private static void clearSwitchRequest() {
+<<<<<<< HEAD
         shulkerInventoryMenuSlot = -1;
+=======
+        shulkerBoxSlot = -1;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         lastNeedItemList = new LinkedHashSet<>();
         isOpenHandler = false;
         openHandlerTimeout = 0;

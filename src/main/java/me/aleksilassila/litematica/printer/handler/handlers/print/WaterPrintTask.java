@@ -319,6 +319,7 @@ public class WaterPrintTask implements PrintTask {
 
         @Override
         public void onQueued(SchematicBlockContext context, Action action) {
+<<<<<<< HEAD
             refreshState(context.currentState);
         }
 
@@ -327,6 +328,9 @@ public class WaterPrintTask implements PrintTask {
             if (this.finalPlacement) {
                 complete = true;
             } else {
+=======
+            if (!this.finalPlacement) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 icePlacementSent = true;
                 iceBreakSent = false;
                 refreshState(context.currentState);
@@ -334,11 +338,20 @@ public class WaterPrintTask implements PrintTask {
         }
 
         @Override
+<<<<<<< HEAD
         public void onCancelled(SchematicBlockContext context, Action action) {
             if (!this.finalPlacement) {
                 icePlacementSent = false;
             }
             refreshState(context.currentState);
+=======
+        public void onSuccess(SchematicBlockContext context, Action action) {
+            if (this.finalPlacement) {
+                complete = true;
+            } else {
+                this.onQueued(context, action);
+            }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
 
         @Override

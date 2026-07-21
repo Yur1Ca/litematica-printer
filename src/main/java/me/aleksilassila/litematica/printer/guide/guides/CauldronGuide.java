@@ -9,8 +9,11 @@ import me.aleksilassila.litematica.printer.printer.action.ClickAction;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import net.minecraft.world.level.block.LayeredCauldronBlock;
+<<<<<<< HEAD
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.ItemStack;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.world.item.Items;
 
 import java.util.Optional;
@@ -26,9 +29,12 @@ public class CauldronGuide extends Guide {
 
     @Override
     protected Result onBuildActionWrongState(BlockMatchResult state) {
+<<<<<<< HEAD
         if (!requiredState.is(Blocks.WATER_CAULDRON)) {
             return Result.SKIP;
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         Optional<Integer> currentLevel = getProperty(currentState, LayeredCauldronBlock.LEVEL);
         Optional<Integer> requiredLevel = getProperty(requiredState, LayeredCauldronBlock.LEVEL);
 
@@ -42,13 +48,20 @@ public class CauldronGuide extends Guide {
             }
         }
         if (currentLevel.get() < requiredLevel.get()) {
+<<<<<<< HEAD
             return this.buildWaterFillAction(requiredLevel.get());
+=======
+            if (InventoryUtils.playerHasAccessToItem(client.player, Items.POTION)) {
+                return Result.success(new ClickAction().setItem(Items.POTION));
+            }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         return Result.SKIP;
     }
 
     @Override
     protected Result onBuildActionWrongBlock(BlockMatchResult state) {
+<<<<<<< HEAD
         if (requiredState.is(Blocks.WATER_CAULDRON) && currentState.is(Blocks.CAULDRON)) {
             int requiredLevel = getProperty(requiredState, LayeredCauldronBlock.LEVEL).orElse(1);
             return this.buildWaterFillAction(requiredLevel);
@@ -58,12 +71,15 @@ public class CauldronGuide extends Guide {
                 && InventoryUtils.playerHasAccessToItem(client.player, Items.GLASS_BOTTLE)) {
             return Result.success(new ClickAction().setItem(Items.GLASS_BOTTLE));
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
                 && InteractionUtils.canBreakBlock(blockPos)) {
             InteractionUtils.INSTANCE.add(context);
         }
         return Result.SKIP;
     }
+<<<<<<< HEAD
 
     private Result buildWaterFillAction(int requiredLevel) {
         if (requiredLevel == LayeredCauldronBlock.MAX_FILL_LEVEL
@@ -86,4 +102,6 @@ public class CauldronGuide extends Guide {
         }
         return Result.SKIP;
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

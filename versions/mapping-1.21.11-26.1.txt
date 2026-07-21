@@ -7,6 +7,11 @@ net.minecraft.client.multiplayer.MultiPlayerGameMode handleInventoryMouseClick()
 net.minecraft.client.gui.GuiGraphics net.minecraft.client.gui.GuiGraphicsExtractor
 net.minecraft.client.gui.GuiGraphicsExtractor drawString() text()
 
+<<<<<<< HEAD
+=======
+fi.dy.masa.malilib.util.JsonUtils fi.dy.masa.malilib.util.data.json.JsonUtils
+
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 net.minecraft.world.level.block.FarmBlock net.minecraft.world.level.block.FarmlandBlock
 net.minecraft.world.level.block.WaterlilyBlock net.minecraft.world.level.block.LilyPadBlock
 
@@ -14,4 +19,8 @@ net.minecraft.world.inventory.ClickType net.minecraft.world.inventory.ContainerI
 net.minecraft.world.item.ItemStack getItemHolder() typeHolder()
 net.minecraft.world.level.ChunkPos asLong() pack()
 
+<<<<<<< HEAD
 net.minecraft.core.TypedInstance getTags() tags()
+=======
+net.minecraft.core.TypedInstance getTags() tags()
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)

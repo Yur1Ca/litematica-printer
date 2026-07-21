@@ -2,6 +2,10 @@ package me.aleksilassila.litematica.printer.printer;
 
 import lombok.Setter;
 import me.aleksilassila.litematica.printer.Reference;
+<<<<<<< HEAD
+=======
+import me.aleksilassila.litematica.printer.config.Configs;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
@@ -19,10 +23,13 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+<<<<<<< HEAD
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import net.minecraft.world.item.ItemStack;
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 //#if MC > 12105
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.world.entity.player.Input;
@@ -46,6 +53,7 @@ public class ActionManager {
     private long lastQueuedLookTick = Long.MIN_VALUE;
     private float lastQueuedLookYaw;
     private float lastQueuedLookPitch;
+<<<<<<< HEAD
     private boolean printerInteractionActive;
     private boolean easyPlaceProtocolActive;
     private ActionSource activeSource = ActionSource.GENERIC;
@@ -75,10 +83,13 @@ public class ActionManager {
             return this == WAITING_FOR_LOOK;
         }
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     private ActionManager() {
     }
 
+<<<<<<< HEAD
     public boolean queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift) {
         return this.queueClick(target, side, hitModifier, useShift, 1);
     }
@@ -106,6 +117,25 @@ public class ActionManager {
         this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, source);
         this.queuedClick.expectItems(expectedItems);
         return true;
+=======
+    public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift) {
+        this.queueClick(target, side, hitModifier, useShift, 1);
+    }
+
+    public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount) {
+        this.queueClick(target, side, hitModifier, useShift, clickRepeatCount, null);
+    }
+
+    public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount, @Nullable Item[] expectedItems) {
+        if (Configs.Placement.PLACE_INTERVAL.getIntegerValue() != 0) {
+            if (this.queuedClick != null) {
+                System.out.println("Was not ready yet.");
+                return;
+            }
+        }
+        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount);
+        this.queuedClick.expectItems(expectedItems);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     public void useProtocolHitModifier(@NotNull Vec3 hitModifier) {
@@ -114,6 +144,7 @@ public class ActionManager {
         }
     }
 
+<<<<<<< HEAD
     public boolean setQueueCompletionListener(@Nullable Consumer<SendResult> completionListener) {
         if (this.queuedClick == null) {
             return false;
@@ -140,6 +171,17 @@ public class ActionManager {
         }
         if (shouldDropStaleQueuedClick(player, click)) {
             return this.finish(click, SendResult.STALE_POSITION);
+=======
+    public ActionManager sendQueue(@Nullable LocalPlayer player) {
+        QueuedClick click = this.queuedClick;
+        if (click == null || player == null) {
+            clearQueue();
+            return this;
+        }
+        if (shouldDropStaleQueuedClick(player, click)) {
+            clearQueue();
+            return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         if (!needWaitModifyLook && look != null && shouldSendQueuedLook(look)) {
             NetworkUtils.sendLookPacket(player, look);
@@ -147,13 +189,22 @@ public class ActionManager {
         }
         if (shouldWaitForServerLook(player, click)) {
             needWaitModifyLook = true;
+<<<<<<< HEAD
             return SendResult.WAITING_FOR_LOOK;
+=======
+            return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         if (needWaitModifyLook) {
             needWaitModifyLook = false;
         }
         if (!isHoldingExpectedItem(player, click)) {
+<<<<<<< HEAD
             return this.finish(click, SendResult.HELD_ITEM_CHANGED);
+=======
+            clearQueue();
+            return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         }
         Direction direction;
         if (look == null) {
@@ -170,13 +221,24 @@ public class ActionManager {
         } else {
             hitVec = click.hitModifier;
         }
+<<<<<<< HEAD
         SwitchItem.onMainHandUse(player);
+=======
+        if (InventoryUtils.getOrderlyStoreItem() != null) {
+            if (InventoryUtils.getOrderlyStoreItem().isEmpty()) {
+                SwitchItem.removeItem(InventoryUtils.getOrderlyStoreItem());
+            } else {
+                SwitchItem.syncUseTime(InventoryUtils.getOrderlyStoreItem());
+            }
+        }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         boolean wasSneak = player.isShiftKeyDown();
         if (click.useShift && !wasSneak) {
             setShift(player, true);
         } else if (!click.useShift && wasSneak) {
             setShift(player, false);
         }
+<<<<<<< HEAD
         if (!(Reference.MINECRAFT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension)) {
             restoreShift(player, click, wasSneak);
             return this.finish(click, SendResult.NO_GAME_MODE);
@@ -205,11 +267,21 @@ public class ActionManager {
     }
 
     private void restoreShift(LocalPlayer player, QueuedClick click, boolean wasSneak) {
+=======
+        MultiPlayerGameModeExtension gameModeExtension = (MultiPlayerGameModeExtension) Reference.MINECRAFT.gameMode;
+        if (gameModeExtension != null) {
+            BlockHitResult blockHitResult = new BlockHitResult(hitVec, click.side, click.target, false);
+            for (int i = 0; i < click.repeatCount; i++) {
+                gameModeExtension.litematica_printer$useItemOn(true, InteractionHand.MAIN_HAND, blockHitResult);
+            }
+        }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (click.useShift && !wasSneak) {
             setShift(player, false);
         } else if (!click.useShift && wasSneak) {
             setShift(player, true);
         }
+<<<<<<< HEAD
     }
 
     private SendResult finish(QueuedClick click, SendResult result) {
@@ -233,6 +305,10 @@ public class ActionManager {
         return this.printerInteractionActive
                 && this.activeSource == ActionSource.PRINT
                 && this.easyPlaceProtocolActive;
+=======
+        clearQueue();
+        return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     public void setShift(LocalPlayer player, boolean shift) {
@@ -278,10 +354,13 @@ public class ActionManager {
     }
 
     private static boolean isHoldingExpectedItem(LocalPlayer player, QueuedClick click) {
+<<<<<<< HEAD
         if (click.expectedStackPredicate != null
                 && !click.expectedStackPredicate.test(player.getMainHandItem())) {
             return false;
         }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         if (click.expectedItems == null || click.expectedItems.length == 0) {
             return true;
         }
@@ -320,8 +399,11 @@ public class ActionManager {
         this.waitForHorizontalLook = true;
         this.actionRequiresWaitModifyLook = false;
         this.look = null;
+<<<<<<< HEAD
         this.printerInteractionActive = false;
         this.easyPlaceProtocolActive = false;
         this.activeSource = ActionSource.GENERIC;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 }

@@ -19,7 +19,10 @@ version = artifactVersion
 group = modMavenGroup
 
 repositories {
+<<<<<<< HEAD
     mavenCentral()
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     fun strictMaven(url: String, vararg groups: String) = exclusiveContent {
         forRepository { maven(url) }
         filter {
@@ -29,9 +32,16 @@ repositories {
             }
         }
     }
+<<<<<<< HEAD
     strictMaven("https://maven.fabricmc.net")
     strictMaven("https://maven.fallenbreath.me/releases")
     strictMaven("https://masa.dy.fi/maven/sakura-ryoko", "fi.dy.masa")
+=======
+    strictMaven("https://mvnrepository.com/artifact/com.belerweb/pinyin4j")
+
+    strictMaven("https://maven.fabricmc.net")
+    strictMaven("https://maven.fallenbreath.me/releases")
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     strictMaven("https://www.cursemaven.com", "curse.maven")
     strictMaven("https://api.modrinth.com/maven", "maven.modrinth")
@@ -41,6 +51,7 @@ repositories {
     strictMaven("https://jitpack.io")
 }
 
+<<<<<<< HEAD
 fun masaDependency(mod: String): String {
     val artifact = propStrOrNull("${mod}_artifact")?.takeIf { it.isNotBlank() }
     return artifact?.let { "fi.dy.masa.$mod:$it:${prop(mod)}" }
@@ -80,6 +91,16 @@ configurations.all {
         force(litematicaDependency)
         force(tweakerooDependency)
         force(modMenuDependency)
+=======
+// https://github.com/FabricMC/fabric-loader/issues/783
+configurations.all {
+    resolutionStrategy {
+        force("net.fabricmc:fabric-loader:$fabricLoaderVersion")
+        force(modrinthDependency("malilib", malilib))
+        force(modrinthDependency("litematica", litematica))
+        force(modrinthDependency("tweakeroo", propStr("tweakeroo")))
+        force(modrinthDependency("modmenu", propStr("modmenu")))
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 }
 
@@ -91,6 +112,7 @@ dependencies {
 
     implementation("com.belerweb:pinyin4j:${prop("pinyin_version")}")?.let { include(it) }
 
+<<<<<<< HEAD
     implementation(modMenuDependency)
 
     // masa
@@ -101,6 +123,14 @@ dependencies {
         exclude(group = "maven.modrinth", module = "malilib")
         exclude(group = "fi.dy.masa.malilib")
     }
+=======
+    implementation(modrinthDependency("modmenu", propStr("modmenu")))
+
+    // masa
+    implementation(modrinthDependency("malilib", malilib))
+    implementation(modrinthDependency("litematica", litematica))
+    implementation(modrinthDependency("tweakeroo", propStr("tweakeroo")))
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     // 快捷潜影盒
     val quickshulkerUrl = prop("quickshulker").toString()

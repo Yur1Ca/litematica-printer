@@ -11,9 +11,12 @@ public interface PrintTaskAction {
 
     void onFailure(SchematicBlockContext context, Action action);
 
+<<<<<<< HEAD
     default void onCancelled(SchematicBlockContext context, Action action) {
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     default boolean stopIterationAfterAction() {
         return true;
     }

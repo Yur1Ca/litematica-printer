@@ -127,6 +127,7 @@ public class DefaultGuide extends Guide {
         }
         return Result.PASS;
     }
+<<<<<<< HEAD
 
     @Override
     protected Result onBuildActionWrongState(BlockMatchResult state) {
@@ -137,4 +138,6 @@ public class DefaultGuide extends Guide {
         }
         return Result.PASS;
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

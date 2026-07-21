@@ -25,6 +25,26 @@ val Project.modVersion get() = propStr("mod_version")
 val Project.modMavenGroup get() = propStr("mod_maven_group")
 val Project.modArchivesBaseName get() = propStr("mod_archives_base_name")
 
+<<<<<<< HEAD
+=======
+// Some Modrinth Maven coordinates are published under internal artifact IDs
+// instead of the mod slug. This helper keeps module properties using the
+// human-readable slug+version form while translating to the real Maven artifact.
+private val modrinthArtifactIds = mapOf(
+    "litematica" to "bEpr0Arc",
+    "malilib" to "GcWjdA9I",
+    "tweakeroo" to "t5wuYk45",
+    "modmenu" to "mOgUt4GM"
+)
+
+fun Project.modrinthArtifactId(slug: String): String = modrinthArtifactIds[slug] ?: slug
+
+fun Project.modrinthDependency(slug: String, version: String?): String {
+    val artifactVersion = version ?: throw GradleException("Missing Modrinth dependency version for '$slug'")
+    return "maven.modrinth:${modrinthArtifactId(slug)}:$artifactVersion"
+}
+
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 val Project.modDescription get() = propStrOrNull("mod_description")
 val Project.modHomepage get() = propStrOrNull("mod_homepage")
 val Project.modLicense get() = propStrOrNull("mod_license")

@@ -8,17 +8,25 @@ import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.printer.PrinterUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.RegistryFilterResolver;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
+=======
+import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.RegistryFilterResolver;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
+<<<<<<< HEAD
 import net.minecraft.world.level.block.state.BlockState;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -29,6 +37,7 @@ import java.util.function.Predicate;
 
 public class FluidHandler extends Module {
     public final static String NAME = "fluid";
+<<<<<<< HEAD
     private static final Direction[] PLACEMENT_SIDE_ORDER = {
             Direction.DOWN,
             Direction.NORTH,
@@ -37,6 +46,8 @@ public class FluidHandler extends Module {
             Direction.WEST,
             Direction.UP
     };
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     private List<String> fillBlocks = new ArrayList<>();
     private List<Item> fillItems = new ArrayList<>();
@@ -44,7 +55,10 @@ public class FluidHandler extends Module {
 
     private List<String> fluidBlocks = new ArrayList<>();
     private Set<Fluid> fluids = Set.of();
+<<<<<<< HEAD
     private int observedScanConfigHash = Integer.MIN_VALUE;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     public FluidHandler() {
         super(NAME, PrintModeType.FLUID, Configs.Core.FLUID, Configs.Fluid.FLUID_SELECTION_TYPE, true);
@@ -85,6 +99,7 @@ public class FluidHandler extends Module {
         } else {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
         }
+<<<<<<< HEAD
         int scanConfigHash = this.getScanConfigHash();
         if (this.observedScanConfigHash != Integer.MIN_VALUE
                 && this.observedScanConfigHash != scanConfigHash) {
@@ -97,11 +112,17 @@ public class FluidHandler extends Module {
     @Override
     protected void onRuntimeReset() {
         this.observedScanConfigHash = Integer.MIN_VALUE;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override
     protected boolean canIterate() {
+<<<<<<< HEAD
         return !fillItems.isEmpty() && !fluids.isEmpty();
+=======
+        return !fillItems.isEmpty() && !fluidBlocks.isEmpty();
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override
@@ -156,6 +177,7 @@ public class FluidHandler extends Module {
             }
             return;
         }
+<<<<<<< HEAD
         BlockPos clickTarget = blockPos;
         Direction clickSide = Direction.DOWN;
         if (!Configs.Print.PLACE_IN_AIR.getBooleanValue()) {
@@ -210,6 +232,22 @@ public class FluidHandler extends Module {
             }
         }
         return null;
+=======
+        ActionManager.INSTANCE.queueClick(
+                Configs.Print.PLACE_IN_AIR.getBooleanValue() ? blockPos : blockPos.above(),
+                Direction.DOWN,
+                Vec3.ZERO,
+                false
+        );
+        HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, level.getBlockState(blockPos));
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
+        if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
+            skipIteration.set(true);
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
+        }
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private boolean isTargetFluid(BlockPos blockPos) {
@@ -220,6 +258,7 @@ public class FluidHandler extends Module {
         return fluids.contains(fluidState.getType())
                 && (Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() || fluidState.isSource());
     }
+<<<<<<< HEAD
 
     private int getScanConfigHash() {
         int result = this.fillBlocks.hashCode();
@@ -227,4 +266,6 @@ public class FluidHandler extends Module {
         result = 31 * result + Boolean.hashCode(Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue());
         return result;
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

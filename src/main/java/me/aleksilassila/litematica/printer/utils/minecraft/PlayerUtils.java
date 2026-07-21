@@ -69,9 +69,15 @@ public class PlayerUtils {
         double dz = Math.max(Math.max(blockPosZ - eyePosZ, eyePosZ - (blockPosZ + 1)), 0);
         return dx * dx + dy * dy + dz * dz < distance * distance;
         //#else
+<<<<<<< HEAD
         //$$ double dx = eyePosX - (blockPosX + 0.5);
         //$$ double dy = eyePosY - (blockPosY + 0.5);
         //$$ double dz = eyePosZ - (blockPosZ + 0.5);
+=======
+        //$$ double dx = eyePosX - blockPosX + 0.5;
+        //$$ double dy = eyePosY - blockPosY + 0.5;
+        //$$ double dz = eyePosZ - blockPosZ + 0.5;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         //$$ return dx * dx + dy * dy + dz * dz <= distance * distance;
         //#endif
     }

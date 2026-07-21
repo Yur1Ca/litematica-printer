@@ -21,8 +21,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+<<<<<<< HEAD
 import java.util.function.Predicate;
 import net.minecraft.world.item.ItemStack;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
 @SuppressWarnings("UnusedReturnValue")
 public class Action {
@@ -54,12 +57,15 @@ public class Action {
     protected int clickRepeatCount = 1;
     @Getter
     protected boolean needWaitModifyLook = false;
+<<<<<<< HEAD
     @Getter
     @Nullable
     protected Predicate<ItemStack> requiredStackPredicate;
     @Getter
     @Nullable
     protected ItemStack requiredCreativeStack;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
     public Action() {
         this.sides = createDefaultSides();
@@ -215,6 +221,7 @@ public class Action {
         return this.setShift(true);
     }
 
+<<<<<<< HEAD
     public Action setRequiredStackPredicate(@Nullable Predicate<ItemStack> requiredStackPredicate) {
         this.requiredStackPredicate = requiredStackPredicate;
         return this;
@@ -225,6 +232,8 @@ public class Action {
         return this;
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     public Action setConsumeEffectiveExecution(boolean consumeEffectiveExecution) {
         this.consumeEffectiveExecution = consumeEffectiveExecution;
         return this;
@@ -240,6 +249,7 @@ public class Action {
         return this;
     }
 
+<<<<<<< HEAD
     public boolean queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {
         return this.queueAction(blockPos, side, useShift, player, null);
     }
@@ -247,25 +257,48 @@ public class Action {
     public boolean queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             return ActionManager.INSTANCE.queueClick(
+=======
+    public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {
+        return this.queueAction(blockPos, side, useShift, player, null);
+    }
+
+    public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
+        if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
+            ActionManager.INSTANCE.queueClick(
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                     blockPos,
                     side.getOpposite(),
                     getSides().get(side),
                     useShift,
                     1,
+<<<<<<< HEAD
                     expectedItems,
                     ActionManager.ActionSource.PRINT
             );
         } else {
             return ActionManager.INSTANCE.queueClick(
+=======
+                    expectedItems
+            );
+        } else {
+            ActionManager.INSTANCE.queueClick(
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                     blockPos.relative(side),
                     side.getOpposite(),
                     getSides().get(side),
                     useShift,
                     1,
+<<<<<<< HEAD
                     expectedItems,
                     ActionManager.ActionSource.PRINT
             );
         }
+=======
+                    expectedItems
+            );
+        }
+        return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     private static @NotNull Map<Direction, Vec3> createDefaultSides() {

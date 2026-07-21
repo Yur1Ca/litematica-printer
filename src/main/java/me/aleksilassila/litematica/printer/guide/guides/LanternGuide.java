@@ -20,6 +20,7 @@ public class LanternGuide extends Guide {
     @Override
     protected Result onBuildActionMissingBlock(BlockMatchResult state) {
         if (getProperty(requiredState, LanternBlock.HANGING).orElse(false)) {
+<<<<<<< HEAD
             return Result.success(new Action()
                     .setSides(Direction.UP)
                     .setLookDirection(Direction.UP)
@@ -29,5 +30,10 @@ public class LanternGuide extends Guide {
                 .setSides(Direction.DOWN)
                 .setLookDirection(Direction.DOWN)
                 .setRequiresSupport());
+=======
+            return Result.success(new Action().setLookDirection(Direction.UP));
+        }
+        return Result.success(new Action().setLookDirection(Direction.DOWN));
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 }

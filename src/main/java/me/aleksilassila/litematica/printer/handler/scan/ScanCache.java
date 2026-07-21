@@ -13,7 +13,10 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.LiquidBlock;
+<<<<<<< HEAD
 import net.minecraft.world.level.block.BaseRailBlock;
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayDeque;
@@ -149,6 +152,7 @@ public final class ScanCache {
         }
     }
 
+<<<<<<< HEAD
     public void resetOwner(String ownerKey) {
         if (ownerKey == null || ownerKey.isBlank()) {
             return;
@@ -157,6 +161,8 @@ public final class ScanCache {
         this.sessions.keySet().removeIf(key -> key.startsWith(prefix));
     }
 
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     public Iterable<BlockPos> rawIterable(
             String ownerKey,
             PrinterBox sourceBox,
@@ -1117,6 +1123,7 @@ public final class ScanCache {
                         return 0;
                     }
                     BlockState requiredState = schematic.getBlockState(this.liveMutable);
+<<<<<<< HEAD
                     if (requiredState.equals(state)
                             && !(requiredState.getBlock() instanceof BaseRailBlock)) {
                         return 0;
@@ -1127,6 +1134,12 @@ public final class ScanCache {
                     if (Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
                             && !state.isAir()
                             && !(state.getBlock() instanceof LiquidBlock)) {
+=======
+                    if (!requiredState.isAir()) {
+                        return (byte) (ScanFlags.SCHEMATIC_SAMPLED | ScanFlags.SCHEMATIC_NON_AIR);
+                    }
+                    if (!state.isAir() && !(state.getBlock() instanceof LiquidBlock)) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                         return (byte) (ScanFlags.SCHEMATIC_SAMPLED | ScanFlags.WORLD_NON_AIR);
                     }
                     return 0;
@@ -1456,6 +1469,7 @@ public final class ScanCache {
                 );
                 BlockPos.MutableBlockPos first = new BlockPos.MutableBlockPos();
                 if (cursor.next(first)) {
+<<<<<<< HEAD
                     this.cursors.add(new BoxCursorNode(
                             index,
                             cursor,
@@ -1464,6 +1478,9 @@ public final class ScanCache {
                             first.getZ(),
                             region
                     ));
+=======
+                    this.cursors.add(new BoxCursorNode(index, cursor, first.immutable(), region));
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 }
             }
             this.complete = this.cursors.isEmpty();
@@ -1477,6 +1494,7 @@ public final class ScanCache {
         boolean next(BlockPos.MutableBlockPos target) {
             while (!this.cursors.isEmpty()) {
                 BoxCursorNode node = this.cursors.poll();
+<<<<<<< HEAD
                 int resultX = node.x;
                 int resultY = node.y;
                 int resultZ = node.z;
@@ -1490,18 +1508,36 @@ public final class ScanCache {
                     continue;
                 }
                 target.set(resultX, resultY, resultZ);
+=======
+                BlockPos result = node.pos;
+                BlockPos.MutableBlockPos following = new BlockPos.MutableBlockPos();
+                if (node.cursor.next(following)) {
+                    node.pos = following.immutable();
+                    this.cursors.add(node);
+                }
+                if (this.claimedByEarlierBox(node.boxIndex, result)) {
+                    continue;
+                }
+                target.set(result);
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 return true;
             }
             this.complete = true;
             return false;
         }
 
+<<<<<<< HEAD
         private boolean claimedByEarlierBox(int boxIndex, int x, int y, int z) {
             for (int index = 0; index < boxIndex; index++) {
                 PrinterBox box = this.boxes.get(index);
                 if (x >= box.minX && x <= box.maxX
                         && y >= box.minY && y <= box.maxY
                         && z >= box.minZ && z <= box.maxZ) {
+=======
+        private boolean claimedByEarlierBox(int boxIndex, BlockPos pos) {
+            for (int index = 0; index < boxIndex; index++) {
+                if (this.boxes.get(index).contains(pos)) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                     return true;
                 }
             }
@@ -1514,24 +1550,36 @@ public final class ScanCache {
             private final int centerX;
             private final int centerY;
             private final int centerZ;
+<<<<<<< HEAD
             private final BlockPos.MutableBlockPos following = new BlockPos.MutableBlockPos();
             private int x;
             private int y;
             private int z;
+=======
+            private BlockPos pos;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
             private BoxCursorNode(
                     int boxIndex,
                     BoxDistanceCursor cursor,
+<<<<<<< HEAD
                     int x,
                     int y,
                     int z,
+=======
+                    BlockPos pos,
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                     SectionRegion region
             ) {
                 this.boxIndex = boxIndex;
                 this.cursor = cursor;
+<<<<<<< HEAD
                 this.x = x;
                 this.y = y;
                 this.z = z;
+=======
+                this.pos = pos;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 this.centerX = region.centerX();
                 this.centerY = region.centerY();
                 this.centerZ = region.centerZ();
@@ -1543,6 +1591,7 @@ public final class ScanCache {
                 if (result != 0) {
                     return result;
                 }
+<<<<<<< HEAD
                 result = Integer.compare(this.x, other.x);
                 if (result != 0) {
                     return result;
@@ -1552,6 +1601,17 @@ public final class ScanCache {
                     return result;
                 }
                 result = Integer.compare(this.z, other.z);
+=======
+                result = Integer.compare(this.pos.getX(), other.pos.getX());
+                if (result != 0) {
+                    return result;
+                }
+                result = Integer.compare(this.pos.getY(), other.pos.getY());
+                if (result != 0) {
+                    return result;
+                }
+                result = Integer.compare(this.pos.getZ(), other.pos.getZ());
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 if (result != 0) {
                     return result;
                 }
@@ -1559,9 +1619,15 @@ public final class ScanCache {
             }
 
             private long distanceSqr() {
+<<<<<<< HEAD
                 long dx = this.x - (long) this.centerX;
                 long dy = this.y - (long) this.centerY;
                 long dz = this.z - (long) this.centerZ;
+=======
+                long dx = this.pos.getX() - (long) this.centerX;
+                long dy = this.pos.getY() - (long) this.centerY;
+                long dz = this.pos.getZ() - (long) this.centerZ;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 return dx * dx + dy * dy + dz * dz;
             }
         }
@@ -1732,6 +1798,7 @@ public final class ScanCache {
                 return new int[0];
             }
             int[] coordinates = new int[max - min + 1];
+<<<<<<< HEAD
             int pivot = Math.max(min, Math.min(max, center));
             int left = pivot;
             int right = pivot + 1;
@@ -1752,6 +1819,27 @@ public final class ScanCache {
                 } else {
                     coordinates[index++] = right++;
                 }
+=======
+            for (int index = 0; index < coordinates.length; index++) {
+                coordinates[index] = min + index;
+            }
+
+            for (int index = 1; index < coordinates.length; index++) {
+                int value = coordinates[index];
+                long valueDistance = axisDistanceSqr(value, center);
+                int insertionIndex = index;
+                while (insertionIndex > 0) {
+                    int previous = coordinates[insertionIndex - 1];
+                    long previousDistance = axisDistanceSqr(previous, center);
+                    if (previousDistance < valueDistance
+                            || previousDistance == valueDistance && previous <= value) {
+                        break;
+                    }
+                    coordinates[insertionIndex] = previous;
+                    insertionIndex--;
+                }
+                coordinates[insertionIndex] = value;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
             }
             return coordinates;
         }

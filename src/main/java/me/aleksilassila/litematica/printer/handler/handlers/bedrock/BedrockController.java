@@ -1002,7 +1002,11 @@ public final class BedrockController {
         }
         if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, stablePos)) {
             int defers = EXPOSURE_DEFERRALS.getOrDefault(stablePos, 0) + 1;
+<<<<<<< HEAD
             if (defers <= MAX_VERTICAL_EXPOSURE_DEFERS) {
+=======
+            if (defers < MAX_VERTICAL_EXPOSURE_DEFERS) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
                 if (mutateExposureState) {
                     EXPOSURE_DEFERRALS.put(stablePos, defers);
                 }

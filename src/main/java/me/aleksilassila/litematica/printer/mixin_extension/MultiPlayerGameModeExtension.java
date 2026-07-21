@@ -31,7 +31,10 @@ public interface MultiPlayerGameModeExtension {
     default boolean litematica_printer$isPendingDelayedDestroy(BlockPos blockPos) {
         return false;
     }
+<<<<<<< HEAD
 
     default void litematica_printer$resetRuntime() {
     }
+=======
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 }

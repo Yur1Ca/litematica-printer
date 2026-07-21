@@ -1,3 +1,7 @@
+<<<<<<< HEAD
 net.minecraft.resources.ResourceLocation net.minecraft.resources.Identifier
 
 fi.dy.masa.malilib.util.JsonUtils fi.dy.masa.malilib.util.data.json.JsonUtils
+=======
+net.minecraft.resources.ResourceLocation net.minecraft.resources.Identifier
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)

@@ -12,11 +12,16 @@ import org.jetbrains.annotations.Nullable;
 
 public class ClickAction extends Action {
     @Override
+<<<<<<< HEAD
     public boolean queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {
+=======
+    public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
         return this.queueAction(blockPos, side, useShift, player, null);
     }
 
     @Override
+<<<<<<< HEAD
     public boolean queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
         return ActionManager.INSTANCE.queueClick(
                 blockPos,
@@ -27,6 +32,11 @@ public class ClickAction extends Action {
                 expectedItems,
                 ActionManager.ActionSource.PRINT
         );
+=======
+    public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
+        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false, this.clickRepeatCount, expectedItems);
+        return this;
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
     }
 
     @Override

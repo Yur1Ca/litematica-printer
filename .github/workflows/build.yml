@@ -21,12 +21,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+<<<<<<< HEAD
+=======
+      - name: Validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           java-version: '25'
           distribution: 'microsoft'
 
+<<<<<<< HEAD
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
@@ -39,12 +46,30 @@ jobs:
           key: ${{ runner.os }}-loom-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
           restore-keys: |
             ${{ runner.os }}-loom-
+=======
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ./.gradle
+            ./libs
+          key: ${{ runner.os }}-gradle-common-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-common-
+            ${{ runner.os }}-gradle-
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
 
       - name: Build fabricWrapper subproject
+<<<<<<< HEAD
         run: ./gradlew :fabricWrapper:build --stacktrace --console=plain
+=======
+        run: ./gradlew :fabricWrapper:build --stacktrace
+>>>>>>> 98e8cb2f (feat: Initial commit - Add upstream litematica-printer repository)
 
       - name: Delete wrapper sources jar
         run: |

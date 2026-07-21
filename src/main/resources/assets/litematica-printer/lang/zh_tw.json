@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 {
+=======
+﻿{
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.auto_disable_notice": "印表機已自動關閉",
   "litematica-printer.config.bedrock": "破基岩",
   "litematica-printer.config.bedrock.desc": "調用BedrockMiner模組實現基岩挖掘，未安裝該模組則此功能不可用。",
@@ -116,6 +120,11 @@
   "litematica-printer.config.placeBlocksPerTick.desc": "每遊戲刻可放置的方塊數量。數值越高，每次列印的方塊數越多。\n設為§b0§r時無上限。",
   "litematica-printer.config.placeCooldown": "放置冷卻時間",
   "litematica-printer.config.placeCooldown.desc": "同一位置放置方塊後的冷卻時間(單位為遊戲刻)，冷卻結束後才會重試放置操作。\n§c§l非必要請勿設定為0，否則會導致多放方塊、無法正確放置等問題！§r",
+<<<<<<< HEAD
+=======
+  "litematica-printer.config.placeReserveCount": "保留物品數量",
+  "litematica-printer.config.placeReserveCount.desc": "當當前所選方塊類型在背包中的剩餘數量低於該值時跳過放置。設為0以禁用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.placeRttAdaptiveInterval": "RTT 自適應間隔",
   "litematica-printer.config.placeRttAdaptiveInterval.desc": "根據你的延遲(ping)自動把放置間隔抬高到不低於一次往返，避免在伺服端確認上一次放置之前就發出下一個，從而減少伺服器下的放錯/幽靈方塊，高延遲時尤其有效。\n使用玩家列表的 ping 值；單機/區域網路(ping 為 0)時不生效。",
   "litematica-printer.config.placeRttSafetyPercent": "RTT 安全係數",
@@ -211,7 +220,11 @@
   "litematica-printer.config.selectionType.litematica.selection.abovePlayer": "投影選區(玩家之上)",
   "litematica-printer.config.selectionType.litematica.selection.belowPlayer": "投影選區(玩家之下)",
   "litematica-printer.config.storeOrderly": "物品有序存放",
+<<<<<<< HEAD
   "litematica-printer.config.storeOrderly.desc": "背包滿時，優先將快捷潛影盒取出的物品放回原潛影盒的原槽；原槽無法容納時，會依次使用同類堆疊和空槽。",
+=======
+  "litematica-printer.config.storeOrderly.desc": "背包滿時，嘗試將從快捷界伏盒取出的物品放回原位置；\n1.18.2版本中此功能性能較差(可能導致卡頓)，建議關閉。\n宅閒魚的程式碼品質並不是很好，這個功能可能不太好用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.switchPrinterMode": "切換模式",
   "litematica-printer.config.switchPrinterMode.desc": "切換印表機的當前工作模式(列印/挖掘/破基岩等)。",
   "litematica-printer.config.unlockBeaconEffects": "解除信標效果限制",
@@ -230,6 +243,10 @@
   "litematica-printer.menu.settings_button": "印表機設定",
   "litematica-printer.message.falling_block.no_support": "方塊 %s 下方無支撐，跳過放置",
   "litematica-printer.message.falling_block.mismatch": "方塊 %s 下方方塊不相符，跳過放置",
+<<<<<<< HEAD
+=======
+  "litematica-printer.message.reserve_item.skip": "保留至少 %s 個 %s 於背包，跳過放置",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.message.bedrock.creative_mode": "創造模式無法使用破基岩模式！",
   "litematica-printer.message.shulker.mod_not_loaded": "快捷潛影盒模組未載入！",
   "litematica-printer.message.close_all_mode": "已關閉全部模式",
@@ -257,3 +274,7 @@
   "litematica-printer.config.printBonemealCropsClicks": "農作物催熟連點次數",
   "litematica-printer.config.printBonemealCropsClicks.desc": "每次處理作物時連續使用骨粉的次數。\n數值越高，催熟越快，但骨粉消耗也會更猛。"
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)

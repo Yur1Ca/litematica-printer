@@ -250,6 +250,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 64)
                 .build();
 
+<<<<<<< HEAD
+=======
+        // 放置保留物品数量
+        public static final ConfigInteger PLACE_RESERVE_COUNT = integer("placeReserveCount")
+                .defaultValue(0)
+                .range(0, 64)
+                .build();
+
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
         // RTT 自适应重放间隔 - 开关
         // 根据玩家 ping 自动把放置间隔抬到不低于一次往返,减少服务器下「发包快于服务端确认」导致的放错。
         public static final ConfigBoolean RTT_ADAPTIVE_INTERVAL = bool("placeRttAdaptiveInterval")
@@ -293,6 +302,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PLACE_INTERVAL,
                 PLACE_BLOCKS_PER_TICK,
                 PLACE_COOLDOWN,
+<<<<<<< HEAD
+=======
+                PLACE_RESERVE_COUNT,
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
                 RTT_ADAPTIVE_INTERVAL,
                 RTT_SAFETY_PERCENT,
                 FALLING_CHECK,
@@ -358,8 +371,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+<<<<<<< HEAD
                 BREAK_INTERVAL,
                 BREAK_BLOCKS_PER_TICK,
+=======
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
                 BREAK_CHECK_HARDNESS,
                 BREAK_AUTO_TOOL,
                 BREAK_USE_DELAYED_DESTROY,
@@ -681,7 +697,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     public void load() {
         File settingFile = new File(FILE_PATH);
         if (settingFile.isFile() && settingFile.exists()) {
+<<<<<<< HEAD
             //#if MC >= 12111
+=======
+            //#if MC >= 260100
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             JsonElement jsonElement = JsonUtils.parseJsonFile(settingFile.toPath());
             //#else
             //$$ JsonElement jsonElement = JsonUtils.parseJsonFile(settingFile);
@@ -699,7 +719,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         if ((CONFIG_DIR.exists() && CONFIG_DIR.isDirectory()) || CONFIG_DIR.mkdirs()) {
             JsonObject configRoot = new JsonObject();
             ConfigUtils.writeConfigBase(configRoot, Reference.MOD_ID, OPTIONS);
+<<<<<<< HEAD
             //#if MC >= 12111
+=======
+            //#if MC >= 260100
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             JsonUtils.writeJsonToFile(configRoot, settingFile.toPath());
             //#else
             //$$ JsonUtils.writeJsonToFile(configRoot, settingFile);

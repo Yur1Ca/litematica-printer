@@ -3,7 +3,10 @@ package me.aleksilassila.litematica.printer.handler.handlers.print;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
+=======
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
@@ -11,10 +14,17 @@ import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.action.ClickAction;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
+=======
+import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.mods.TakeItOutUtils;
 import net.minecraft.core.BlockPos;
@@ -25,10 +35,13 @@ import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+<<<<<<< HEAD
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import net.minecraft.world.item.ItemStack;
 
+=======
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 public final class PrintPlacementExecutor {
     private static final Item[] EMPTY_HAND_ITEMS = {Items.AIR};
 
@@ -50,6 +63,7 @@ public final class PrintPlacementExecutor {
         }
 
         Item[] requiredItems = normalizeRequiredItems(action.getRequiredItems(context.requiredState.getBlock()));
+<<<<<<< HEAD
         Predicate<ItemStack> requiredStackPredicate = action.getRequiredStackPredicate();
         boolean itemReady = requiredStackPredicate == null
                 ? InventoryUtils.switchToItems(context.client.player, requiredItems)
@@ -61,30 +75,58 @@ public final class PrintPlacementExecutor {
         if (!itemReady) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
             // 缺少材料属于无效放置，不应消耗每 tick 的有效放置预算（与重构前行为一致）。
+=======
+        int reserveCount = Configs.Placement.PLACE_RESERVE_COUNT.getIntegerValue();
+        if (!InventoryUtils.hasEnoughItemsForReserve(context.client.player, requiredItems, reserveCount)) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+            if (reserveCount > 0) {
+                String cooldownKey = "reserve_item_skip_" + context.requiredBlockName().getString();
+                InventoryUtils.setOverlayMessageWithCooldown(
+                    I18n.RESERVE_ITEM_SKIP.getName(reserveCount, context.requiredBlockName().getString()),
+                    cooldownKey
+                );
+            }
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             return PrintPlacementResult.failure(false,
                     shouldStopAfterTaskAction(taskAction)
                             || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.shouldPauseForSwitchRequest()
                             || TakeItOutUtils.isAwaitingStack());
         }
+<<<<<<< HEAD
         if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)
                 || requiredStackPredicate != null
                 && !requiredStackPredicate.test(context.client.player.getMainHandItem())) {
+=======
+        if (!InventoryUtils.switchToItemsWithReserve(context.client.player, requiredItems, reserveCount)) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+            return PrintPlacementResult.failure(false,
+                    shouldStopAfterTaskAction(taskAction)
+                            || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.shouldPauseForSwitchRequest()
+                            || TakeItOutUtils.isAwaitingStack());
+        }
+        if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)) {
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待物品同步");
             return PrintPlacementResult.failure(false, true);
         }
 
         boolean useShift = getUseShift(context, action, side);
+<<<<<<< HEAD
         if (!action.queueAction(blockPos, side, useShift, context.client.player, requiredItems)) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "动作队列占用");
             return PrintPlacementResult.cancelled(true);
         }
         ActionManager.INSTANCE.setExpectedStackPredicate(requiredStackPredicate);
+=======
+        action.queueAction(blockPos, side, useShift, context.client.player, requiredItems);
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
         Vec3 hitModifier = LitematicaUtils.usePrecisionPlacement(blockPos, context.requiredState);
         if (hitModifier != null) {
             ActionManager.INSTANCE.useProtocolHitModifier(hitModifier);
         }
         ActionManager.INSTANCE.setLook(adjustHorizontalLook(action.getPlayerLook(), context));
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.isNeedWaitModifyLook());
+<<<<<<< HEAD
         boolean consumedEffectiveExecution = action.isConsumeEffectiveExecution();
         int cooldownTicks = action.getCooldownTicksOverride() >= 0
                 ? action.getCooldownTicksOverride()
@@ -163,6 +205,29 @@ public final class PrintPlacementExecutor {
             case NO_QUEUED_ACTION -> "动作未入队";
             default -> "动作未发送";
         };
+=======
+        HudStatsManager.INSTANCE.trackExpectedBlockState(HudStatsManager.Mode.PRINT, blockPos, context.requiredState);
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
+
+        boolean consumedEffectiveExecution = action.isConsumeEffectiveExecution();
+        boolean needWaitModifyLook = ActionManager.INSTANCE.sendQueue(context.client.player).needWaitModifyLook;
+        PrintPlacementResult.TaskEvent taskEvent = needWaitModifyLook
+                ? PrintPlacementResult.TaskEvent.QUEUED
+                : PrintPlacementResult.TaskEvent.SUCCESS;
+
+        if (needWaitModifyLook) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
+        }
+
+        boolean skipIteration = needWaitModifyLook
+                || shouldStopAfterTaskAction(taskAction);
+        int cooldownTicks = action.getCooldownTicksOverride() >= 0
+                ? action.getCooldownTicksOverride()
+                : ConfigUtils.getPlaceCooldown();
+        return new PrintPlacementResult(consumedEffectiveExecution, skipIteration, taskEvent, cooldownTicks);
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
     }
 
     private static boolean getUseShift(SchematicBlockContext context, Action action, Direction side) {

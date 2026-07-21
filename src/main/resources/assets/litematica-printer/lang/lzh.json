@@ -116,6 +116,11 @@
   "litematica-printer.config.placeBlocksPerTick.desc": "每遊戲刻可置之石數。值愈高則摹形愈疾。\n設§b0§r則無上限。",
   "litematica-printer.config.placeCooldown": "置石調息刻",
   "litematica-printer.config.placeCooldown.desc": "置同一石後須靜候之刻數，期滿方可再置。\n§c§l非必要勿設零，否則恐致多置、誤置之患！§r",
+<<<<<<< HEAD
+=======
+  "litematica-printer.config.placeReserveCount": "保留物品數量",
+  "litematica-printer.config.placeReserveCount.desc": "當當前所選方塊類型在兜內餘量低於此值時，跳過放置。設為0以禁用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.placeRttAdaptiveInterval": "延遲自調之息",
   "litematica-printer.config.placeRttAdaptiveInterval.desc": "依爾之延遲(ping)，自抬置石之息，使不低於一往返之數，俾未得遠端覆驗前不遽發其次，故能減伺服之下誤置、虛石之患，延遲愈高愈驗。\n取玩家列之 ping 值；獨機、區網(ping 為零)則不施。",
   "litematica-printer.config.placeRttSafetyPercent": "延遲安穩之率",
@@ -211,7 +216,11 @@
   "litematica-printer.config.selectionType.litematica.selection.abovePlayer": "投影選界（玩家之上）",
   "litematica-printer.config.selectionType.litematica.selection.belowPlayer": "投影選界（玩家之下）",
   "litematica-printer.config.storeOrderly": "物歸其位",
+<<<<<<< HEAD
   "litematica-printer.config.storeOrderly.desc": "囊滿時，先將速啟盒所取之物歸原盒原格；若原格不能盡納，則次合於同物之疊，復用空格。",
+=======
+  "litematica-printer.config.storeOrderly.desc": "囊滿時，試將自遠器/速啟盒取出之物歸返原位；於一·一八·二中此功能效遜（或致遲），建議閉之。宅閒魚之碼質未臻上乘，此功能或難順用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.switchPrinterMode": "切式",
   "litematica-printer.config.switchPrinterMode.desc": "切機巧當前之工式（摹形/採掘/破基巖等）。",
   "litematica-printer.config.unlockBeaconEffects": "解信標效限",
@@ -230,6 +239,10 @@
   "litematica-printer.menu.settings_button": "機巧設令",
   "litematica-printer.message.falling_block.no_support": "磚 %s 下方無托，棄置",
   "litematica-printer.message.falling_block.mismatch": "磚 %s 下方石不符，棄置",
+<<<<<<< HEAD
+=======
+  "litematica-printer.message.reserve_item.skip": "保留至少 %s 個 %s 于兜內，棄置",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.message.bedrock.creative_mode": "創造之態，不可破基巖！",
   "litematica-printer.message.shulker.mod_not_loaded": "速取潛影盒之術未修！",
   "litematica-printer.message.close_all_mode": "已偃息諸態",

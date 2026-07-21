@@ -3,14 +3,26 @@ package me.aleksilassila.litematica.printer.utils;
 import fi.dy.masa.litematica.util.EntityUtils;
 import fi.dy.masa.malilib.gui.Message;
 import fi.dy.masa.malilib.util.InfoUtils;
+<<<<<<< HEAD
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.EasyPlaceUtilsAccessor;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUtilsAccessor;
+=======
+import lombok.Getter;
+import lombok.Setter;
+import me.aleksilassila.litematica.printer.mixin.printer.litematica.EasyPlaceUtilsAccessor;
+import me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUtilsAccessor;
+import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import me.aleksilassila.litematica.printer.utils.mods.TakeItOutUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.NonNullList;
+<<<<<<< HEAD
+=======
+import net.minecraft.network.chat.Component;
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -21,6 +33,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+<<<<<<< HEAD
 import java.util.function.Predicate;
 
 //#if MC >= 12005
@@ -30,6 +43,8 @@ import net.minecraft.world.item.alchemy.PotionContents;
 //$$ import net.minecraft.world.item.alchemy.PotionUtils;
 //#endif
 import net.minecraft.world.item.alchemy.Potions;
+=======
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 
 import static fi.dy.masa.malilib.util.InventoryUtils.*;
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.lastNeedItemList;
@@ -40,6 +55,13 @@ public class InventoryUtils {
     private static final int OFFHAND_SLOT_INDEX = 40;
     private static final long MESSAGE_COOLDOWN_MS = 5000L;
     private static final Map<String, Long> LAST_MESSAGE_SEND_TIME = new ConcurrentHashMap<>();
+<<<<<<< HEAD
+=======
+    @Getter
+    @Setter
+    private static ItemStack orderlyStoreItem; //有序存放临时存储
+
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
     public static int getSelectedSlot(Inventory inventory) {
         //#if MC > 12104
         return inventory.getSelectedSlot();
@@ -68,6 +90,7 @@ public class InventoryUtils {
         return playerHasAccessToItems(playerEntity, item);
     }
 
+<<<<<<< HEAD
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item) {
         if (playerEntity == null || item == null) {
             return false;
@@ -99,6 +122,19 @@ public class InventoryUtils {
             }
         }
         for (Item item : items) {
+=======
+    public static boolean playerHasAccessToItems(LocalPlayer playerEntity, Item... items) {
+        if (items == null || items.length == 0) return true;
+        if (PlayerUtils.getAbilities(playerEntity).mayBuild) return true;
+        if (!playerEntity.containerMenu.equals(playerEntity.inventoryMenu)) return false;
+        Inventory inventory = playerEntity.getInventory();
+        for (Item item : items) {
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                if (inventory.getItem(i).getItem() == item) {
+                    return true;
+                }
+            }
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.lastNeedItemList.add(item);
         }
         return false;
@@ -350,6 +386,10 @@ public class InventoryUtils {
         ItemStack mainHandStack = player.getMainHandItem();
         for (Item item : items) {
             if (mainHandStack.getItem().equals(item)) {
+<<<<<<< HEAD
+=======
+                orderlyStoreItem = mainHandStack;
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
                 return true;
             }
         }
@@ -362,6 +402,7 @@ public class InventoryUtils {
             }
             return false;
         }
+<<<<<<< HEAD
         // 先检查全部可接受物品，避免首选物品缺失时提前发起取货，
         // 而背包里其实已经有后备物品（例如打火石/火焰弹）。
         for (Item item : items) {
@@ -383,11 +424,36 @@ public class InventoryUtils {
             }
         }
         for (Item item : items) {
+=======
+        // 找到背包中可用的物品
+        for (Item item : items) {
+            int slot = -1;
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack itemStack = inventory.getItem(i);
+                if (itemStack.getItem().equals(item)) {
+                    slot = i;
+                    break;
+                }
+            }
+            if (slot != -1) {
+                ItemStack itemStack = inventory.getItem(slot);
+                orderlyStoreItem = itemStack;
+                boolean needsInventoryConfirmation = !Inventory.isHotbarSlot(slot);
+                if (InventoryUtils.setPickedItemToHand(slot, itemStack, client)) {
+                    return !needsInventoryConfirmation || !InventorySwitchGuard.markSwitchIfNeeded(item);
+                }
+                return false;
+            }
+            if (TakeItOutUtils.tryRequestItem(item)) {
+                return false;
+            }
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
             lastNeedItemList.add(item);
         }
         return false;
     }
 
+<<<<<<< HEAD
     public static boolean playerHasAccessToMatchingStack(
             LocalPlayer playerEntity,
             ItemStack creativeFallback,
@@ -408,6 +474,73 @@ public class InventoryUtils {
             if (!stack.isEmpty() && predicate.test(stack)) {
                 return true;
             }
+=======
+    public static void setOverlayMessageWithCooldown(Component message, String cooldownKey) {
+        long currentTime = System.currentTimeMillis();
+        long lastSendTime = LAST_MESSAGE_SEND_TIME.getOrDefault(cooldownKey, 0L);
+
+        if (currentTime - lastSendTime < MESSAGE_COOLDOWN_MS) {
+            return;
+        }
+
+        MessageUtils.setOverlayMessage(message);
+        LAST_MESSAGE_SEND_TIME.put(cooldownKey, currentTime);
+    }
+
+    public static int getItemCount(LocalPlayer player, Item item) {
+        if (player == null || item == null || item == Items.AIR) {
+            return 0;
+        }
+        int count = 0;
+        Inventory inventory = player.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.getItem().equals(item)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    public static boolean hasEnoughItemsForReserve(LocalPlayer player, Item[] items, int reserveCount) {
+        if (player == null || reserveCount <= 0 || items == null || items.length == 0) {
+            return true;
+        }
+        if (PlayerUtils.getAbilities(player).instabuild) {
+            return true;
+        }
+        for (Item item : items) {
+            if (item == null || item == Items.AIR) {
+                return true;
+            }
+            if (getItemCount(player, item) > reserveCount) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean switchToItemsWithReserve(LocalPlayer player, Item[] items, int reserveCount) {
+        if (reserveCount <= 0 || PlayerUtils.getAbilities(player).instabuild) {
+            return switchToItems(player, items);
+        }
+        if (items == null || items.length == 0) {
+            return switchToItems(player, items);
+        }
+        Item selectedItem = null;
+        for (Item item : items) {
+            if (item == null || item == Items.AIR) {
+                selectedItem = item;
+                break;
+            }
+            if (getItemCount(player, item) > reserveCount) {
+                selectedItem = item;
+                break;
+            }
+        }
+        if (selectedItem != null) {
+            return switchToItems(player, new Item[]{selectedItem});
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
         }
         return false;
     }
@@ -425,6 +558,7 @@ public class InventoryUtils {
         return false;
     }
 
+<<<<<<< HEAD
     public static boolean switchToMatchingStack(
             LocalPlayer player,
             Predicate<ItemStack> predicate,
@@ -480,6 +614,8 @@ public class InventoryUtils {
         //#endif
     }
 
+=======
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
     /**
      * 检查是否能切换到目标物品（配合槽位检查，仅判断不执行切换）
      *

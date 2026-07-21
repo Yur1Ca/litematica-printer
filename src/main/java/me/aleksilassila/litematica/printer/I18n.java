@@ -38,6 +38,10 @@ public class I18n {
     public static final I18n INVENTORY_FULL = of("message.inventory.full");
     public static final I18n INVENTORY_RESTORE_FAILED = of("message.inventory.restore_failed");
     public static final I18n INVENTORY_SHULKER_OCCUPIED = of("message.inventory.shulker_occupied");
+<<<<<<< HEAD
+=======
+    public static final I18n RESERVE_ITEM_SKIP = of("message.reserve_item.skip");
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
 
     private static final String PREFIX_CONFIG = "config";
     private static final String PREFIX_COMMENT = "desc";

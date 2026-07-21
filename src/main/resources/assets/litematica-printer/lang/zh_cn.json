@@ -120,6 +120,11 @@
   "litematica-printer.config.placeBlocksPerTick.desc": "每游戏刻可放置的方块数量。数值越高，每次打印的方块数越多。\n设为§b0§r时无上限。",
   "litematica-printer.config.placeCooldown": "放置冷却时间",
   "litematica-printer.config.placeCooldown.desc": "同一位置放置方块后的冷却时间(单位为游戏刻)，冷却结束后才会重试放置操作。\n§c§l非必要请勿设置为0，否则会导致多放方块、无法正确放置等问题！§r",
+<<<<<<< HEAD
+=======
+  "litematica-printer.config.placeReserveCount": "保留物品数量",
+  "litematica-printer.config.placeReserveCount.desc": "当当前所选方块类型在背包中的剩余数量低于该值时跳过放置。设为0以禁用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.placeRttAdaptiveInterval": "RTT 自适应间隔",
   "litematica-printer.config.placeRttAdaptiveInterval.desc": "根据你的延迟(ping)自动把放置间隔抬高到不低于一次往返，避免在服务端确认上一次放置之前就发出下一个，从而减少服务器下的放错/幽灵方块，高延迟时尤其有效。\n使用玩家列表的 ping 值；单机/局域网(ping 为 0)时不生效。",
   "litematica-printer.config.placeRttSafetyPercent": "RTT 安全系数",
@@ -217,7 +222,11 @@
   "litematica-printer.config.selectionType.litematica.selection.abovePlayer": "投影选区(玩家之上)",
   "litematica-printer.config.selectionType.litematica.selection.belowPlayer": "投影选区(玩家之下)",
   "litematica-printer.config.storeOrderly": "物品有序存放",
+<<<<<<< HEAD
   "litematica-printer.config.storeOrderly.desc": "背包满时，优先将快捷潜影盒取出的物品放回原潜影盒的原槽；原槽无法容纳时，会依次使用同类堆叠和空槽。",
+=======
+  "litematica-printer.config.storeOrderly.desc": "背包满时，尝试将从快捷潜影盒取出的物品放回原位置；\n1.18.2版本中此功能性能较差(可能导致卡顿)，建议关闭。\n宅闲鱼的代码质量并不是很好，这个功能可能不太好用。",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.switchPrinterMode": "切换模式",
   "litematica-printer.config.switchPrinterMode.desc": "切换打印机的当前工作模式(打印/挖掘/破基岩等)。",
   "litematica-printer.config.unlockBeaconEffects": "解锁信标效果限制",
@@ -236,6 +245,10 @@
   "litematica-printer.menu.settings_button": "打印机设置",
   "litematica-printer.message.falling_block.no_support": "方块 %s 下方无支撑，跳过放置",
   "litematica-printer.message.falling_block.mismatch": "方块 %s 下方方块不相符，跳过放置",
+<<<<<<< HEAD
+=======
+  "litematica-printer.message.reserve_item.skip": "保留至少 %s 个 %s 于背包，跳过放置",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.message.bedrock.creative_mode": "创造模式无法使用破基岩模式！",
   "litematica-printer.message.shulker.mod_not_loaded": "快捷潜影盒模组未加载！",
   "litematica-printer.message.close_all_mode": "已关闭全部模式",

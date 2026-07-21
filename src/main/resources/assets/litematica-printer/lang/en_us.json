@@ -120,6 +120,11 @@
   "litematica-printer.config.placeBlocksPerTick.desc": "Number of blocks that can be placed per game tick. Higher values mean more blocks placed each time.\nSet to §b0§r for no limit.",
   "litematica-printer.config.placeCooldown": "Placement Cooldown Time",
   "litematica-printer.config.placeCooldown.desc": "Cooldown time after placing blocks at the same location (in game ticks). Retry placement operation only after cooldown ends.\n§c§lDo not set to 0 unless necessary, otherwise it will cause placing extra blocks, inability to place correctly and other issues!§r",
+<<<<<<< HEAD
+=======
+  "litematica-printer.config.placeReserveCount": "Reserve Item Count",
+  "litematica-printer.config.placeReserveCount.desc": "Skip placement when the currently selected block type would fall below this minimum amount in inventory. Set to 0 to disable.",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.placeRttAdaptiveInterval": "RTT Adaptive Interval",
   "litematica-printer.config.placeRttAdaptiveInterval.desc": "Automatically raise the placement interval to at least one round-trip (your ping) so a placement is not sent before the server confirms the previous one.\nReduces misplaced/ghost blocks on servers, especially with high latency.\nUses your tab-list ping; has no effect in singleplayer/LAN (ping 0).",
   "litematica-printer.config.placeRttSafetyPercent": "RTT Safety Factor",
@@ -217,7 +222,11 @@
   "litematica-printer.config.selectionType.litematica.selection.abovePlayer": "Projection Selection (Above Player)",
   "litematica-printer.config.selectionType.litematica.selection.belowPlayer": "Projection Selection (Below Player)",
   "litematica-printer.config.storeOrderly": "Orderly Item Storage",
+<<<<<<< HEAD
   "litematica-printer.config.storeOrderly.desc": "When the inventory is full, return items retrieved by Quick Shulker to their original shulker and slot first; if that slot cannot hold them, merge into matching stacks and then use empty slots.",
+=======
+  "litematica-printer.config.storeOrderly.desc": "When inventory is full, try to put items retrieved from quick shulker boxes back to original positions;\nThis function has poor performance in 1.18.2 version (may cause lag), recommended to disable.\nZhao Xianyu's code quality is not very good, this function may not work well.",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.config.switchPrinterMode": "Switch Mode",
   "litematica-printer.config.switchPrinterMode.desc": "Switch printer's current work mode (printing/mining/bedrock breaking, etc.).",
   "litematica-printer.config.unlockBeaconEffects": "Unlock Beacon Effect Limits",
@@ -236,6 +245,10 @@
   "litematica-printer.menu.settings_button": "Printer Settings",
   "litematica-printer.message.falling_block.no_support": "Block %s has no support below, skipping placement",
   "litematica-printer.message.falling_block.mismatch": "Block %s has mismatched block below, skipping placement",
+<<<<<<< HEAD
+=======
+  "litematica-printer.message.reserve_item.skip": "Keeping at least %s of %s in inventory, skipping placement",
+>>>>>>> 766717f4 (feat: Add inventory reserve feature for block placement)
   "litematica-printer.message.bedrock.creative_mode": "Cannot use Bedrock Breaking mode in Creative mode!",
   "litematica-printer.message.shulker.mod_not_loaded": "Quick Shulker mod not loaded!",
   "litematica-printer.message.close_all_mode": "All modes have been disabled",

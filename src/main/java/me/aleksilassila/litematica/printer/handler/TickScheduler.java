@@ -57,9 +57,7 @@ final class TickScheduler implements RuntimeComponent {
         // barrier.  The coordinator owns LOOK/INTERACTION per action owner; unrelated features
         // must still be able to scan and submit their own resources in this tick.
         this.advancePendingLookQueue(mc);
-        if (this.pauseForLagCheck()) {
-            return;
-        }
+        this.pauseForLagCheck();
         TickContext context = TickContext.capture();
         if (!inventoryBusy) {
             this.resume();

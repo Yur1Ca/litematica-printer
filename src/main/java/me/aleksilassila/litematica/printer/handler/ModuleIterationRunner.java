@@ -37,8 +37,11 @@ final class ModuleIterationRunner {
 
         int completedPassesBefore = module.scanEngine.metricsFor(module.getId()).completedPasses();
         Iterable<BlockPos> positions = module.getIterationPositions(interactionBox);
+        boolean bufferedCandidates = positions instanceof ScanCandidateIterable source
+                && source.isBuffered()
+                && source.availability() == ScanAvailability.READY;
         for (BlockPos pos : positions) {
-            if (++budgetChecks % BUDGET_CHECK_INTERVAL == 0
+            if (!bufferedCandidates && ++budgetChecks % BUDGET_CHECK_INTERVAL == 0
                     && System.nanoTime() - iterationStartNanos - actionExecutionNanos >= budgetNanos) {
                 interrupt = true;
                 break;
@@ -106,7 +109,9 @@ final class ModuleIterationRunner {
         if (scanPaused) {
             interrupt = true;
         }
-        boolean completedPass = module.scanEngine.metricsFor(module.getId()).completedPasses() > completedPassesBefore;
+        boolean completedPass = module.scanEngine.metricsFor(module.getId()).completedPasses() > completedPassesBefore
+                || positions instanceof ScanCandidateIterable source
+                && source.availability() == ScanAvailability.COMPLETE;
         module.stopIteration(interrupt);
         return new FeatureModuleBase.IterationOutcome(interrupt, didWork, foundCandidate, completedPass, scanPaused);
     }

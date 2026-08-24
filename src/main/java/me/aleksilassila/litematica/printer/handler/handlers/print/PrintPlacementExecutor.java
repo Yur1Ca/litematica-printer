@@ -261,6 +261,7 @@ public final class PrintPlacementExecutor {
             this.fallingPlacements.mark(
                     context.blockPos,
                     context.requiredState,
+                    context.currentState,
                     context.level.getGameTime()
             );
         }

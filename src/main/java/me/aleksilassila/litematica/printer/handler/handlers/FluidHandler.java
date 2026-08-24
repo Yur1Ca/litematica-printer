@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
@@ -25,7 +26,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
@@ -41,15 +45,6 @@ public class FluidHandler extends FeatureModuleBase {
             Direction.UP
     };
 
-    /**
-     * How long to cool a cell after a rejected placement attempt. A rejection is usually caused
-     * by a falling fill-block entity in the column, which settles within a few ticks. Shorter
-     * than the normal placement cooldown so the cell is retried promptly once it becomes
-     * placeable again, but long enough that a momentarily-occupied column is not hot-rejected
-     * every single tick.
-     */
-    private static final int REJECT_RETRY_COOLDOWN_TICKS = 4;
-
     private List<String> fillBlocks = new ArrayList<>();
     private List<Item> fillItems = new ArrayList<>();
     private Item[] fillItemArray = new Item[0];
@@ -57,9 +52,21 @@ public class FluidHandler extends FeatureModuleBase {
     private List<String> fluidBlocks = new ArrayList<>();
     private Set<Fluid> fluids = Set.of();
     private int observedScanConfigHash = Integer.MIN_VALUE;
+    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
+    private final Set<BlockPos> inFlightTargets = new LinkedHashSet<>();
+    private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
     public FluidHandler(PrinterRuntime runtime) {
         super(runtime, NAME, PrintModeType.FLUID, Configs.Core.FLUID, Configs.Fluid.FLUID_SELECTION_TYPE, true);
+        runtime.events().subscribe(event -> {
+            if (event instanceof RuntimeEvent.BlockUpdated update) {
+                BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
+                if (this.inFlightTargets.remove(pos)) {
+                    this.inFlightSince.remove(pos);
+                    if (this.isTargetFluid(pos)) this.retryTargets.add(pos);
+                }
+            }
+        });
     }
 
     @Override
@@ -74,6 +81,7 @@ public class FluidHandler extends FeatureModuleBase {
 
     @Override
     protected void preprocess() {
+        this.refreshTargetStates();
         // 填充方块
         List<String> fileBlocks = Configs.Fluid.FLUID_REPLACE_BLOCK_LIST.getStrings();
         if (!fileBlocks.equals(fillBlocks)) {
@@ -109,6 +117,37 @@ public class FluidHandler extends FeatureModuleBase {
     @Override
     protected void onRuntimeReset() {
         this.observedScanConfigHash = Integer.MIN_VALUE;
+        this.retryTargets.clear();
+        this.inFlightTargets.clear();
+        this.inFlightSince.clear();
+    }
+
+    @Override
+    protected boolean hasRunnableIterationWork() {
+        return !this.retryTargets.isEmpty();
+    }
+
+    @Override
+    protected boolean hasWaitingIterationWork() {
+        return !this.inFlightTargets.isEmpty();
+    }
+
+    private void refreshTargetStates() {
+        if (this.level == null) return;
+        this.retryTargets.removeIf(pos -> !this.isTargetFluid(pos));
+        long now = this.level.getGameTime();
+        List<BlockPos> stale = new ArrayList<>();
+        for (Map.Entry<BlockPos, Long> entry : this.inFlightSince.entrySet()) {
+            BlockPos pos = entry.getKey();
+            if (!this.inFlightTargets.contains(pos) || !this.isTargetFluid(pos)) {
+                stale.add(pos);
+            } else if (now > entry.getValue()) {
+                this.inFlightTargets.remove(pos);
+                this.retryTargets.add(pos);
+                stale.add(pos);
+            }
+        }
+        for (BlockPos pos : stale) this.inFlightSince.remove(pos);
     }
 
     @Override
@@ -129,11 +168,17 @@ public class FluidHandler extends FeatureModuleBase {
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         List<PrinterBox> scanSourceBoxes = this.getScanSourceBoxes(playerInteractionBox);
-        if (scanSourceBoxes.isEmpty()) {
-            return List.of();
-        }
         Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
         Predicate<BlockPos> reachPredicate = this.createScanReachPredicate();
+        List<BlockPos> retainedTargets = this.retryTargets.stream()
+                .filter(pos -> !this.inFlightTargets.contains(pos)
+                        && reachPredicate.test(pos)
+                        && selectionPredicate.test(pos)
+                        && this.isTargetFluid(pos))
+                .toList();
+        if (scanSourceBoxes.isEmpty()) {
+            return retainedTargets;
+        }
 
         // Finish the initial pass, then let ModuleScanCoordinator enter lazy mode. Subsequent
         // updates are delivered through the dirty-region path; restarting the whole distance
@@ -145,7 +190,7 @@ public class FluidHandler extends FeatureModuleBase {
         // per-tick scan budget allows. No intermediate FIFO queue: a queue serialised work to one
         // target per tick and let already-placed ("zombie") entries accumulate to ~15k, which read
         // as a slow ring-by-ring expansion even though the scan itself finished in 3 ticks.
-        return this.scanEngine.iterable(
+        Iterable<BlockPos> source = this.scanEngine.iterable(
                 NAME,
                 scanSourceBoxes,
                 this.level,
@@ -153,10 +198,15 @@ public class FluidHandler extends FeatureModuleBase {
                 this.player,
                 this.getScanGuardLimit(),
                 ScanIntent.FLUID,
-                this::isReadyFluidTarget,
+                pos -> this.isReadyFluidTarget(pos)
+                        && !this.retryTargets.contains(pos)
+                        && !this.inFlightTargets.contains(pos),
                 pos -> reachPredicate.test(pos) && selectionPredicate.test(pos),
                 ScanEngine.PassPolicy.INVALIDATIONS_ONLY
         );
+        return retainedTargets.isEmpty()
+                ? source
+                : com.google.common.collect.Iterables.concat(retainedTargets, source);
     }
 
     @Override
@@ -166,6 +216,10 @@ public class FluidHandler extends FeatureModuleBase {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        if (this.inFlightTargets.contains(blockPos)) {
+            setIterationConsumedEffectiveExecution(false);
+            return;
+        }
         FluidState fluidState = level.getBlockState(blockPos).getFluidState();
         if (!this.isTargetFluid(fluidState)) {
             setIterationConsumedEffectiveExecution(false);
@@ -180,6 +234,7 @@ public class FluidHandler extends FeatureModuleBase {
                     level.getGameTime()
             );
             setIterationConsumedEffectiveExecution(false);
+            this.retryTargets.add(blockPos.immutable());
             if (this.actionBroker.isResourceHeld(ResourceLease.INVENTORY)) {
                 skipIteration.set(true);
             }
@@ -193,9 +248,8 @@ public class FluidHandler extends FeatureModuleBase {
             if (placementSide == null) {
                 this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "无有效放置面");
                 // This was ready when scanned but its support disappeared before execution.
-                // A server block update (or the next full pass after the queue drains) will
-                // rediscover it; keeping it hot here would create an endless retry loop.
                 setIterationConsumedEffectiveExecution(false);
+                this.retryTargets.add(blockPos.immutable());
                 return;
             }
             clickTarget = blockPos.relative(placementSide);
@@ -212,6 +266,7 @@ public class FluidHandler extends FeatureModuleBase {
         )) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "动作队列占用");
             setIterationConsumedEffectiveExecution(false);
+            this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
             return;
         }
@@ -219,22 +274,20 @@ public class FluidHandler extends FeatureModuleBase {
         ActionPort.SendResult sendResult = this.actionBroker.sendQueue(player);
         if (sendResult.isWaiting()) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
+            this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
             return;
         }
         if (!sendResult.isSent()) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "放置动作未发送");
-            // A rejected interaction means this cell is momentarily unplaceable. The common cause
-            // is a falling fill-block entity (sand) currently occupying the cell: every placement
-            // of sand into water spawns a FallingBlockEntity (blocksBuilding=true) that blocks
-            // further placement in its column until it lands. Do NOT abort the whole pass: that
-            // serialised work to one rejected attempt per tick and read as the slow ring-by-ring
-            // expansion. Cool the cell briefly (the falling entity settles within a few ticks)
-            // and let the iteration loop move on to other candidates.
             setIterationConsumedEffectiveExecution(false);
-            this.setBlockPosCooldown(blockPos, REJECT_RETRY_COOLDOWN_TICKS);
+            this.retryTargets.add(blockPos.immutable());
             return;
         }
+        this.retryTargets.remove(blockPos);
+        BlockPos retainedPos = blockPos.immutable();
+        this.inFlightTargets.add(retainedPos);
+        this.inFlightSince.put(retainedPos, this.level.getGameTime());
         this.hudStats.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, previousState);
         this.hudStats.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
         this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, "运行中");

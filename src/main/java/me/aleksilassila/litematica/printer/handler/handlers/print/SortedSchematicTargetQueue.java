@@ -70,6 +70,26 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         return this.hasMoreSource ? ScanAvailability.PAUSED : ScanAvailability.COMPLETE;
     }
 
+    @Override
+    public boolean isBuffered() {
+        return true;
+    }
+
+    public void requeue(BlockPos pos) {
+        if (pos == null || this.queuedKeys.add(ScanEngine.key(pos))) {
+            if (pos != null) {
+                this.queue.addLast(pos.immutable());
+            }
+        }
+    }
+
+    public void remove(BlockPos pos) {
+        if (pos == null) return;
+        long key = ScanEngine.key(pos);
+        this.queuedKeys.remove(key);
+        this.queue.removeIf(candidate -> ScanEngine.key(candidate) == key);
+    }
+
     private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
         // Do not refill while a batch is still available. The scan budget is shared with the
         // iteration runner; scanning again every tick while the queue is non-empty consumes the

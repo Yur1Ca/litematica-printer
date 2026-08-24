@@ -139,13 +139,18 @@ public final class QuickShulkerRequestController {
     }
 
     public boolean shouldPauseForSwitchRequest() {
-        return Configs.Placement.QUICK_SHULKER.getBooleanValue() && hasPendingSwitchRequest();
+        return Configs.Core.WORK_SWITCH.getBooleanValue()
+                && Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                && hasPendingSwitchRequest();
     }
 
     public boolean shouldSuppressContainerScreen() {
         LocalPlayer player = client.player;
-        return player != null
+        return Configs.Core.WORK_SWITCH.getBooleanValue()
+                && Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                && player != null
                 && !player.containerMenu.equals(player.inventoryMenu)
+                && ModLoadUtils.closeScreen > 0
                 && (this.isOpenHandler || this.orderedStorage.isWaitingForRestoreContainer());
     }
 

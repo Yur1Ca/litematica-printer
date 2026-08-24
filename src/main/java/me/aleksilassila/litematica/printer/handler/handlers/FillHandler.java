@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
@@ -34,7 +35,11 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
@@ -49,15 +54,6 @@ public class FillHandler extends FeatureModuleBase {
             Direction.UP
     };
 
-    /**
-     * How long to cool a cell after a rejected placement attempt. A rejection is usually caused
-     * by a falling fill-block entity in the column (sand/gravel into air), which settles within a
-     * few ticks. Shorter than the normal placement cooldown so the cell is retried promptly once
-     * it becomes placeable again, but long enough that a momentarily-occupied column is not
-     * hot-rejected every single tick.
-     */
-    private static final int REJECT_RETRY_COOLDOWN_TICKS = 4;
-
     private List<String> fillCacheBlocklist = new ArrayList<>();
     private List<String> replaceableListCache = List.of();
     private String[] replaceableFilters = new String[0];
@@ -67,9 +63,23 @@ public class FillHandler extends FeatureModuleBase {
     private List<PrinterBox> fillScanBoxes = List.of();
     private int fillScanConfigHash;
     private int observedFillScanConfigHash = Integer.MIN_VALUE;
+    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
+    private final Set<BlockPos> inFlightTargets = new LinkedHashSet<>();
+    private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
     public FillHandler(PrinterRuntime runtime) {
         super(runtime, NAME, PrintModeType.FILL, Configs.Core.FILL, Configs.Fill.FILL_SELECTION_TYPE, true);
+        runtime.events().subscribe(event -> {
+            if (event instanceof RuntimeEvent.BlockUpdated update) {
+                BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
+                if (this.inFlightTargets.remove(pos)) {
+                    this.inFlightSince.remove(pos);
+                    if (this.isFillTarget(pos)) {
+                        this.retryTargets.add(pos);
+                    }
+                }
+            }
+        });
     }
 
     @Override
@@ -84,6 +94,7 @@ public class FillHandler extends FeatureModuleBase {
 
     @Override
     protected void preprocess() {
+        this.refreshTargetStates();
         this.updateReplaceableFilterCache();
         FillBlockModeType fillMode = (FillBlockModeType) Configs.Fill.FILL_BLOCK_MODE.getOptionListValue();
         switch (fillMode) {
@@ -130,8 +141,43 @@ public class FillHandler extends FeatureModuleBase {
     @Override
     protected void onRuntimeReset() {
         this.clearFillTargets();
+        this.retryTargets.clear();
+        this.inFlightTargets.clear();
+        this.inFlightSince.clear();
         this.fillScanConfigHash = 0;
         this.observedFillScanConfigHash = Integer.MIN_VALUE;
+    }
+
+    @Override
+    protected boolean hasRunnableIterationWork() {
+        return !this.retryTargets.isEmpty();
+    }
+
+    @Override
+    protected boolean hasWaitingIterationWork() {
+        return !this.inFlightTargets.isEmpty();
+    }
+
+    private void refreshTargetStates() {
+        if (this.level == null) {
+            return;
+        }
+        this.retryTargets.removeIf(pos -> !this.isFillTarget(pos));
+        long now = this.level.getGameTime();
+        List<BlockPos> stale = new ArrayList<>();
+        for (Map.Entry<BlockPos, Long> entry : this.inFlightSince.entrySet()) {
+            BlockPos pos = entry.getKey();
+            if (!this.inFlightTargets.contains(pos) || !this.isFillTarget(pos)) {
+                stale.add(pos);
+            } else if (now > entry.getValue()) {
+                this.inFlightTargets.remove(pos);
+                this.retryTargets.add(pos);
+                stale.add(pos);
+            }
+        }
+        for (BlockPos pos : stale) {
+            this.inFlightSince.remove(pos);
+        }
     }
 
     private void updateReplaceableFilterCache() {
@@ -169,9 +215,17 @@ public class FillHandler extends FeatureModuleBase {
         PrinterBox fullInteractionBox = this.playerInteractionBox == null ? null : this.playerInteractionBox.get();
         List<PrinterBox> fullScanSourceBoxes = this.getScanSourceBoxes(fullInteractionBox);
         PrinterBox fullScanSourceBox = this.getScanSourceBox(fullInteractionBox);
+        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
+        Predicate<BlockPos> reachPredicate = this.createScanReachPredicate();
+        List<BlockPos> retainedTargets = this.retryTargets.stream()
+                .filter(pos -> !this.inFlightTargets.contains(pos)
+                        && reachPredicate.test(pos)
+                        && selectionPredicate.test(pos)
+                        && this.isFillTarget(pos))
+                .toList();
         if (scanSourceBoxes.isEmpty() || fullScanSourceBoxes.isEmpty() || fullScanSourceBox == null) {
             this.clearFillTargets();
-            return List.of();
+            return retainedTargets;
         }
 
         int configHash = this.getFillScanConfigHash();
@@ -183,11 +237,12 @@ public class FillHandler extends FeatureModuleBase {
             this.fillScanBoxes = List.copyOf(fullScanSourceBoxes);
         }
 
-        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
-        Predicate<BlockPos> reachPredicate = this.createScanReachPredicate();
         // ScanEngine already exposes a resumable candidate iterable and its explicit pause
         // state. A second look-ahead iterator would hide budget pauses from the coordinator.
-        return this.createSourceIterator(scanSourceBoxes, reachPredicate, selectionPredicate);
+        Iterable<BlockPos> source = this.createSourceIterator(scanSourceBoxes, reachPredicate, selectionPredicate);
+        return retainedTargets.isEmpty()
+                ? source
+                : com.google.common.collect.Iterables.concat(retainedTargets, source);
     }
 
     private Iterable<BlockPos> createSourceIterator(
@@ -206,7 +261,9 @@ public class FillHandler extends FeatureModuleBase {
                 this.player,
                 this.getScanGuardLimit(),
                 scanIntent,
-                this::isFillTarget,
+                pos -> this.isFillTarget(pos)
+                        && !this.retryTargets.contains(pos)
+                        && !this.inFlightTargets.contains(pos),
                 pos -> this.isFillCandidatePreFilter(pos, reachPredicate, selectionPredicate),
                 ScanEngine.PassPolicy.INVALIDATIONS_ONLY
         );
@@ -262,13 +319,19 @@ public class FillHandler extends FeatureModuleBase {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        if (this.inFlightTargets.contains(blockPos)) {
+            setIterationConsumedEffectiveExecution(false);
+            return;
+        }
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() &&
                 player.getMainHandItem().getItem() instanceof BlockItem item &&
                 item.getBlock() instanceof FallingBlock block &&
                 FallingBlock.isFree(level.getBlockState(blockPos.below()))
         ) {
-                        this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "下落方块无支撑");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "下落方块无支撑");
             MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(block.getName().getString()));
+            this.retryTargets.add(blockPos.immutable());
+            setIterationConsumedEffectiveExecution(false);
             return;
         }
         boolean handheld = Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD;
@@ -293,6 +356,7 @@ public class FillHandler extends FeatureModuleBase {
                 );
             }
             setIterationConsumedEffectiveExecution(false);
+            this.retryTargets.add(blockPos.immutable());
             if (retrievalPending) {
                 skipIteration.set(true);
             }
@@ -305,6 +369,7 @@ public class FillHandler extends FeatureModuleBase {
         if (side == null) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "无有效放置面");
             setIterationConsumedEffectiveExecution(false);
+            this.retryTargets.add(blockPos.immutable());
             return;
         }
         BlockPos clickTarget = Configs.Print.PLACE_IN_AIR.getBooleanValue() ? blockPos : blockPos.relative(side);
@@ -323,6 +388,7 @@ public class FillHandler extends FeatureModuleBase {
         )) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "动作队列占用");
             setIterationConsumedEffectiveExecution(false);
+            this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
             return;
         }
@@ -331,20 +397,20 @@ public class FillHandler extends FeatureModuleBase {
         ActionPort.SendResult sendResult = this.actionBroker.sendQueue(player);
         if (sendResult.isWaiting()) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");
+            this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
             return;
         }
         if (!sendResult.isSent()) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, "放置动作未发送");
-            // A rejected interaction means this cell is momentarily unplaceable (a falling fill
-            // block entity occupies the column, or the server rejected the placement). Do NOT
-            // abort the whole pass: that serialised work to one rejected attempt per tick and
-            // read as the slow ring-by-ring expansion. Cool the cell briefly and let the
-            // iteration loop move on to the next candidate.
             setIterationConsumedEffectiveExecution(false);
-            this.setBlockPosCooldown(blockPos, REJECT_RETRY_COOLDOWN_TICKS);
+            this.retryTargets.add(blockPos.immutable());
             return;
         }
+        BlockPos retainedPos = blockPos.immutable();
+        this.retryTargets.remove(blockPos);
+        this.inFlightTargets.add(retainedPos);
+        this.inFlightSince.put(retainedPos, this.level.getGameTime());
         this.hudStats.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
         this.hudStats.recordRateUnit(HudStatsManager.Mode.FILL, 1);
         this.hudStats.recordStatus(HudStatsManager.Mode.FILL, "运行中");

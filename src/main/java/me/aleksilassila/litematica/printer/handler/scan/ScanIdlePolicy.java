@@ -39,17 +39,7 @@ public final class ScanIdlePolicy {
             boolean completedPass,
             int lazyThreshold
     ) {
-        return this.recordFullIteration(didWork, foundCandidate, completedPass, false, lazyThreshold);
-    }
-
-    public boolean recordFullIteration(
-            boolean didWork,
-            boolean foundCandidate,
-            boolean completedPass,
-            boolean pendingWork,
-            int lazyThreshold
-    ) {
-        if (didWork || foundCandidate || pendingWork) {
+        if (didWork || foundCandidate) {
             this.recordActivity();
             return false;
         }
@@ -63,14 +53,6 @@ public final class ScanIdlePolicy {
             this.idleTicks++;
         }
         if (!this.completedPassSinceActivity || this.idleTicks < lazyThreshold) {
-            return false;
-        }
-        this.reset();
-        return true;
-    }
-
-    public boolean shouldWakeForPendingWork(boolean pendingWork) {
-        if (!pendingWork) {
             return false;
         }
         this.reset();

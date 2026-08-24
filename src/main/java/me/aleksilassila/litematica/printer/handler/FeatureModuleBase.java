@@ -316,6 +316,20 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         return false;
     }
 
+    /** Targets that can be consumed without discovering another scan batch. */
+    protected boolean hasRunnableIterationWork() {
+        return this.hasPendingIterationWork();
+    }
+
+    /** Targets waiting for a block update, material, or another resource. */
+    protected boolean hasWaitingIterationWork() {
+        return false;
+    }
+
+    /** Inventory gains wake only the feature that explicitly owns a waiting target. */
+    protected void onInventoryAvailabilityChanged() {
+    }
+
     public int getPendingIterationWorkCount() {
         return 0;
     }

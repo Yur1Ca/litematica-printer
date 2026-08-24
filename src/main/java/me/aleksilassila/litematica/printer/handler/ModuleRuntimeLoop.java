@@ -27,7 +27,6 @@ final class ModuleRuntimeLoop {
             return;
         }
         this.owner.updateVariables(context);
-        this.owner.clearScanSourceCache();
         if (!this.hasRequiredClientState()) {
             this.owner.resetScanRuntime();
             this.owner.resetPlayerTracking();
@@ -80,8 +79,7 @@ final class ModuleRuntimeLoop {
         }
         if (this.lastInventoryGainRevision == revision) return;
         this.lastInventoryGainRevision = revision;
-        this.owner.scanEngine.resetOwner(this.owner.getId());
-        this.owner.requestFullScan();
+        this.owner.onInventoryAvailabilityChanged();
     }
 
     private void wakeForSchematicChange(@Nullable WorldSchematic schematic) {

@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler;
 
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
+import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 
@@ -33,6 +34,7 @@ final class ModuleCandidateSource {
                 module.getId(), sourceBoxes, module.level,
                 SchematicWorldHandler.getSchematicWorld(), module.player,
                 module.getScanGuardLimit(), intent, candidatePredicate,
-                pos -> reach.test(pos) && selection.test(pos));
+                pos -> reach.test(pos) && selection.test(pos),
+                ScanEngine.PassPolicy.INVALIDATIONS_ONLY);
     }
 }

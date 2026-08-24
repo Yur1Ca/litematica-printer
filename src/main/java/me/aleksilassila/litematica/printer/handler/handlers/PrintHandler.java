@@ -24,8 +24,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 
@@ -42,6 +44,7 @@ public class PrintHandler extends FeatureModuleBase {
     private final SortedSchematicTargetQueue sortedTargets;
     private final PrintPlacementExecutor placementExecutor;
     private final FallingPlacementTracker fallingPlacements = new FallingPlacementTracker();
+    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
 
     private List<String> printSkipListCache = List.of();
     private String[] printSkipFilters = new String[0];
@@ -96,6 +99,16 @@ public class PrintHandler extends FeatureModuleBase {
     }
 
     @Override
+    protected boolean hasRunnableIterationWork() {
+        return this.hasPendingIterationWork() || !this.retryTargets.isEmpty();
+    }
+
+    @Override
+    protected boolean hasWaitingIterationWork() {
+        return this.printTasks.hasActiveWorkflow() && !this.printTasks.hasReadyWorkflow();
+    }
+
+    @Override
     protected boolean isSchematicBlockHandler() {
         return true;
     }
@@ -122,6 +135,7 @@ public class PrintHandler extends FeatureModuleBase {
         this.ctx = null;
         this.printTasks.clear();
         this.fallingPlacements.clear();
+        this.retryTargets.clear();
         this.sortedTargets.clear();
         this.observedActionConfigHash = Integer.MIN_VALUE;
     }
@@ -130,10 +144,11 @@ public class PrintHandler extends FeatureModuleBase {
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         WorldSchematic schematic = this.litematica.schematicWorld();
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
+        List<BlockPos> retainedTargets = Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()
+                ? List.of() : new ArrayList<>(this.retryTargets);
         Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
-        return runnableTasks.isEmpty()
-                ? normalPositions
-                : Iterables.concat(runnableTasks, normalPositions);
+        if (runnableTasks.isEmpty() && retainedTargets.isEmpty()) return normalPositions;
+        return Iterables.concat(runnableTasks, retainedTargets, normalPositions);
     }
 
     private Iterable<BlockPos> getNormalIterationPositions(
@@ -142,7 +157,8 @@ public class PrintHandler extends FeatureModuleBase {
     ) {
         if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
             this.sortedTargets.clear();
-            return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.PRINT, pos -> true);
+            return this.getCachedFilteredIterationPositions(
+                    playerInteractionBox, ScanIntent.PRINT, pos -> !this.retryTargets.contains(pos));
         }
         if (schematic == null || player == null) {
             this.sortedTargets.clear();
@@ -162,9 +178,6 @@ public class PrintHandler extends FeatureModuleBase {
         this.printTaskAction = null;
         WorldSchematic schematic = this.litematica.schematicWorld();
         if (schematic == null) return false;
-        if (this.hudStats.isPrintPlacementPending(blockPos)) {
-            return false;
-        }
         if (InteractionUtils.getRuntime().isRecentlyBroken(blockPos) && !this.printTasks.isActiveTaskPos(blockPos)) {
             return false;
         }
@@ -246,6 +259,18 @@ public class PrintHandler extends FeatureModuleBase {
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         PrintTaskAction taskAction = this.printTaskAction;
         PrintPlacementResult result = this.placementExecutor.execute(this.ctx, this.action, taskAction);
+        if (taskAction == null && result.taskEvent() == PrintPlacementResult.TaskEvent.SUCCESS) {
+            this.retryTargets.remove(blockPos);
+            this.sortedTargets.remove(blockPos);
+        } else if (taskAction == null && (result.taskEvent() == PrintPlacementResult.TaskEvent.DEFERRED
+                || result.taskEvent() == PrintPlacementResult.TaskEvent.CANCELLED
+                || result.taskEvent() == PrintPlacementResult.TaskEvent.FAILURE)) {
+            if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
+                this.retryTargets.add(blockPos.immutable());
+            } else {
+                this.sortedTargets.requeue(blockPos);
+            }
+        }
         if (!result.consumedEffectiveExecution()) {
             setIterationConsumedEffectiveExecution(false);
         }

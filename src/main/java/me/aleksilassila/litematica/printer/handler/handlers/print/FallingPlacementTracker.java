@@ -10,7 +10,6 @@ import java.util.function.BiPredicate;
 
 /** Tracks in-flight falling placements without blocking unrelated columns. */
 public final class FallingPlacementTracker {
-    private static final int CONFIRM_TIMEOUT_TICKS = 80;
     private final Map<BlockPos, Pending> pending = new LinkedHashMap<>();
 
     public void clear() {
@@ -18,9 +17,14 @@ public final class FallingPlacementTracker {
     }
 
     public void mark(BlockPos pos, BlockState expectedState, long currentTick) {
+        this.mark(pos, expectedState, null, currentTick);
+    }
+
+    public void mark(BlockPos pos, BlockState expectedState, @org.jetbrains.annotations.Nullable BlockState originalState,
+                     long currentTick) {
         this.pending.put(
                 pos.immutable(),
-                new Pending(pos.immutable(), expectedState, currentTick + CONFIRM_TIMEOUT_TICKS)
+                new Pending(pos.immutable(), expectedState, originalState, currentTick)
         );
     }
 
@@ -33,7 +37,14 @@ public final class FallingPlacementTracker {
         Iterator<Pending> iterator = this.pending.values().iterator();
         while (iterator.hasNext()) {
             Pending entry = iterator.next();
-            if (stateMatches.test(entry.pos, entry.expectedState) || currentTick > entry.expireTick) {
+            // A placement may be client-predicted into the source position for one tick. For
+            // real placements, the source is released as soon as it no longer contains the
+            // expected state. The three-argument compatibility overload retains the old
+            // confirmation semantics used by lightweight callers and tests.
+            boolean released = entry.originalState != null
+                    ? currentTick > entry.sentTick && !stateMatches.test(entry.pos, entry.expectedState)
+                    : stateMatches.test(entry.pos, entry.expectedState);
+            if (released) {
                 iterator.remove();
             }
         }
@@ -49,6 +60,11 @@ public final class FallingPlacementTracker {
         return false;
     }
 
-    private record Pending(BlockPos pos, BlockState expectedState, long expireTick) {
+    private record Pending(
+            BlockPos pos,
+            BlockState expectedState,
+            @org.jetbrains.annotations.Nullable BlockState originalState,
+            long sentTick
+    ) {
     }
 }

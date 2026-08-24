@@ -30,8 +30,13 @@ final class ModuleScanHost implements ModuleScanCoordinator.Host {
     }
 
     @Override
-    public boolean hasPendingWork() {
-        return this.module.hasPendingIterationWork();
+    public boolean hasRunnableTargets() {
+        return this.module.hasRunnableIterationWork();
+    }
+
+    @Override
+    public boolean hasWaitingTargets() {
+        return this.module.hasWaitingIterationWork();
     }
 
     @Override

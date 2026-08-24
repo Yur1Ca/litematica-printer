@@ -58,13 +58,6 @@ public final class ToolSwitchService {
             this.switchGuard.markSwitchIfNeeded(player.getMainHandItem());
             return ToolPreparationResult.SWITCHED_WAITING_SYNC;
         }
-        // A Tweakeroo-enabled nearly-broken tool with no replacement must not cross its
-        // configured boundary. This is only a read of Tweakeroo's own policy; Printer does
-        // not select a replacement or define a durability threshold.
-        if (this.tweakeroo.isNearlyBrokenToolSwapEnabled()
-                && this.tweakeroo.safeBreakBudget(player.getMainHandItem()) <= 0) {
-            return ToolPreparationResult.UNAVAILABLE;
-        }
         return ToolPreparationResult.READY;
     }
 

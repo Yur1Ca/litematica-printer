@@ -16,7 +16,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Stateful mining protocol. The Mixin only exposes Minecraft fields through {@link MiningInteractionPort}. */
 public final class MiningInteractionController {
-    private static final float FAST_FINISH_PROGRESS = 0.5F;
     private static final int MIN_PENDING_DESTROY_TICKS = 8;
     private static final int MAX_PENDING_DESTROY_TICKS = 200;
 
@@ -111,7 +110,8 @@ public final class MiningInteractionController {
         }
         this.port.ensureCarriedItemSent();
         float progress = state.getDestroyProgress(player, level, pos);
-        boolean fast = player.getAbilities().instabuild || progress >= FAST_FINISH_PROGRESS;
+        boolean fast = player.getAbilities().instabuild
+                || progress >= ConfigUtils.getBreakProgressThreshold();
         if (fast) {
             if (this.port.isDestroying()) this.resetDestroyState(player, this.port.destroyPos());
             this.feedback.resetHitSound();
@@ -213,7 +213,8 @@ public final class MiningInteractionController {
         if (this.port.destroyProgress() == 0.0F && localEffects) state.attack(level, pos, player);
         if (manualSound) this.feedback.playHitSound(player, level, state, pos, true);
         float progress = state.getDestroyProgress(player, level, pos);
-        boolean fastFinish = forceDelayedDestroy && progress > FAST_FINISH_PROGRESS;
+        boolean fastFinish = forceDelayedDestroy
+                && progress > ConfigUtils.getBreakProgressThreshold();
         if (progress >= ConfigUtils.getBreakProgressThreshold() || fastFinish) {
             boolean waitForServer = fastFinish && progress < ConfigUtils.getBreakProgressThreshold()
                     && progress < 1.0F;

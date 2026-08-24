@@ -19,8 +19,6 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 final class MineBreakExecutor {
-    private static final float FAST_FINISH_PROGRESS = 0.5F;
-    private static final float CURRENT_TOOL_MIN_EFFICIENCY_RATIO = 0.75F;
 
     private final Minecraft client;
     private final TweakerooAdapter tweakeroo;
@@ -102,16 +100,6 @@ final class MineBreakExecutor {
         );
     }
 
-    public boolean isInstantWithCurrentTool(Target target) {
-        LocalPlayer player = this.client.player;
-        return player != null && (player.getAbilities().instabuild || target.currentProgress > FAST_FINISH_PROGRESS);
-    }
-
-    public boolean isInstantWithBestTool(Target target) {
-        LocalPlayer player = this.client.player;
-        return player != null && (player.getAbilities().instabuild || target.bestProgress > FAST_FINISH_PROGRESS);
-    }
-
     public boolean canUseCurrentTool(Target target) {
         return target.currentProgress > 0.0F && this.isCurrentToolEfficient(target);
     }
@@ -129,7 +117,7 @@ final class MineBreakExecutor {
         if (target.bestPreservesDrops && !target.currentPreservesDrops) {
             return false;
         }
-        return target.currentProgress >= target.bestProgress * CURRENT_TOOL_MIN_EFFICIENCY_RATIO;
+        return target.currentProgress >= target.bestProgress;
     }
 
     public boolean hasSameBestTool(Target target, @Nullable Item item) {
@@ -190,7 +178,7 @@ final class MineBreakExecutor {
         if (target.bestPreservesDrops && !target.currentPreservesDrops) {
             return false;
         }
-        return target.currentProgress >= target.bestProgress * CURRENT_TOOL_MIN_EFFICIENCY_RATIO;
+        return target.currentProgress >= target.bestProgress;
     }
 
     private float getDestroyProgress(
@@ -235,9 +223,10 @@ final class MineBreakExecutor {
      * tool choice until the following tick, producing an avoidable pause at tool exhaustion.
      */
     private void refreshInventoryCaches(LocalPlayer player) {
-        ItemStack mainHand = player.getMainHandItem();
-        int signature = 31 * InventoryUtils.getSelectedSlot(player.getInventory())
-                + mainHand.hashCode();
+        int signature = InventoryUtils.getSelectedSlot(player.getInventory());
+        for (ItemStack stack : InventoryUtils.getMainStacks(player.getInventory())) {
+            signature = 31 * signature + stack.hashCode();
+        }
         if (this.inventorySignature != Integer.MIN_VALUE && this.inventorySignature != signature) {
             this.currentProgressCache.clear();
             this.bestToolCache.clear();

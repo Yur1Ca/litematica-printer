@@ -11,4 +11,9 @@ import net.minecraft.core.BlockPos;
  */
 public interface ScanCandidateIterable extends Iterable<BlockPos> {
     ScanAvailability availability();
+
+    /** True when the iterable is an already-built action queue, not a live world scan. */
+    default boolean isBuffered() {
+        return false;
+    }
 }

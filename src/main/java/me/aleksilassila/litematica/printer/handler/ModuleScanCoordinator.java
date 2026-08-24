@@ -25,7 +25,9 @@ final class ModuleScanCoordinator {
 
         FeatureModuleBase.IterationOutcome runIteration(PrinterBox interactionBox);
 
-        boolean hasPendingWork();
+        boolean hasRunnableTargets();
+
+        boolean hasWaitingTargets();
 
         boolean usesDirtyRegionWakeup();
 
@@ -96,6 +98,9 @@ final class ModuleScanCoordinator {
         }
         this.updateExternalBox(sourceBox);
         this.updateSource(sourceBox, sourceBoxes);
+        if (this.host.hasRunnableTargets()) {
+            return this.runFull(playerInteractionBox);
+        }
         if (!this.isLazyEnabled()) {
             this.lifecycle.setState(ScanState.FULL);
             this.lifecycle.idlePolicy().clearCompletedPassEvidence();
@@ -144,8 +149,7 @@ final class ModuleScanCoordinator {
         }
         int lazyThreshold = Configs.Core.LAZY_ENTER_TICKS.getIntegerValue();
         if (this.lifecycle.idlePolicy().recordFullIteration(
-                outcome.didWork(), outcome.foundCandidate(), outcome.completedPass(),
-                this.host.hasPendingWork(), lazyThreshold)) {
+                outcome.didWork(), outcome.foundCandidate(), outcome.completedPass(), lazyThreshold)) {
             this.lifecycle.setState(ScanState.LAZY);
             this.clearDirtyQueue();
         }
@@ -153,13 +157,11 @@ final class ModuleScanCoordinator {
     }
 
     private boolean runLazy(PrinterBox interactionBox) {
-        if (this.lifecycle.idlePolicy().shouldWakeForPendingWork(this.host.hasPendingWork())) {
-            this.lifecycle.setState(ScanState.FULL);
-            this.clearDirtyQueue();
-            return this.runFull(interactionBox);
-        }
         if (this.host.usesDirtyRegionWakeup() && this.lifecycle.state() == ScanState.LAZY) {
             this.refreshDirtyQueue(interactionBox);
+        }
+        if (this.host.hasWaitingTargets() && this.dirtyQueue.isEmpty()) {
+            return false;
         }
         if (this.lifecycle.state() == ScanState.LAZY) {
             int probeInterval = Math.max(40, Configs.Core.LAZY_ENTER_TICKS.getIntegerValue() * 10);

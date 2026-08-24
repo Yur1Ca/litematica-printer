@@ -106,11 +106,18 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected void preprocess() {
-        this.candidates.clear();
-        this.candidateStates.clear();
         this.analyzer.beginTick();
-        this.toolSession.beginTick(this.player, this.tweakeroo);
         this.continueActiveMineTarget();
+    }
+
+    @Override
+    protected boolean hasRunnableIterationWork() {
+        return !this.candidates.isEmpty();
+    }
+
+    @Override
+    protected boolean hasWaitingIterationWork() {
+        return this.activeMinePos != null;
     }
 
     @Override
@@ -166,7 +173,7 @@ public class MineHandler extends FeatureModuleBase {
         List<MineBreakExecutor.Target> orderedCandidates = this.candidates.ordered(this.toolSession.comparator(this.player));
         MineBreakExecutor.Target nearest = orderedCandidates.get(0);
         MineBreakExecutor.Target selected = this.toolSession.selectTarget(orderedCandidates, this.analyzer, this.player);
-        this.executeToolSession(selected, MineToolSession.distanceScore(this.player, nearest), orderedCandidates);
+        this.executeToolSession(selected, orderedCandidates);
     }
 
     private void continueActiveMineTarget() {
@@ -178,20 +185,8 @@ public class MineHandler extends FeatureModuleBase {
             this.activeMinePos = null;
             return;
         }
-        if (!this.toolSession.hasInstantBudget()) {
-            this.activeMinePos = null;
-            return;
-        }
         BlockBreakResult result = InteractionUtils.getRuntime().continueDestroyBlockForMine(pos, Direction.DOWN, true);
         MineResultReporter.record(pos, result);
-        if (result == BlockBreakResult.IN_PROGRESS
-                || result == BlockBreakResult.COMPLETED
-                || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.toolSession.consumeAction();
-        }
-        if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.toolSession.consumeInstantBudget();
-        }
         this.toolSession.onTargetResolved(result, pos);
         if (result != BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = null;
@@ -237,7 +232,7 @@ public class MineHandler extends FeatureModuleBase {
         return true;
     }
 
-    private void executeToolSession(MineBreakExecutor.Target firstTarget, double nearestDistance,
+    private void executeToolSession(MineBreakExecutor.Target firstTarget,
                                     List<MineBreakExecutor.Target> orderedCandidates) {
         this.toolSession.startSession(firstTarget);
         BlockBreakResult result = this.executeSessionTarget(firstTarget, !this.analyzer.isCurrentToolEffective(firstTarget));
@@ -248,14 +243,8 @@ public class MineHandler extends FeatureModuleBase {
             if (queuedTarget.pos().equals(firstTarget.pos())) {
                 continue;
             }
-            if (!this.toolSession.hasInstantBudget()) {
-                break;
-            }
             if (!this.toolSession.matchesSessionTool(this.analyzer, queuedTarget)) {
                 continue;
-            }
-            if (!this.toolSession.isInsideFrontier(this.player, queuedTarget, nearestDistance)) {
-                break;
             }
             result = this.executeSessionTarget(queuedTarget, false);
             if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {
@@ -270,14 +259,6 @@ public class MineHandler extends FeatureModuleBase {
         BlockBreakResult result = this.executeMineTarget(target, allowToolSwitch || switchForRecovery);
         if (result != BlockBreakResult.FAILED) {
             this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
-        }
-        if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.toolSession.consumeInstantBudget();
-        }
-        if (result == BlockBreakResult.IN_PROGRESS
-                || result == BlockBreakResult.COMPLETED
-                || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.toolSession.consumeAction();
         }
         this.toolSession.onTargetResolved(result, target.pos());
         MineResultReporter.record(target.pos(), result);

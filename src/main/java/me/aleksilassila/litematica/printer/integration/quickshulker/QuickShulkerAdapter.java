@@ -88,6 +88,12 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void tick() {
+        // A manual container must never be affected after the printer has been disabled.
+        // Clear the automation session before the screen guard can observe stale state.
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
+            this.reset();
+            return;
+        }
         this.requests.tick();
         this.requests.switchItem();
         this.synchronizeResources();

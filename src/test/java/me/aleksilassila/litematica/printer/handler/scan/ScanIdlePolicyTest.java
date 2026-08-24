@@ -37,30 +37,6 @@ class ScanIdlePolicyTest {
     }
 
     @Test
-    void pendingWorkPreventsFullScannerFromSleeping() {
-        ScanIdlePolicy policy = new ScanIdlePolicy();
-
-        assertFalse(policy.recordFullIteration(false, false, true, true, 1));
-        assertTrue(policy.recordFullIteration(false, false, true, false, 1));
-    }
-
-    @Test
-    void pendingWorkImmediatelyWakesLazyScanner() {
-        ScanIdlePolicy policy = new ScanIdlePolicy();
-
-        for (int tick = 1; tick < 20; tick++) {
-            assertFalse(policy.shouldRunLazyProbe(40));
-        }
-        assertFalse(policy.shouldWakeForPendingWork(false));
-        assertTrue(policy.shouldWakeForPendingWork(true));
-
-        for (int tick = 1; tick < 40; tick++) {
-            assertFalse(policy.shouldRunLazyProbe(40));
-        }
-        assertTrue(policy.shouldRunLazyProbe(40));
-    }
-
-    @Test
     void lazyProbeRunsAtStableIntervalAndActivityWakesScanner() {
         ScanIdlePolicy policy = new ScanIdlePolicy();
         for (int tick = 1; tick < 40; tick++) {

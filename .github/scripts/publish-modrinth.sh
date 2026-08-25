@@ -59,8 +59,8 @@ esac
 
 # Keep the downloadable filename short, while giving Modrinth a stable,
 # human-readable title that is independent of the Minecraft base version.
-version_number="${MODRINTH_VERSION_NUMBER:-Hana - ${display_version}}"
-version_name="${MODRINTH_VERSION_NAME:-Litematica Printer}"
+version_number="${MODRINTH_VERSION_NUMBER:-Hana-${display_version}}"
+version_name="${MODRINTH_VERSION_NAME:-Litematica-Printer}"
 if [[ -n "${MODRINTH_CHANGELOG:-}" ]]; then
   changelog="$MODRINTH_CHANGELOG"
 elif [[ -n "${MODRINTH_COMMIT_SHA:-}" ]]; then

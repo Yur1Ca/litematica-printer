@@ -310,10 +310,25 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             return isCustom() && BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.BLACKLIST);
         }
 
+        // Legacy: the old delayed-destroy branch (same-tick START+STOP → server failedToMine → 10/s)
+        // has been replaced by hold-OPEN accumulation for delta<0.7 blocks. Retained for config-file
+        // compatibility; no longer selects a code path.
         public static final ConfigBoolean BREAK_USE_DELAYED_DESTROY = bool("breakUseDelayedDestroy")
-                .defaultValue(false)
+                .defaultValue(true)
                 .build();
 
+        // Ceiling for how many blocks the mine session may batch-break in one tick. Each candidate
+        // is an independent server judgment (delta*(elapsed+1) >= 0.7 on STOP), so START+STOP pairs
+        // can be dispatched to thousands of blocks in one tick. 0 = unlimited — the whole
+        // interaction volume is attempted per tick, and only the durability guard is the brake.
+        public static final ConfigInteger BREAK_BLOCKS_PER_TICK = integer("breakBlocksPerTick")
+                .defaultValue(0)
+                .range(0, 1000)
+                .build();
+
+        // Informational: the server hard-codes the break threshold at 0.7 (delta*(elapsed+1) >= 0.7
+        // on STOP). Mining speed is the same whether this is 70 or 100 — it is kept for
+        // compatibility/display only.
         public static final ConfigInteger BREAK_PROGRESS_THRESHOLD = integer("breakProgressThreshold")
                 .defaultValue(100)
                 .range(70, 100)
@@ -321,11 +336,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ConfigInteger BREAK_INTERVAL = integer("breakInterval")
                 .defaultValue(0)
-                .range(0, 20)
-                .build();
-
-        public static final ConfigInteger BREAK_BLOCKS_PER_TICK = integer("breakBlocksPerTick")
-                .defaultValue(20)
                 .range(0, 20)
                 .build();
 

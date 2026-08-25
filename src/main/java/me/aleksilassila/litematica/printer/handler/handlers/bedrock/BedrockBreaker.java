@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class BedrockBreaker {
@@ -31,6 +32,13 @@ public final class BedrockBreaker {
         }
         var state = CLIENT.level.getBlockState(pos);
         if (state.isAir()) {
+            return false;
+        }
+        // MOVING_PISTON has destroySpeed -1: the server's calcBlockBreakingDelta is negative, so it
+        // can never reach the 0.7 STOP threshold nor the failedToMine 1.0 auto-break. Attempting it
+        // just spams hit sounds forever ("敲击声但没有回收"). Wait for it to settle into a PISTON /
+        // PISTON_HEAD / air and let the normal residue path handle it.
+        if (state.is(Blocks.MOVING_PISTON)) {
             return false;
         }
 

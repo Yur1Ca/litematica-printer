@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
@@ -40,6 +41,7 @@ public final class PrintPlacementExecutor {
     private final MissingMaterialTracker missingMaterials;
     private final LitematicaAdapter litematica;
     private final FallingPlacementTracker fallingPlacements;
+    private final MaterialRequestCoordinator materialRequests;
     private static final Item[] EMPTY_HAND_ITEMS = {Items.AIR};
     private static final long RESERVE_NOTICE_COOLDOWN_TICKS = 100L;
     private long lastReserveNoticeTick = Long.MIN_VALUE;
@@ -51,7 +53,8 @@ public final class PrintPlacementExecutor {
             HudStatsManager hudStats,
             MissingMaterialTracker missingMaterials,
             LitematicaAdapter litematica,
-            FallingPlacementTracker fallingPlacements
+            FallingPlacementTracker fallingPlacements,
+            MaterialRequestCoordinator materialRequests
     ) {
         this.actionBroker = actionBroker;
         this.cooldownUtils = cooldownUtils;
@@ -60,6 +63,7 @@ public final class PrintPlacementExecutor {
         this.missingMaterials = missingMaterials;
         this.litematica = litematica;
         this.fallingPlacements = fallingPlacements;
+        this.materialRequests = materialRequests;
     }
 
     public PrintPlacementResult execute(SchematicBlockContext context, Action action, @Nullable PrintTaskAction taskAction) {
@@ -115,6 +119,16 @@ public final class PrintPlacementExecutor {
                     )
                     : ItemStack.EMPTY;
             if (retrievalPending) {
+                if (!this.materialRequests.isBusy()) {
+                    this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+                    this.missingMaterials.recordMissing(
+                            requiredItems,
+                            requiredStackPredicate,
+                            action.getRequiredCreativeStack(),
+                            context.level.getGameTime()
+                    );
+                    return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
+                }
                 this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "等待取货");
                 // The HUD describes what is currently absent from the player inventory. Keep the
                 // requirement visible while an external material provider is working; tick() removes it

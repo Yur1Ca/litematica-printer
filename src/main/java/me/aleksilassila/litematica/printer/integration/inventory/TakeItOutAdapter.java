@@ -15,6 +15,7 @@ public final class TakeItOutAdapter implements InventoryProvider {
     private boolean resourcesAcquired;
     private long activeToken;
     private Item requestedItem;
+    private int acquireRetries;
 
     public TakeItOutAdapter(ActionPort actionBroker) {
         this.actionBroker = actionBroker;
@@ -54,6 +55,11 @@ public final class TakeItOutAdapter implements InventoryProvider {
             return MaterialReservation.available(request, availableItem);
         }
         if (!this.resourcesAcquired) {
+            if (this.acquireRetries++ >= 10) {
+                this.acquireRetries = 0;
+                this.releaseResources();
+                return unavailable(request);
+            }
             return this.request(request);
         }
         if (this.activeToken == request.token()
@@ -70,6 +76,7 @@ public final class TakeItOutAdapter implements InventoryProvider {
         TakeItOutUtils.resetPending();
         this.activeToken = 0L;
         this.requestedItem = null;
+        this.acquireRetries = 0;
         this.releaseResources();
     }
 
@@ -101,6 +108,7 @@ public final class TakeItOutAdapter implements InventoryProvider {
         this.resourcesAcquired = false;
         this.activeToken = 0L;
         this.requestedItem = null;
+        this.acquireRetries = 0;
     }
 
     private static Item findAvailableItem(MaterialRequest request) {

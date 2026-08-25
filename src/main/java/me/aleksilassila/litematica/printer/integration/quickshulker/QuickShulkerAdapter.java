@@ -45,6 +45,9 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         this.attemptedToken = request.token();
         MaterialReservation.State state = this.requests.hasPendingSwitchRequest()
                 ? MaterialReservation.State.PENDING : MaterialReservation.State.UNAVAILABLE;
+        if (state == MaterialReservation.State.UNAVAILABLE) {
+            this.releaseResources();
+        }
         return new MaterialReservation(request.token(), state);
     }
 

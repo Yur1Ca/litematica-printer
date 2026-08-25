@@ -1,9 +1,7 @@
 package me.aleksilassila.litematica.printer.interaction;
 
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.MineDebugLog;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
-import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -14,18 +12,22 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /** Stateful mining protocol. The Mixin only exposes Minecraft fields through {@link MiningInteractionPort}. */
 public final class MiningInteractionController {
     private static final int MIN_PENDING_DESTROY_TICKS = 8;
     private static final int MAX_PENDING_DESTROY_TICKS = 200;
+    private static final int SAFETY_MARGIN = 5;
 
     private final MiningInteractionPort port;
     private final MiningFeedback feedback;
     private final ToolSwitchService toolSwitchService;
-    private BlockPos delayedDestroyPos;
-    private boolean hasDelayedDestroy;
-    private boolean delayedDestroyLocalPrediction;
-    private long delayedDestroyStartTick;
+    private final Map<BlockPos, DelayedDestroyEntry> pendingDelayedDestroys = new LinkedHashMap<>();
+    private int projectedDurabilityCost;
+    private boolean suppressFastBreak;
     private BlockPos lastLoggedProgressPos;
     private long lastLoggedProgressTick = Long.MIN_VALUE;
 
@@ -38,15 +40,16 @@ public final class MiningInteractionController {
     public void reset() {
         LocalPlayer player = this.port.client().player;
         if (this.port.isDestroying()) this.clearDestroyProgress(player, this.port.destroyPos());
-        if (this.hasDelayedDestroy && this.delayedDestroyPos != null) this.clearDestroyProgress(player, this.delayedDestroyPos);
+        for (DelayedDestroyEntry entry : this.pendingDelayedDestroys.values()) {
+            if (entry.pos != null) this.clearDestroyProgress(player, entry.pos);
+        }
         this.port.isDestroying(false);
         this.port.destroyProgress(0.0F);
         this.port.destroyPos(BlockPos.ZERO);
         this.port.destroyingItem(ItemStack.EMPTY);
-        this.delayedDestroyPos = null;
-        this.hasDelayedDestroy = false;
-        this.delayedDestroyLocalPrediction = false;
-        this.delayedDestroyStartTick = 0L;
+        this.pendingDelayedDestroys.clear();
+        this.projectedDurabilityCost = 0;
+        this.suppressFastBreak = false;
         this.lastLoggedProgressPos = null;
         this.lastLoggedProgressTick = Long.MIN_VALUE;
         this.feedback.reset();
@@ -61,29 +64,35 @@ public final class MiningInteractionController {
         ClientLevel level = this.port.client().level;
         if (player == null || level == null) return;
         this.feedback.cleanupPending(player, level, this.clientTick());
-        if (!this.hasDelayedDestroy || this.delayedDestroyPos == null) return;
-        BlockState state = level.getBlockState(this.delayedDestroyPos);
-        if (state.isAir()) {
-            this.feedback.flushPendingBreakSound(this.delayedDestroyPos);
-            this.finishDelayed(player);
-            return;
-        }
-        // A survival START+STOP does not give the client authority to remove a block. Keep
-        // the server's delayed-destroy slot occupied until the block update arrives; using a
-        // local progress prediction here lets the next target overwrite that slot and causes
-        // the familiar crackle/flash without a successful break.
-        if (!this.delayedDestroyLocalPrediction) {
-            int elapsed = (int) (this.clientTick() - this.delayedDestroyStartTick);
-            if (elapsed >= this.pendingDestroyTimeout(player, level, this.delayedDestroyPos, state)) {
-                this.feedback.removePending(this.delayedDestroyPos);
-                this.clearDelayed();
+        this.projectedDurabilityCost = 0;
+        this.suppressFastBreak = false;
+        Iterator<Map.Entry<BlockPos, DelayedDestroyEntry>> iterator = this.pendingDelayedDestroys.entrySet().iterator();
+        while (iterator.hasNext()) {
+            DelayedDestroyEntry entry = iterator.next().getValue();
+            BlockPos pos = entry.pos;
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir()) {
+                this.feedback.flushPendingBreakSound(pos);
+                this.feedback.removePending(pos);
+                iterator.remove();
+                this.clearDestroyProgress(player, pos);
+                continue;
             }
-            return;
-        }
-        int elapsed = (int) (this.clientTick() - this.delayedDestroyStartTick);
-        if (state.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsed >= 1.0F) {
-            if (this.delayedDestroyLocalPrediction) this.port.destroyBlock(this.delayedDestroyPos);
-            this.finishDelayed(player);
+            if (!entry.localPrediction) {
+                int elapsed = (int) (this.clientTick() - entry.startTick);
+                if (elapsed >= this.pendingDestroyTimeout(player, level, pos, state)) {
+                    this.feedback.removePending(pos);
+                    iterator.remove();
+                }
+                continue;
+            }
+            int elapsed = (int) (this.clientTick() - entry.startTick);
+            if (state.getDestroyProgress(player, level, pos) * elapsed >= 1.0F) {
+                this.port.destroyBlock(pos);
+                this.feedback.removePending(pos);
+                iterator.remove();
+                this.clearDestroyProgress(player, pos);
+            }
         }
     }
 
@@ -95,7 +104,7 @@ public final class MiningInteractionController {
         if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
             this.feedback.flushPendingBreakSound(pos);
             this.feedback.removePending(pos);
-            if (this.hasDelayedDestroy && pos.equals(this.delayedDestroyPos)) this.clearDelayed();
+            this.pendingDelayedDestroys.remove(pos);
             if (this.port.isDestroying() && this.port.matchesDestroyTarget(pos)) this.resetDestroyState(player, pos);
             this.feedback.resetHitSound();
             return BlockBreakResult.COMPLETED;
@@ -110,8 +119,23 @@ public final class MiningInteractionController {
         }
         this.port.ensureCarriedItemSent();
         float progress = state.getDestroyProgress(player, level, pos);
+        // The server breaks on STOP when delta * (elapsed + 1) >= 0.7 regardless of any config.
+        // Gating the fast path on the configurable threshold made blocks whose delta sits just below
+        // the threshold (e.g. 0.777 < 0.78) fall into the slow path and get capped at 10/s.
+        // Use the server's own 0.7 rule so mining speed no longer depends on the threshold value.
         boolean fast = player.getAbilities().instabuild
-                || progress >= ConfigUtils.getBreakProgressThreshold();
+                || progress >= 0.7F;
+        if (fast && !player.getAbilities().instabuild) {
+            ItemStack held = player.getMainHandItem();
+            if (held.isDamageableItem()) {
+                int remaining = held.getMaxDamage() - held.getDamageValue();
+                if (remaining - this.projectedDurabilityCost <= SAFETY_MARGIN) {
+                    fast = false;
+                    // Hold the downgrade through continueDestroy so its fast gate doesn't re-enable it.
+                    this.suppressFastBreak = true;
+                }
+            }
+        }
         if (fast) {
             if (this.port.isDestroying()) this.resetDestroyState(player, this.port.destroyPos());
             this.feedback.resetHitSound();
@@ -126,20 +150,23 @@ public final class MiningInteractionController {
                 } else {
                     this.send(Action.STOP_DESTROY_BLOCK, pos, direction);
                 }
+                ItemStack held = player.getMainHandItem();
+                if (held.isDamageableItem()) {
+                    this.projectedDurabilityCost++;
+                }
             }
             this.feedback.resetHitSound();
             return player.getAbilities().instabuild || progress >= 1.0F
                     ? BlockBreakResult.COMPLETED
                     : BlockBreakResult.COMPLETED_WAIT;
         }
-        if (this.hasDelayedDestroy) {
-            return pos.equals(this.delayedDestroyPos)
-                    ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.ABORTED;
+        if (this.pendingDelayedDestroys.containsKey(pos)) {
+            return BlockBreakResult.IN_PROGRESS;
         }
         if (this.feedback.hasPending(pos)) return BlockBreakResult.IN_PROGRESS;
         BlockBreakResult result = this.continueDestroy(true, pos, direction, false, allowToolSwitch);
         if (result == BlockBreakResult.FAILED) return result;
-        return this.hasDelayedDestroy && pos.equals(this.delayedDestroyPos) || this.feedback.hasPending(pos)
+        return this.pendingDelayedDestroys.containsKey(pos) || this.feedback.hasPending(pos)
                 ? BlockBreakResult.IN_PROGRESS : result;
     }
 
@@ -183,11 +210,10 @@ public final class MiningInteractionController {
             return BlockBreakResult.IN_PROGRESS;
         }
         this.port.ensureCarriedItemSent();
-        boolean useDelayed = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();
-        if (this.feedback.hasPending(pos) && (!this.hasDelayedDestroy || !pos.equals(this.delayedDestroyPos))) {
+        if (this.feedback.hasPending(pos) && !this.pendingDelayedDestroys.containsKey(pos)) {
             return BlockBreakResult.COMPLETED_WAIT;
         }
-        if (this.hasDelayedDestroy && pos.equals(this.delayedDestroyPos)) {
+        if (this.pendingDelayedDestroys.containsKey(pos)) {
             return this.port.isDestroying() ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
         }
         if (this.port.isDestroying() && !pos.equals(this.port.destroyPos())) this.abortPrevious(player, pos, direction);
@@ -195,7 +221,10 @@ public final class MiningInteractionController {
             this.port.destroyProgress(this.port.destroyProgress() + state.getDestroyProgress(player, level, pos));
             if (manualSound) this.feedback.playHitSound(player, level, state, pos, false);
             if (localEffects) level.destroyBlockProgress(player.getId(), pos, this.destroyStage());
-            if (this.port.destroyProgress() >= ConfigUtils.getBreakProgressThreshold()) {
+            // Hold START open until the server-side elapsed makes delta*(elapsed+1) >= 0.7, then STOP
+            // breaks immediately. This is normal mining (accumulation), not the same-tick exploit that
+            // the old useDelayed branch used (which always failed to failedToMine for delta < 0.7 → 10/s).
+            if (this.port.destroyProgress() >= 0.7F) {
                 if (!localRemoval) this.feedback.playBreakSound(pos, state);
                 NetworkUtils.sendPacket(sequence -> {
                     if (localRemoval) this.port.destroyBlock(pos);
@@ -213,15 +242,14 @@ public final class MiningInteractionController {
         if (this.port.destroyProgress() == 0.0F && localEffects) state.attack(level, pos, player);
         if (manualSound) this.feedback.playHitSound(player, level, state, pos, true);
         float progress = state.getDestroyProgress(player, level, pos);
-        boolean fastFinish = forceDelayedDestroy
-                && progress > ConfigUtils.getBreakProgressThreshold();
-        if (progress >= ConfigUtils.getBreakProgressThreshold() || fastFinish) {
-            boolean waitForServer = fastFinish && progress < ConfigUtils.getBreakProgressThreshold()
-                    && progress < 1.0F;
-            if (!localRemoval) {
-                if (waitForServer) this.feedback.queueBreakSound(pos, state);
-                else this.feedback.playBreakSound(pos, state);
-            }
+        // Server breaks on same-tick START+STOP whenever delta >= 0.7, independent of the
+        // configurable threshold. Keep this fast path so delta>=0.7 blocks are never dragged
+        // down to the hold path (and don't pay a per-tick packet cost either). The session-level
+        // The session-level BREAK_BLOCKS_PER_TICK budget (MineToolSession) is the per-tick batch
+        // ceiling; here only suppressFastBreak propagates the durability downgrade from
+        // continueForMine so the Tweakeroo near-broken-tool protection is never punched through.
+        if (!this.suppressFastBreak && progress >= 0.7F) {
+            if (!localRemoval) this.feedback.playBreakSound(pos, state);
             this.send(Action.START_DESTROY_BLOCK, pos, direction);
             NetworkUtils.sendPacket(sequence -> {
                 if (localRemoval) this.port.destroyBlock(pos);
@@ -230,24 +258,20 @@ public final class MiningInteractionController {
             });
             if (localEffects) level.destroyBlockProgress(player.getId(), pos, -1);
             this.feedback.resetHitSound();
-            return waitForServer ? BlockBreakResult.COMPLETED_WAIT : BlockBreakResult.COMPLETED;
-        }
-        this.send(Action.START_DESTROY_BLOCK, pos, direction);
-        if (progress >= 1.0F) {
-            if (!localRemoval) this.feedback.playBreakSound(pos, state);
-            if (localRemoval) this.port.destroyBlock(pos);
-            if (localEffects) level.destroyBlockProgress(player.getId(), pos, -1);
-            this.resetDestroyState(player, pos);
-            this.feedback.resetHitSound();
             return BlockBreakResult.COMPLETED;
         }
-        if (useDelayed) {
+        if (!localPrediction) {
+            // Server-authoritative callers (e.g. bedrock cleanup): send same-tick START+STOP and let
+            // the server's failedToMine slot auto-break. The client never removes locally and waits
+            // for the server S2C update. Re-sends on the same pos do NOT reset the failedToMine
+            // timer (server sets it once), so the retry loop converges. This must stay out of the
+            // hold-OPEN path: cleanup processes several positions per tick and would otherwise abort
+            // its own hold.
+            long startTick = this.clientTick();
             NetworkUtils.sendPacket(sequence -> {
-                this.hasDelayedDestroy = true;
-                this.delayedDestroyPos = pos;
-                this.delayedDestroyLocalPrediction = localRemoval;
-                this.delayedDestroyStartTick = this.clientTick();
-                this.feedback.addPending(pos, this.delayedDestroyStartTick);
+                this.pendingDelayedDestroys.put(pos.immutable(),
+                        new DelayedDestroyEntry(pos.immutable(), false, startTick));
+                this.feedback.addPending(pos, startTick);
                 this.resetDestroyState(player, pos);
                 return this.port.actionPacket(Action.STOP_DESTROY_BLOCK, pos, direction, sequence);
             });
@@ -255,6 +279,11 @@ public final class MiningInteractionController {
             this.feedback.resetHitSound();
             return BlockBreakResult.COMPLETED_WAIT;
         }
+        // delta < 0.7 with local prediction: open a hold-OPEN session (single server mining slot).
+        // Each subsequent call on the same pos advances destroyProgress by delta until >= 0.7, then a
+        // STOP breaks it through the server's accumulated elapsed. This is the only path that avoids
+        // the failedToMine queue, which auto-breaks at progress>=1.0 → the 10/s single-slot dead end.
+        this.send(Action.START_DESTROY_BLOCK, pos, direction);
         this.port.isDestroying(true);
         this.port.destroyPos(pos);
         this.port.destroyProgress(progress);
@@ -264,15 +293,20 @@ public final class MiningInteractionController {
     }
 
     private void completeDelayedIfReady(LocalPlayer player, ClientLevel level) {
-        if (!this.hasDelayedDestroy || this.delayedDestroyPos == null) return;
-        if (!this.delayedDestroyLocalPrediction) return;
-        BlockState state = level.getBlockState(this.delayedDestroyPos);
-        int elapsed = (int) (this.clientTick() - this.delayedDestroyStartTick);
-        if (state.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsed < 1.0F) return;
-        if (this.delayedDestroyLocalPrediction) this.port.destroyBlock(this.delayedDestroyPos);
-        MineDebugLog.write("mine break delayed_completed pos=" + MineDebugLog.pos(this.delayedDestroyPos)
-                + " elapsedTicks=" + elapsed);
-        this.finishDelayed(player);
+        Iterator<Map.Entry<BlockPos, DelayedDestroyEntry>> iterator = this.pendingDelayedDestroys.entrySet().iterator();
+        while (iterator.hasNext()) {
+            DelayedDestroyEntry entry = iterator.next().getValue();
+            if (!entry.localPrediction) continue;
+            BlockState state = level.getBlockState(entry.pos);
+            int elapsed = (int) (this.clientTick() - entry.startTick);
+            if (state.getDestroyProgress(player, level, entry.pos) * elapsed < 1.0F) continue;
+            this.port.destroyBlock(entry.pos);
+            MineDebugLog.write("mine break delayed_completed pos=" + MineDebugLog.pos(entry.pos)
+                    + " elapsedTicks=" + elapsed);
+            this.feedback.removePending(entry.pos);
+            iterator.remove();
+            this.clearDestroyProgress(player, entry.pos);
+        }
     }
 
     private int pendingDestroyTimeout(
@@ -298,18 +332,6 @@ public final class MiningInteractionController {
         this.feedback.resetHitSound();
     }
 
-    private void finishDelayed(LocalPlayer player) {
-        BlockPos pos = this.delayedDestroyPos;
-        this.feedback.removePending(pos);
-        this.clearDelayed();
-        this.clearDestroyProgress(player, pos);
-    }
-
-    private void clearDelayed() {
-        this.hasDelayedDestroy = false;
-        this.delayedDestroyLocalPrediction = false;
-    }
-
     private void resetDestroyState(LocalPlayer player, BlockPos pos) {
         this.port.isDestroying(false);
         this.port.destroyProgress(0.0F);
@@ -325,7 +347,7 @@ public final class MiningInteractionController {
     }
 
     private int destroyStage() {
-        float progress = this.port.destroyProgress() >= ConfigUtils.getBreakProgressThreshold()
+        float progress = this.port.destroyProgress() >= 0.7F
                 ? 1.0F : this.port.destroyProgress();
         return progress > 0.0F ? (int) (progress * 10.0F) : -1;
     }
@@ -347,5 +369,17 @@ public final class MiningInteractionController {
     private long clientTick() {
         ClientLevel level = this.port.client().level;
         return level == null ? 0L : level.getGameTime();
+    }
+
+    private static final class DelayedDestroyEntry {
+        final BlockPos pos;
+        final boolean localPrediction;
+        final long startTick;
+
+        DelayedDestroyEntry(BlockPos pos, boolean localPrediction, long startTick) {
+            this.pos = pos;
+            this.localPrediction = localPrediction;
+            this.startTick = startTick;
+        }
     }
 }

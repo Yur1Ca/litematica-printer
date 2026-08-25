@@ -107,6 +107,7 @@ public class MineHandler extends FeatureModuleBase {
     @Override
     protected void preprocess() {
         this.analyzer.beginTick();
+        this.toolSession.beginTick();
         this.continueActiveMineTarget();
     }
 
@@ -235,6 +236,10 @@ public class MineHandler extends FeatureModuleBase {
     private void executeToolSession(MineBreakExecutor.Target firstTarget,
                                     List<MineBreakExecutor.Target> orderedCandidates) {
         this.toolSession.startSession(firstTarget);
+        // Batch dispatch: the per-tick budget lives on the session (BREAK_BLOCKS_PER_TICK,
+        // 0 = unlimited). The controller has no per-call fast budget — delta>=0.7 blocks always
+        // take the same-tick START+STOP path, throttled only by the session budget and the
+        // durability guard.
         BlockBreakResult result = this.executeSessionTarget(firstTarget, !this.analyzer.isCurrentToolEffective(firstTarget));
         if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {
             return;
@@ -242,6 +247,9 @@ public class MineHandler extends FeatureModuleBase {
         for (MineBreakExecutor.Target queuedTarget : orderedCandidates) {
             if (queuedTarget.pos().equals(firstTarget.pos())) {
                 continue;
+            }
+            if (!this.toolSession.hasInstantBudget()) {
+                break;
             }
             if (!this.toolSession.matchesSessionTool(this.analyzer, queuedTarget)) {
                 continue;
@@ -259,6 +267,11 @@ public class MineHandler extends FeatureModuleBase {
         BlockBreakResult result = this.executeMineTarget(target, allowToolSwitch || switchForRecovery);
         if (result != BlockBreakResult.FAILED) {
             this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
+        }
+        if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
+            // Batch dispatch: each same-tick START+STOP is an independent server judgment, so the
+            // budget ticks down per dispatched block, not per server slot.
+            this.toolSession.consumeInstantBudget();
         }
         this.toolSession.onTargetResolved(result, target.pos());
         MineResultReporter.record(target.pos(), result);

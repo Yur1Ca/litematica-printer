@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -11,11 +12,20 @@ import java.util.List;
 
 final class MineToolSession {
     private Item sessionToolItem;
+    private int remainingInstantBudget;
     private BlockPos lastSessionPos;
 
     void reset() {
         this.sessionToolItem = null;
+        this.remainingInstantBudget = 0;
         this.lastSessionPos = null;
+    }
+
+    void beginTick() {
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        // 0 = unlimited: batch-dispatch the whole candidate set per tick (batch mining). The
+        // durability guard in the interaction controller remains the real brake.
+        this.remainingInstantBudget = configuredBudget <= 0 ? -1 : configuredBudget;
     }
 
     Comparator<MineBreakExecutor.Target> comparator(LocalPlayer player) {
@@ -61,7 +71,18 @@ final class MineToolSession {
         return result == BlockBreakResult.IN_PROGRESS
                 || result == BlockBreakResult.ABORTED
                 || hasActiveMinePos
+                || !this.hasInstantBudget()
                 ;
+    }
+
+    void consumeInstantBudget() {
+        if (this.remainingInstantBudget > 0) {
+            this.remainingInstantBudget--;
+        }
+    }
+
+    boolean hasInstantBudget() {
+        return this.remainingInstantBudget < 0 || this.remainingInstantBudget > 0;
     }
 
     /**

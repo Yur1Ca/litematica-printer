@@ -13,6 +13,7 @@ final class BedrockTargetStatusResolver {
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
     private static final int INITIALIZE_SYNC_TIMEOUT_TICKS = 40;
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
+    private static final int MAX_STUCK_TICKS = 200;
 
     interface Host {
         ClientLevel level();
@@ -48,6 +49,12 @@ final class BedrockTargetStatusResolver {
     BedrockTarget.Status resolve(boolean applyRecovery) {
         if (this.isTargetCompleted()) {
             return BedrockTarget.Status.RETRACTED;
+        }
+        if (this.host.stuckTicks() >= MAX_STUCK_TICKS) {
+            if (applyRecovery) {
+                this.host.resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
+            }
+            return BedrockTarget.Status.UNINITIALIZED;
         }
         ClientLevel level = this.host.level();
         BlockState bedrockState = level.getBlockState(this.host.bedrockPos());

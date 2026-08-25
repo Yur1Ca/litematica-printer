@@ -66,7 +66,8 @@ public class PrintHandler extends FeatureModuleBase {
                 this.hudStats,
                 this.missingMaterials,
                 this.litematica,
-                this.fallingPlacements);
+                this.fallingPlacements,
+                runtime.materialRequests());
     }
 
     public SchematicBlockContext getContext() {

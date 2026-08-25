@@ -94,6 +94,7 @@ final class BedrockCleanupCoordinator {
                 continue;
             }
             if (reserved.test(pos)) {
+                this.markBlocked(pos);
                 continue;
             }
             int retryDelay = retryDelay(state);

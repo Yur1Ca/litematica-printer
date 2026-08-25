@@ -104,7 +104,7 @@ final class StripLogPrintTask implements PrintTask {
             case PLACE_LOG -> PrintTaskBuildResult.action(
                     new Action()
                             .setSides(this.axis)
-                            .setItems(this.requiredBlock.asItem(), this.sourceBlock.asItem()),
+                            .setItems(this.sourceBlock.asItem(), this.requiredBlock.asItem()),
                     this.newActionHandle(StripLogTaskStage.PLACE_LOG, StripLogTaskStage.WAIT_LOG_CONFIRM)
             );
             case STRIP_LOG -> PrintTaskBuildResult.action(

@@ -6,7 +6,8 @@
   "mixins": [
     "printer.litematica.EasyPlaceUtilsAccessor",
     "printer.litematica.InventoryUtilsAccessor",
-    "printer.litematica.MixinInventoryUtils"
+    "printer.litematica.MixinInventoryUtils",
+    "printer.litematica.MixinChunkRendererSchematicVbo"
   ],
   "client": [
     "printer.litematica.gui.MixinLitematicaGuiMainMenu"

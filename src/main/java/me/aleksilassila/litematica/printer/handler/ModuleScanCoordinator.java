@@ -99,7 +99,11 @@ final class ModuleScanCoordinator {
         this.updateExternalBox(sourceBox);
         this.updateSource(sourceBox, sourceBoxes);
         if (this.host.hasRunnableTargets()) {
-            return this.runFull(playerInteractionBox);
+            // A buffered feature queue is real work even when its iteration source is intentionally
+            // empty. MineHandler pauses scanning while candidates are being executed; treating that
+            // empty source as idle incorrectly promoted the coordinator to LAZY after a few ticks.
+            this.lifecycle.setState(ScanState.FULL);
+            return this.runFull(playerInteractionBox, true);
         }
         if (!this.isLazyEnabled()) {
             this.lifecycle.setState(ScanState.FULL);
@@ -142,10 +146,18 @@ final class ModuleScanCoordinator {
     }
 
     private boolean runFull(PrinterBox interactionBox) {
+        return this.runFull(interactionBox, false);
+    }
+
+    private boolean runFull(PrinterBox interactionBox, boolean activeWork) {
         FeatureModuleBase.IterationOutcome outcome = this.host.runIteration(interactionBox);
         if (outcome.scanPaused()) {
             this.lifecycle.setState(ScanState.FULL);
             return true;
+        }
+        if (activeWork) {
+            this.lifecycle.idlePolicy().recordActivity();
+            return outcome.interrupt();
         }
         int lazyThreshold = Configs.Core.LAZY_ENTER_TICKS.getIntegerValue();
         if (this.lifecycle.idlePolicy().recordFullIteration(

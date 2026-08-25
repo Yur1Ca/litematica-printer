@@ -139,7 +139,9 @@ final class MineBreakExecutor {
         float bestProgress = currentProgress;
         Item bestItem = currentStack.getItem();
         boolean preferSilkTouch = ToolSelectionUtils.prefersSilkTouchForDrops(state);
-        boolean currentPreservesDrops = preferSilkTouch && ToolSelectionUtils.hasSilkTouch(currentStack);
+        boolean currentPreservesDrops = preferSilkTouch
+                && this.tweakeroo.isCurrentToolUsable(currentStack)
+                && ToolSelectionUtils.hasSilkTouch(currentStack);
         boolean bestPreservesDrops = currentPreservesDrops;
         if (!this.shouldResolveBestTool()) {
             ToolChoice choice = new ToolChoice(bestItem, bestProgress, currentPreservesDrops, bestPreservesDrops);
@@ -147,7 +149,7 @@ final class MineBreakExecutor {
             return choice;
         }
         for (ItemStack stack : InventoryUtils.getMainStacks(player.getInventory())) {
-            if (stack.isEmpty()) {
+            if (stack.isEmpty() || !this.tweakeroo.isCurrentToolUsable(stack)) {
                 continue;
             }
             float progress = this.getDestroyProgress(player, level, state, stack, pos);
@@ -188,6 +190,9 @@ final class MineBreakExecutor {
             ItemStack stack,
             BlockPos pos
     ) {
+        if (!this.tweakeroo.isCurrentToolUsable(stack)) {
+            return 0.0F;
+        }
         // Use the live state hardness, not Block.defaultDestroyTime(). The latter is only the
         // block's registered default and becomes stale for state-aware/custom implementations.
         float hardness = state.getDestroySpeed(level, pos);

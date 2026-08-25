@@ -19,6 +19,7 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +31,7 @@ public class MineHandler extends FeatureModuleBase {
     public static final String NAME = "mine";
     private final MineBreakExecutor analyzer;
     private final TweakerooAdapter tweakeroo;
-    private final MineToolSession toolSession = new MineToolSession();
+    private final MineToolSession toolSession;
     private final MineCandidateQueue candidates = new MineCandidateQueue();
     private final Map<BlockPos, BlockState> candidateStates = new HashMap<>();
     @Nullable
@@ -39,6 +40,7 @@ public class MineHandler extends FeatureModuleBase {
     public MineHandler(PrinterRuntime runtime) {
         super(runtime, NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
         this.tweakeroo = runtime.tweakeroo();
+        this.toolSession = new MineToolSession(this.tweakeroo);
         this.analyzer = new MineBreakExecutor(runtime.client(), this.tweakeroo);
     }
 
@@ -83,6 +85,9 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        if (!this.candidates.isEmpty()) {
+            return List.of();
+        }
         List<PrinterBox> scanSourceBoxes = this.getScanSourceBoxes(playerInteractionBox);
         if (scanSourceBoxes.isEmpty()) {
             return List.of();
@@ -100,7 +105,10 @@ public class MineHandler extends FeatureModuleBase {
                 ScanIntent.MINE,
                 pos -> this.isMineScanCandidate(pos, false),
                 pos -> reachPredicate.test(pos) && selectionPredicate.test(pos),
-                ScanEngine.PassPolicy.INVALIDATIONS_ONLY
+                // Mining continuously changes its own candidate set and reach window. A completed
+                // pass must be allowed to restart while the feature is active; the coordinator's
+                // FULL -> LAZY policy already stops genuinely idle rescans after empty passes.
+                ScanEngine.PassPolicy.RESTART
         );
     }
 
@@ -171,10 +179,34 @@ public class MineHandler extends FeatureModuleBase {
         if (this.actionBroker.isWaitingForLook() || this.activeMinePos != null || this.candidates.isEmpty()) {
             return;
         }
-        List<MineBreakExecutor.Target> orderedCandidates = this.candidates.ordered(this.toolSession.comparator(this.player));
+        List<MineBreakExecutor.Target> orderedCandidates = this.refreshCandidateTargets();
+        if (orderedCandidates.isEmpty()) {
+            return;
+        }
         MineBreakExecutor.Target nearest = orderedCandidates.get(0);
         MineBreakExecutor.Target selected = this.toolSession.selectTarget(orderedCandidates, this.analyzer, this.player);
         this.executeToolSession(selected, orderedCandidates);
+    }
+
+    private List<MineBreakExecutor.Target> refreshCandidateTargets() {
+        List<MineBreakExecutor.Target> refreshed = new ArrayList<>();
+        for (MineBreakExecutor.Target queued : this.candidates.snapshot()) {
+            BlockPos pos = queued.pos();
+            this.candidateStates.remove(pos);
+            if (!this.isMineScanCandidate(pos, true)) {
+                this.candidates.remove(pos);
+                continue;
+            }
+            MineBreakExecutor.Target current = this.analyzer.analyze(pos);
+            if (current == null) {
+                this.candidates.remove(pos);
+                continue;
+            }
+            this.candidates.add(current);
+            refreshed.add(current);
+        }
+        refreshed.sort(this.toolSession.comparator(this.player));
+        return refreshed;
     }
 
     private void continueActiveMineTarget() {
@@ -236,6 +268,9 @@ public class MineHandler extends FeatureModuleBase {
     private void executeToolSession(MineBreakExecutor.Target firstTarget,
                                     List<MineBreakExecutor.Target> orderedCandidates) {
         this.toolSession.startSession(firstTarget);
+        if (!this.toolSession.ensureHandToolProtected(this.player, firstTarget)) {
+            return;
+        }
         // Batch dispatch: the per-tick budget lives on the session (BREAK_BLOCKS_PER_TICK,
         // 0 = unlimited). The controller has no per-call fast budget — delta>=0.7 blocks always
         // take the same-tick START+STOP path, throttled only by the session budget and the
@@ -253,6 +288,9 @@ public class MineHandler extends FeatureModuleBase {
             }
             if (!this.toolSession.matchesSessionTool(this.analyzer, queuedTarget)) {
                 continue;
+            }
+            if (!this.toolSession.ensureHandToolProtected(this.player, queuedTarget)) {
+                break;
             }
             result = this.executeSessionTarget(queuedTarget, false);
             if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {

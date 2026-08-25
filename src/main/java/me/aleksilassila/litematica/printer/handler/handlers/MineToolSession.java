@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooAdapter;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -14,6 +15,11 @@ final class MineToolSession {
     private Item sessionToolItem;
     private int remainingInstantBudget;
     private BlockPos lastSessionPos;
+    private final TweakerooAdapter tweakeroo;
+
+    MineToolSession(TweakerooAdapter tweakeroo) {
+        this.tweakeroo = tweakeroo;
+    }
 
     void reset() {
         this.sessionToolItem = null;
@@ -23,8 +29,8 @@ final class MineToolSession {
 
     void beginTick() {
         int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-        // 0 = unlimited: batch-dispatch the whole candidate set per tick (batch mining). The
-        // durability guard in the interaction controller remains the real brake.
+        // 0 = unlimited: batch-dispatch the whole candidate set per tick. Durability protection,
+        // when enabled, is handled by the Tweakeroo adapter rather than this batch budget.
         this.remainingInstantBudget = configuredBudget <= 0 ? -1 : configuredBudget;
     }
 
@@ -83,6 +89,18 @@ final class MineToolSession {
 
     boolean hasInstantBudget() {
         return this.remainingInstantBudget < 0 || this.remainingInstantBudget > 0;
+    }
+
+    boolean ensureHandToolProtected(LocalPlayer player, MineBreakExecutor.Target target) {
+        if (player == null || player.getAbilities().instabuild) {
+            return true;
+        }
+        if (this.tweakeroo.isCurrentToolUsable(player.getMainHandItem())) {
+            return true;
+        }
+        boolean protectedTool = this.tweakeroo.prepareCurrentTool(
+                target == null ? null : target.pos(), target == null ? null : target.state());
+        return protectedTool;
     }
 
     /**

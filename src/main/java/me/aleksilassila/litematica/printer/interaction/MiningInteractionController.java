@@ -125,7 +125,7 @@ public final class MiningInteractionController {
         // Use the server's own 0.7 rule so mining speed no longer depends on the threshold value.
         boolean fast = player.getAbilities().instabuild
                 || progress >= 0.7F;
-        if (fast && !player.getAbilities().instabuild) {
+        if (fast && !player.getAbilities().instabuild && this.toolSwitchService.isDurabilityGuardActive()) {
             ItemStack held = player.getMainHandItem();
             if (held.isDamageableItem()) {
                 int remaining = held.getMaxDamage() - held.getDamageValue();

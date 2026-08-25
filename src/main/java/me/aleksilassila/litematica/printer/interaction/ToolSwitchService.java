@@ -50,15 +50,20 @@ public final class ToolSwitchService {
                 InventoryUtils.switchToBestTool(player, state, pos);
             }
         }
-        // Tweakeroo checks its own toggle and durability threshold inside this call. Printer
-        // deliberately does not mirror either policy.
-        this.tweakeroo.swapNearlyBrokenTool();
+        if (this.tweakeroo.isDurabilityGuardActive()
+                && !this.tweakeroo.prepareCurrentTool(pos, state)) {
+            return ToolPreparationResult.BLOCKED_BY_DURABILITY;
+        }
         int afterSlot = InventoryUtils.getSelectedSlot(player.getInventory());
         if (beforeSlot != afterSlot || stackFingerprintChanged(before, player.getMainHandItem())) {
             this.switchGuard.markSwitchIfNeeded(player.getMainHandItem());
             return ToolPreparationResult.SWITCHED_WAITING_SYNC;
         }
         return ToolPreparationResult.READY;
+    }
+
+    public boolean isDurabilityGuardActive() {
+        return this.tweakeroo.isDurabilityGuardActive();
     }
 
     private static boolean stackFingerprintChanged(ItemStack before, ItemStack after) {

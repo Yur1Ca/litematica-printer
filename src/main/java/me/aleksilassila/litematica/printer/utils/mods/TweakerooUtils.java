@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.Reference;
 import net.fabricmc.loader.api.FabricLoader;
 import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Method;
@@ -16,6 +17,8 @@ public class TweakerooUtils {
     private static @Nullable Method trySwitchToEffectiveToolMethod;
     private static @Nullable Method trySwapCurrentToolIfNearlyBrokenMethod;
     private static @Nullable Method getBooleanValueMethod;
+    private static @Nullable Object itemSwapDurabilityThresholdConfig;
+    private static @Nullable Method getIntegerValueMethod;
     private static @Nullable Object blockTypeBreakRestriction;
     private static @Nullable Object blockTypeBreakRestrictionBlacklist;
     private static @Nullable Object blockTypeBreakRestrictionWhitelist;
@@ -42,6 +45,19 @@ public class TweakerooUtils {
                     getBooleanValueMethod = iConfigBooleanClass.getMethod("getBooleanValue");
                 } catch (ReflectiveOperationException exception) {
                     logBindingWarning("IConfigBoolean.getBooleanValue", exception);
+                }
+            }
+            Class<?> genericConfigsClass = loadClass("fi.dy.masa.tweakeroo.config.Configs$Generic");
+            if (genericConfigsClass != null) {
+                itemSwapDurabilityThresholdConfig = loadField(
+                        genericConfigsClass, "ITEM_SWAP_DURABILITY_THRESHOLD");
+                if (itemSwapDurabilityThresholdConfig != null) {
+                    try {
+                        getIntegerValueMethod = itemSwapDurabilityThresholdConfig.getClass()
+                                .getMethod("getIntegerValue");
+                    } catch (ReflectiveOperationException exception) {
+                        logBindingWarning("Tweakeroo item swap durability threshold", exception);
+                    }
                 }
             }
             Class<?> inventoryUtilsClass = loadClass("fi.dy.masa.tweakeroo.util.InventoryUtils");
@@ -157,6 +173,36 @@ public class TweakerooUtils {
             trySwapCurrentToolIfNearlyBrokenMethod.invoke(null);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public static boolean isCurrentToolUnsafe(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.isDamageableItem()
+                || !isSwapAlmostBrokenToolsEnabled()) {
+            return false;
+        }
+        int remainingDurability = stack.getMaxDamage() - stack.getDamageValue();
+        return remainingDurability <= getMinDurability(stack);
+    }
+
+    private static int getMinDurability(ItemStack stack) {
+        int threshold = getItemSwapDurabilityThreshold();
+        int maxDamage = stack.getMaxDamage();
+        if (maxDamage <= 100 && threshold <= 20
+                && (double) threshold / (double) maxDamage > 0.08D) {
+            threshold = (int) Math.ceil((double) maxDamage * 0.08D);
+        }
+        return threshold;
+    }
+
+    private static int getItemSwapDurabilityThreshold() {
+        if (getIntegerValueMethod == null || itemSwapDurabilityThresholdConfig == null) {
+            return 5;
+        }
+        try {
+            return (int) getIntegerValueMethod.invoke(itemSwapDurabilityThresholdConfig);
+        } catch (ReflectiveOperationException exception) {
+            return 5;
         }
     }
 

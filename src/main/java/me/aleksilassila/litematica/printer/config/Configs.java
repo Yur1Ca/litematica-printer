@@ -319,8 +319,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // Ceiling for how many blocks the mine session may batch-break in one tick. Each candidate
         // is an independent server judgment (delta*(elapsed+1) >= 0.7 on STOP), so START+STOP pairs
-        // can be dispatched to thousands of blocks in one tick. 0 = unlimited — the whole
-        // interaction volume is attempted per tick, and only the durability guard is the brake.
+        // can be dispatched to thousands of blocks in one tick. 0 = unlimited. The optional
+        // Tweakeroo durability guard is only active for bounded small sessions.
         public static final ConfigInteger BREAK_BLOCKS_PER_TICK = integer("breakBlocksPerTick")
                 .defaultValue(0)
                 .range(0, 1000)

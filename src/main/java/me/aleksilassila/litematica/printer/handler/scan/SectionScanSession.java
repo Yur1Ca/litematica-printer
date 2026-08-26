@@ -35,6 +35,7 @@ final class SectionScanSession {
     private final RuntimeEpoch epoch;
     private final LongSupplier snapshotRevision;
     private final LongSupplier generationSequence;
+    private final SchematicBlockIndex schematicIndex;
     private long sourceRevision;
     private long cursorRevision;
     private long exhaustedUntilTick = Long.MIN_VALUE;
@@ -56,7 +57,8 @@ final class SectionScanSession {
             ScanMetricsAccumulator metrics,
             RuntimeEpoch epoch,
             LongSupplier snapshotRevision,
-            LongSupplier generationSequence
+            LongSupplier generationSequence,
+            SchematicBlockIndex schematicIndex
     ) {
         this.region = region;
         this.sourceBoxes = List.copyOf(sourceBoxes);
@@ -65,6 +67,7 @@ final class SectionScanSession {
         this.epoch = epoch;
         this.snapshotRevision = snapshotRevision;
         this.generationSequence = generationSequence;
+        this.schematicIndex = schematicIndex;
         this.scanHandle = this.createScanHandle();
         this.distanceCursor = this.createDistanceCursor();
     }
@@ -75,7 +78,7 @@ final class SectionScanSession {
             ScanIntent intent,
             ScanMetricsAccumulator metrics
     ) {
-        this(region, sourceBoxes, intent, metrics, RuntimeEpoch.INITIAL, () -> 0L, () -> 0L);
+        this(region, sourceBoxes, intent, metrics, RuntimeEpoch.INITIAL, () -> 0L, () -> 0L, null);
     }
 
     boolean canReuse(ScanRegion region) {
@@ -137,6 +140,12 @@ final class SectionScanSession {
     }
 
     private PositionCursor createDistanceCursor() {
+        if (this.intent == ScanIntent.PRINT
+                && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
+                && this.schematicIndex != null
+                && this.schematicIndex.isReady()) {
+            return new IndexedPositionCursor(this.schematicIndex, this.sourceBoxes, this.region);
+        }
         return new SynchronousPositionCursor(
                 this.sourceBoxes,
                 this.region.centerX(),

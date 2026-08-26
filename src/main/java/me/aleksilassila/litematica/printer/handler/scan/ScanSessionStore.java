@@ -15,8 +15,10 @@ import java.util.function.LongSupplier;
 final class ScanSessionStore implements AutoCloseable {
     private final Map<String, SectionScanSession> sessions = new HashMap<>();
     private final Map<String, ScanMetricsAccumulator> metrics = new HashMap<>();
+    private final SchematicBlockIndex schematicIndex;
 
-    ScanSessionStore() {
+    ScanSessionStore(SchematicBlockIndex schematicIndex) {
+        this.schematicIndex = schematicIndex;
     }
 
     ScanMetricsAccumulator metrics(String ownerKey) {
@@ -76,7 +78,8 @@ final class ScanSessionStore implements AutoCloseable {
                     metrics,
                     epoch,
                     snapshotRevision,
-                    generationSequence
+                    generationSequence,
+                    this.schematicIndex
             );
             this.sessions.put(key, session);
         } else {

@@ -21,7 +21,8 @@ public final class ScanCache {
         INVALIDATIONS_ONLY
     }
 
-    private final ScanSessionStore sessions = new ScanSessionStore();
+    private final SchematicBlockIndex schematicIndex = new SchematicBlockIndex();
+    private final ScanSessionStore sessions = new ScanSessionStore(this.schematicIndex);
     private final DirtyRegionTracker dirtyRegions;
     private final ScanBudget budget = new ScanBudget();
     private final SectionSnapshotStore snapshots = new SectionSnapshotStore();
@@ -44,6 +45,7 @@ public final class ScanCache {
     public void clear() {
         this.sessions.close();
         this.sessions.clearMetrics();
+        this.schematicIndex.clear();
         this.levelIdentity = null;
         this.schematicIdentity = null;
         this.snapshotRevision = 0L;
@@ -97,6 +99,7 @@ public final class ScanCache {
         if (!this.runtimeEpoch.equals(epoch) || this.levelIdentity != level || this.schematicIdentity != schematic) {
             this.sessions.close();
             this.sessions.clearMetrics();
+            this.schematicIndex.clear();
             this.dirtyRegions.clear();
             this.levelIdentity = level;
             this.schematicIdentity = schematic;
@@ -255,6 +258,14 @@ public final class ScanCache {
     ) {
         if (sourceBoxes == null || sourceBoxes.isEmpty()) {
             return List.of();
+        }
+        if (intent == ScanIntent.PRINT && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()) {
+            if (this.schematicIndex.ensureBuilt(schematic)) {
+                // Existing PRINT sessions may still hold a cursor built from the previous set of
+                // loaded schematic chunks. Recreate only this owner so newly loaded chunks cannot
+                // be omitted while unrelated scan intents keep their progress.
+                this.sessions.resetOwner(ownerKey);
+            }
         }
         return this.iterable(ownerKey, sourceBoxes, level, schematic, player, scanGuardLimit,
                 intent, exactPredicate, preFilter, false, passPolicy);

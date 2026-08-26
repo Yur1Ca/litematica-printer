@@ -1,6 +1,10 @@
 package me.aleksilassila.litematica.printer.handler;
 
 import fi.dy.masa.malilib.util.InventoryUtils;
+import fi.dy.masa.litematica.world.ChunkManagerSchematic;
+import fi.dy.masa.litematica.world.ChunkSchematic;
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
+import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -9,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
+import me.aleksilassila.litematica.printer.utils.mods.TakeItOutUtils;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -57,9 +62,16 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             }
         }
         if (trackAvailability) {
+            // Take It Out throttles this request internally (500 ms and one in-flight payload),
+            // so polling here keeps the render-only view fresh without sending a packet every tick.
+            TakeItOutUtils.requestAvailableItemsRefresh();
             // Quick Shulker and Take It Out may have accepted the material request while the
             // resulting stack is still travelling through their external inventory flow.
             this.availableItems.addAll(RuntimeAccess.get().materialRequests().activeItems());
+            // Take It Out keeps linked-container contents outside the player inventory. Include
+            // its positive-count cache entries so Render Only Holding Items reflects material that
+            // can actually be fetched through the enabled integration.
+            this.availableItems.addAll(TakeItOutUtils.getAvailableItems());
         }
         if (this.initialized) {
             for (Map.Entry<Item, Integer> entry : this.currentCounts.entrySet()) {
@@ -80,6 +92,7 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             if (changed) {
                 this.availabilityRevision++;
                 this.availableItemsSnapshot = Set.copyOf(this.availableItems);
+                this.scheduleSchematicRenderRefresh();
             }
             this.availabilityTracking = true;
         } else {
@@ -107,6 +120,28 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             }
         } catch (Exception ignored) {
             // Contents unreadable for this stack - keep the outer shulker item available.
+        }
+    }
+
+    private void scheduleSchematicRenderRefresh() {
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (schematic == null) {
+            return;
+        }
+        ChunkManagerSchematic chunkManager = (ChunkManagerSchematic) schematic.getChunkSource();
+        //#if MC >= 12111
+        for (ChunkSchematic chunk : chunkManager.getLoadedValueSet()) {
+        //#else
+        //$$ for (ChunkSchematic chunk : chunkManager.getLoadedChunks().values()) {
+        //#endif
+            if (chunk == null) {
+                continue;
+            }
+            //#if MC >= 260100
+            schematic.scheduleChunkRenders(chunk.getPos().x(), chunk.getPos().z());
+            //#else
+            //$$ schematic.scheduleChunkRenders(chunk.getPos().x, chunk.getPos().z);
+            //#endif
         }
     }
 

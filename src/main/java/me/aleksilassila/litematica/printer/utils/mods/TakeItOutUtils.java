@@ -14,6 +14,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class TakeItOutUtils {
     private static final String MOD_ID = "takeitout";
@@ -41,6 +43,56 @@ public final class TakeItOutUtils {
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiFailure("读取自动取货配置", exception);
             return false;
+        }
+    }
+
+    public static Set<Item> getAvailableItems() {
+        if (!isLoaded() || !isAutoTakeoutEnabled()) {
+            return Set.of();
+        }
+        try {
+            Object value = Class.forName(CLIENT_CLASS)
+                    .getField("WORLD_CONTAINER_ITEMS")
+                    .get(null);
+            if (!(value instanceof Iterable<?> entries)) {
+                return Set.of();
+            }
+            Set<Item> items = new HashSet<>();
+            for (Object entry : entries) {
+                if (entry == null) {
+                    continue;
+                }
+                Method stackMethod = entry.getClass().getMethod("stack");
+                Method countMethod = entry.getClass().getMethod("count");
+                Object stackValue = stackMethod.invoke(entry);
+                Object countValue = countMethod.invoke(entry);
+                if (stackValue instanceof ItemStack stack
+                        && countValue instanceof Integer count
+                        && count > 0
+                        && !stack.isEmpty()) {
+                    items.add(stack.getItem());
+                }
+            }
+            return items.isEmpty() ? Set.of() : Set.copyOf(items);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            logApiFailure("读取远程容器材料", exception);
+            return Set.of();
+        }
+    }
+
+    /** Requests Take It Out to refresh its linked-container material cache. */
+    public static void requestAvailableItemsRefresh() {
+        if (!isLoaded() || !isAutoTakeoutEnabled()) {
+            return;
+        }
+        try {
+            Class.forName("net.maxbel.takeitout.client.WorldContainerMaterialListCache")
+                    .getMethod("requestRefresh", Minecraft.class)
+                    .invoke(null, client);
+        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
+            // Older Take It Out versions do not expose the material-list cache API.
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            logApiFailure("刷新远程容器材料", exception);
         }
     }
 

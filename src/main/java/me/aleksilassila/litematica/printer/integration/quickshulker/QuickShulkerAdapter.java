@@ -43,7 +43,13 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         }
         this.requests.requestItems(request.acceptedItems());
         this.attemptedToken = request.token();
-        MaterialReservation.State state = this.requests.hasPendingSwitchRequest()
+        // Resolve the queued lookup immediately. A non-empty requested-item set only means that
+        // we still need to search the carried shulker boxes; it does not mean that an inventory
+        // operation has actually started. Treating that transient set as PENDING makes one absent
+        // material hold MAIN_HAND/INVENTORY until the next tick, so printing never reaches the
+        // other schematic targets that the player does carry.
+        boolean operationStarted = this.requests.switchItem();
+        MaterialReservation.State state = operationStarted && this.requests.hasPendingSwitchRequest()
                 ? MaterialReservation.State.PENDING : MaterialReservation.State.UNAVAILABLE;
         if (state == MaterialReservation.State.UNAVAILABLE) {
             this.releaseResources();

@@ -30,6 +30,7 @@ public final class PrintWorkflowScheduler {
     private final Map<BlockPos, PrintTask> tasks = new LinkedHashMap<>();
     private final LongSet readyKeys = new LongOpenHashSet();
     private final LongSet wakeKeys = new LongOpenHashSet();
+    private final LongSet materialBlockedKeys = new LongOpenHashSet();
     private long lastRefreshTick = Long.MIN_VALUE;
 
     public PrintWorkflowScheduler(LongSupplier tickClock, StrippableBlockPort strippableBlocks) {
@@ -49,6 +50,7 @@ public final class PrintWorkflowScheduler {
         this.tasks.clear();
         this.readyKeys.clear();
         this.wakeKeys.clear();
+        this.materialBlockedKeys.clear();
         this.lastRefreshTick = Long.MIN_VALUE;
     }
 
@@ -108,6 +110,9 @@ public final class PrintWorkflowScheduler {
             this.remove(task.pos());
             return PrintTaskBuildResult.PASS;
         }
+        if (this.materialBlockedKeys.contains(task.pos().asLong())) {
+            return PrintTaskBuildResult.SKIP;
+        }
         PrintTaskBuildResult result = task.buildAction(context);
         if (!result.hasAction()) {
             this.updateReady(task, context.level, context.schematic);
@@ -151,16 +156,33 @@ public final class PrintWorkflowScheduler {
         this.updateReady(task, context.level, context.schematic);
     }
 
+    /** Pauses only the affected workflow until an inventory gain wakes material-bound tasks. */
+    public void onMaterialUnavailable(SchematicBlockContext context) {
+        PrintTask task = this.tasks.get(context.blockPos);
+        if (task == null) return;
+        long key = task.pos().asLong();
+        this.readyKeys.remove(key);
+        this.wakeKeys.remove(key);
+        this.materialBlockedKeys.add(key);
+    }
+
+    public void onInventoryAvailabilityChanged() {
+        this.wakeKeys.addAll(this.materialBlockedKeys);
+        this.materialBlockedKeys.clear();
+    }
+
     private void afterAction(SchematicBlockContext context) {
         PrintTask task = this.tasks.get(context.blockPos);
         if (task == null) return;
+        this.materialBlockedKeys.remove(task.pos().asLong());
         this.readyKeys.remove(task.pos().asLong());
         this.wakeKeys.add(task.pos().asLong());
     }
 
     private void updateReady(PrintTask task, ClientLevel level, WorldSchematic schematic) {
         long key = task.pos().asLong();
-        if (task.isWaitingForWorldUpdate(level, schematic)) this.readyKeys.remove(key);
+        if (this.materialBlockedKeys.contains(key)
+                || task.isWaitingForWorldUpdate(level, schematic)) this.readyKeys.remove(key);
         else this.readyKeys.add(key);
     }
 
@@ -168,5 +190,6 @@ public final class PrintWorkflowScheduler {
         this.tasks.remove(pos);
         this.readyKeys.remove(pos.asLong());
         this.wakeKeys.remove(pos.asLong());
+        this.materialBlockedKeys.remove(pos.asLong());
     }
 }

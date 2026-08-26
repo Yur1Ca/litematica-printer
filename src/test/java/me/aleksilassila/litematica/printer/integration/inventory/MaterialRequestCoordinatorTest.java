@@ -78,6 +78,7 @@ class MaterialRequestCoordinatorTest {
         }
 
         assertEquals(1, stalled.requestCount);
+        assertEquals(1, stalled.resetCount);
         assertEquals(1, fallback.requestCount);
         assertFalse(coordinator.isBusy());
     }

@@ -7,9 +7,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SortedSchematicTargetQueueTest {
+    @Test
+    void requeuedTargetIsDeferredToTheNextIterationPass() {
+        SortedSchematicTargetQueue queue = new SortedSchematicTargetQueue(null);
+        BlockPos missingTarget = new BlockPos(1, 2, 3);
+        queue.requeue(missingTarget);
+
+        var currentPass = queue.iterator();
+        assertEquals(missingTarget, currentPass.next());
+        queue.requeue(missingTarget);
+
+        assertFalse(currentPass.hasNext());
+        assertEquals(missingTarget, queue.iterator().next());
+    }
+
     @Test
     void mixedFallingTargetsHaveATransitiveTotalOrder() {
         Random random = new Random(0x48_41_4E_41L);

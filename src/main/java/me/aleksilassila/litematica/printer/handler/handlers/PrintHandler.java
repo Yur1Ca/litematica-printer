@@ -110,6 +110,19 @@ public class PrintHandler extends FeatureModuleBase {
     }
 
     @Override
+    protected void onInventoryAvailabilityChanged() {
+        // A completed PRINT scan is invalidation-only, and inventory changes do not dirty world
+        // positions. Rebuild the candidate source so targets skipped for missing material become
+        // eligible again when the player receives any item.
+        this.printTasks.onInventoryAvailabilityChanged();
+        this.retryTargets.clear();
+        this.sortedTargets.clear();
+        this.scanEngine.resetOwner(NAME);
+        this.scanEngine.resetOwner("print_sorted");
+        this.requestFullScan();
+    }
+
+    @Override
     protected boolean isSchematicBlockHandler() {
         return true;
     }
@@ -263,9 +276,7 @@ public class PrintHandler extends FeatureModuleBase {
         if (taskAction == null && result.taskEvent() == PrintPlacementResult.TaskEvent.SUCCESS) {
             this.retryTargets.remove(blockPos);
             this.sortedTargets.remove(blockPos);
-        } else if (taskAction == null && (result.taskEvent() == PrintPlacementResult.TaskEvent.DEFERRED
-                || result.taskEvent() == PrintPlacementResult.TaskEvent.CANCELLED
-                || result.taskEvent() == PrintPlacementResult.TaskEvent.FAILURE)) {
+        } else if (taskAction == null && result.shouldRetryTarget()) {
             if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
                 this.retryTargets.add(blockPos.immutable());
             } else {
@@ -292,6 +303,7 @@ public class PrintHandler extends FeatureModuleBase {
             case QUEUED -> this.printTasks.onActionQueued(taskAction, this.ctx, this.action);
             case DEFERRED -> this.printTasks.onActionDeferred(this.ctx);
             case CANCELLED -> this.printTasks.onActionCancelled(taskAction, this.ctx, this.action);
+            case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx);
             case FAILURE -> this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
         }
     }
@@ -305,4 +317,3 @@ public class PrintHandler extends FeatureModuleBase {
     }
 
 }
-

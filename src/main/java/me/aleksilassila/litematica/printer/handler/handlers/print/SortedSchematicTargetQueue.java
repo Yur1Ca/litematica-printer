@@ -153,14 +153,20 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     @Override
     public Iterator<BlockPos> iterator() {
         return new Iterator<>() {
+            // Retry insertions belong to the next iteration pass. Reading the live queue until it
+            // becomes empty lets a failed target remove and requeue itself forever, especially
+            // when placeBlocksPerTick=0 disables the effective-execution limit.
+            private int remaining = queue.size();
+
             @Override
             public boolean hasNext() {
-                return !queue.isEmpty();
+                return this.remaining > 0 && !queue.isEmpty();
             }
 
             @Override
             public BlockPos next() {
-                if (!queue.isEmpty()) {
+                if (this.remaining > 0 && !queue.isEmpty()) {
+                    this.remaining--;
                     BlockPos result = queue.removeFirst();
                     queuedKeys.remove(ScanEngine.key(result));
                     return result;

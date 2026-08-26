@@ -129,6 +129,12 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
                     && this.tick - this.active.providerStartedTick <= PROVIDER_TIMEOUT_TICKS) {
                 return result;
             }
+            if (result.state() == MaterialReservation.State.PENDING) {
+                // A timed-out provider may still own inventory/main-hand leases. Release its
+                // operation before advancing, otherwise an unavailable material can permanently
+                // block printing even though the coordinator itself is no longer busy.
+                provider.reset();
+            }
             this.active = this.active.nextProvider(this.tick);
         }
 

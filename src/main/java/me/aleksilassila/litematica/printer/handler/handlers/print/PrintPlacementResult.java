@@ -18,11 +18,23 @@ public record PrintPlacementResult(
         return new PrintPlacementResult(false, skipIteration, TaskEvent.CANCELLED, -1);
     }
 
+    public static PrintPlacementResult materialUnavailable(boolean skipIteration) {
+        return new PrintPlacementResult(false, skipIteration, TaskEvent.MATERIAL_UNAVAILABLE, -1);
+    }
+
+    /** Material waits need an inventory wake-up; all existing transient failures keep retrying. */
+    public boolean shouldRetryTarget() {
+        return this.taskEvent == TaskEvent.DEFERRED
+                || this.taskEvent == TaskEvent.CANCELLED
+                || this.taskEvent == TaskEvent.FAILURE;
+    }
+
     public enum TaskEvent {
         SUCCESS,
         QUEUED,
         DEFERRED,
         CANCELLED,
+        MATERIAL_UNAVAILABLE,
         FAILURE
     }
 }

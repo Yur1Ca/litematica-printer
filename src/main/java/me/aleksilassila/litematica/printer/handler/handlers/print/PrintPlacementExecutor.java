@@ -154,10 +154,11 @@ public final class PrintPlacementExecutor {
             if (retrievalPending) {
                 // 换槽或外部取货只是暂时未就绪。多阶段任务必须保留当前阶段，
                 // 否则破冰放水会在材料到达前被当成永久失败并丢失目标。
-                return PrintPlacementResult.deferred(true);
+                return PrintPlacementResult.materialUnavailable(true);
             }
             // 真正缺少材料属于无效放置，不应消耗每 tick 的有效放置预算。
-            return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
+            // 对多阶段任务也不能停止整轮；调度器会仅暂停当前任务，等待背包增加材料。
+            return PrintPlacementResult.materialUnavailable(false);
         }
         this.missingMaterials.resolve(requiredItems, requiredStackPredicate);
         if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)

@@ -8,6 +8,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -54,6 +55,11 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
                     }
                 }
             }
+        }
+        if (trackAvailability) {
+            // Quick Shulker and Take It Out may have accepted the material request while the
+            // resulting stack is still travelling through their external inventory flow.
+            this.availableItems.addAll(RuntimeAccess.get().materialRequests().activeItems());
         }
         if (this.initialized) {
             for (Map.Entry<Item, Integer> entry : this.currentCounts.entrySet()) {

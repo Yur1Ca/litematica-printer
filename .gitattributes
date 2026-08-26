@@ -2,7 +2,7 @@
 * text=auto
 *.bat text eol=crlf
 *.groovy text eol=lf
-*.java text eol=crlf
+*.java text eol=lf
 *.md text
 *.properties text eol=lf
 *.scala text eol=lf

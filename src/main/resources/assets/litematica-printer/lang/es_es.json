@@ -188,6 +188,8 @@
   "litematica-printer.config.printSkipWaterlogged.desc": "Omite los bloques anegados durante la impresión.",
   "litematica-printer.config.printerAutoDisable": "Desactivar la impresora automáticamente",
   "litematica-printer.config.printerAutoDisable.desc": "Desactiva automáticamente la impresora cuando muere el jugador para evitar acciones erróneas después de reaparecer.",
+  "litematica-printer.config.printerRenderOnlyHoldingItems": "Renderizar solo bloques disponibles",
+  "litematica-printer.config.printerRenderOnlyHoldingItems.desc": "Solo renderiza los bloques del esquema cuyos objetos están en el inventario, incluido el contenido de las cajas de shulker.",
   "litematica-printer.config.printerIteratorShape": "Forma del área de trabajo",
   "litematica-printer.config.printerIteratorShape.desc": "Forma del área que recorre la impresora:\n§dCubo§r: Cubo cuya arista mide el §6§lRadio de trabajo§r (valor recomendado: 3)\n§dEsfera§r: Esfera cuyo radio es el §6§lRadio de trabajo§r (valor recomendado: 6)\n§dOctaedro§r: Octaedro cuya arista mide el §6§lRadio de trabajo§r (valor recomendado: 6)",
   "litematica-printer.config.printerLagCheck": "Detección de lag",

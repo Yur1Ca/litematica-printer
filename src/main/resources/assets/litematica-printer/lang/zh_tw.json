@@ -182,6 +182,8 @@
   "litematica-printer.config.printSkipWaterlogged.desc": "列印時跳過含水方塊。",
   "litematica-printer.config.printerAutoDisable": "自動關閉印表機",
   "litematica-printer.config.printerAutoDisable.desc": "當玩家死亡時自動關閉印表機，避免重生後印表機誤操作。",
+  "litematica-printer.config.printerRenderOnlyHoldingItems": "僅渲染可用方塊",
+  "litematica-printer.config.printerRenderOnlyHoldingItems.desc": "僅渲染背包（包括潛影盒內容）中擁有對應物品的投影方塊。",
   "litematica-printer.config.printerIteratorShape": "工作範圍形狀",
   "litematica-printer.config.printerIteratorShape.desc": "印表機遍歷方塊的區域形狀：\n§d立方體§r：以§6§l工作半徑§r為邊長的立方體(推薦值：3)\n§d球體§r：以§6§l工作半徑§r為半徑的球體(推薦值：6)\n§d八面體§r：以§6§l工作半徑§r為邊長的八面體(推薦值：6)",
   "litematica-printer.config.printerLagCheck": "延遲檢測",

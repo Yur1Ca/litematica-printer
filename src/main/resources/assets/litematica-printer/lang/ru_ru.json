@@ -188,6 +188,8 @@
   "litematica-printer.config.printSkipWaterlogged.desc": "Пропускает затопленные блоки при печати.",
   "litematica-printer.config.printerAutoDisable": "Автоматически отключать принтер",
   "litematica-printer.config.printerAutoDisable.desc": "Автоматически отключает принтер после смерти игрока, чтобы избежать ошибочных действий после возрождения.",
+  "litematica-printer.config.printerRenderOnlyHoldingItems": "Отображать только доступные блоки",
+  "litematica-printer.config.printerRenderOnlyHoldingItems.desc": "Отображает только блоки схемы, предметы которых есть в инвентаре, включая содержимое шалкеровых ящиков.",
   "litematica-printer.config.printerIteratorShape": "Форма рабочей области",
   "litematica-printer.config.printerIteratorShape.desc": "Форма области перебора блоков принтером:\n§dКуб§r: Куб с длиной ребра §6§lРабочий радиус§r (рекомендуемое значение: 3)\n§dСфера§r: Сфера с радиусом §6§lРабочий радиус§r (рекомендуемое значение: 6)\n§dОктаэдр§r: Октаэдр с длиной ребра §6§lРабочий радиус§r (рекомендуемое значение: 6)",
   "litematica-printer.config.printerLagCheck": "Обнаружение задержки",

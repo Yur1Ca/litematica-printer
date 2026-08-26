@@ -182,6 +182,8 @@
   "litematica-printer.config.printSkipWaterlogged.desc": "摹形時越過含水之石。",
   "litematica-printer.config.printerAutoDisable": "自偃機巧",
   "litematica-printer.config.printerAutoDisable.desc": "玩家身殞時自關機巧，防重生後誤作。",
+  "litematica-printer.config.printerRenderOnlyHoldingItems": "僅繪可用方塊",
+  "litematica-printer.config.printerRenderOnlyHoldingItems.desc": "僅繪背包（含潛影盒內物）所具之投影方塊。",
   "litematica-printer.config.printerIteratorShape": "工域形",
   "litematica-printer.config.printerIteratorShape.desc": "機巧徧歷石之域形：\n§d立方§r：以§6§l工徑§r為稜之立方（薦值：三）\n§d球體§r：以§6§l工徑§r為徑之球（薦值：六）\n§d八面§r：以§6§l工徑§r為稜之八面體（薦值：六）",
   "litematica-printer.config.printerLagCheck": "察遲滯",

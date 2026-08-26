@@ -19,14 +19,13 @@ import java.util.Set;
 public final class InventoryAvailabilityTracker implements RuntimeComponent {
     private final Map<Item, Integer> previousCounts = new IdentityHashMap<>();
     private final Map<Item, Integer> currentCounts = new IdentityHashMap<>();
-    /**
-     * Items currently reachable in the player's inventory, including shulker box contents.
-     * Only kept up to date while {@link Configs.Core#RENDER_ONLY_HOLDING_ITEMS} is enabled, since
-     * scanning shulker box contents on every tick is otherwise unnecessary work.
-     */
+    private final Set<Item> previousAvailableItems = new HashSet<>();
     private final Set<Item> availableItems = new HashSet<>();
+    private volatile Set<Item> availableItemsSnapshot = Collections.emptySet();
     private boolean initialized;
+    private boolean availabilityTracking;
     private long gainRevision;
+    private volatile long availabilityRevision;
 
     public InventoryAvailabilityTracker() {
     }
@@ -39,6 +38,8 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         this.currentCounts.clear();
         boolean trackAvailability = Configs.Core.RENDER_ONLY_HOLDING_ITEMS.getBooleanValue();
         if (trackAvailability) {
+            this.previousAvailableItems.clear();
+            this.previousAvailableItems.addAll(this.availableItems);
             this.availableItems.clear();
         }
         int size = player.getInventory().getContainerSize();
@@ -66,22 +67,40 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         }
         this.previousCounts.clear();
         this.previousCounts.putAll(this.currentCounts);
+
+        if (trackAvailability) {
+            boolean changed = !this.availabilityTracking
+                    || !this.availableItems.equals(this.previousAvailableItems);
+            if (changed) {
+                this.availabilityRevision++;
+                this.availableItemsSnapshot = Set.copyOf(this.availableItems);
+            }
+            this.availabilityTracking = true;
+        } else {
+            if (this.availabilityTracking || !this.availableItems.isEmpty()) {
+                this.availabilityRevision++;
+            }
+            this.availabilityTracking = false;
+            this.availableItems.clear();
+            this.previousAvailableItems.clear();
+            this.availableItemsSnapshot = Collections.emptySet();
+        }
     }
 
     private static boolean isShulkerBox(ItemStack stack) {
-        return !stack.isEmpty() && BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().contains("shulker_box");
+        return !stack.isEmpty()
+                && BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().contains("shulker_box");
     }
 
-    /** Adds the items stored inside a shulker box stack to {@link #availableItems}. */
     private void collectShulkerContents(ItemStack stack) {
         try {
             for (ItemStack stored : InventoryUtils.getStoredItems(stack, -1)) {
-                if (stored != null && !stored.isEmpty()) {
+                if (!stored.isEmpty()) {
                     this.availableItems.add(stored.getItem());
                 }
             }
         } catch (Exception ignored) {
-            // Contents unreadable for this stack - nothing to add.
+            // Contents unreadable for this stack - keep the outer shulker item available.
         }
     }
 
@@ -89,25 +108,28 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         return this.gainRevision;
     }
 
-    /**
-     * Whether the given item is currently reachable in the player's inventory (including shulker boxes).
-     * Only accurate while {@link Configs.Core#RENDER_ONLY_HOLDING_ITEMS} is enabled; returns an empty
-     * view otherwise.
-     */
+    public long availabilityRevision() {
+        return this.availabilityRevision;
+    }
+
     public boolean isAvailable(Item item) {
-        return this.availableItems.contains(item);
+        return item != null && this.availableItemsSnapshot.contains(item);
     }
 
     public Set<Item> availableItemsView() {
-        return Collections.unmodifiableSet(this.availableItems);
+        return this.availableItemsSnapshot;
     }
 
     public void reset() {
         this.previousCounts.clear();
         this.currentCounts.clear();
+        this.previousAvailableItems.clear();
         this.availableItems.clear();
+        this.availableItemsSnapshot = Collections.emptySet();
         this.initialized = false;
+        this.availabilityTracking = false;
         this.gainRevision++;
+        this.availabilityRevision++;
     }
 
     @Override public void onEpochChanged(RuntimeEvent.EpochChanged event) { this.reset(); }

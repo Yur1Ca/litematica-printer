@@ -2,9 +2,11 @@ package me.aleksilassila.litematica.printer.mixin_plugin;
 
 import net.fabricmc.loader.api.FabricLoader;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.ClassReader;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.Set;
 
@@ -25,16 +27,18 @@ public final class ChestTrackerMixinConfigPlugin implements IMixinConfigPlugin {
     }
 
     private static boolean hasItemListWidgetContract() {
-        try {
-            Class<?> widget = Class.forName(
-                    "red.jackf.chesttracker.impl.gui.widget.ItemListWidget",
-                    false,
-                    ChestTrackerMixinConfigPlugin.class.getClassLoader()
-            );
-            widget.getDeclaredField("gridWidth");
-            widget.getDeclaredMethod("getOffsetItems");
-            return true;
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        String resourceName = "red/jackf/chesttracker/impl/gui/widget/ItemListWidget.class";
+        try (InputStream stream = ChestTrackerMixinConfigPlugin.class.getClassLoader()
+                .getResourceAsStream(resourceName)) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_CODE
+                    | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            boolean field = node.fields.stream().anyMatch(value -> "gridWidth".equals(value.name));
+            boolean method = node.methods.stream().anyMatch(value -> "getOffsetItems".equals(value.name)
+                    && "()Ljava/util/List;".equals(value.desc));
+            return field && method;
+        } catch (Exception | LinkageError ignored) {
             return false;
         }
     }

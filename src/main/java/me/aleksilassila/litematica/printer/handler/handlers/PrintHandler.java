@@ -67,7 +67,8 @@ public class PrintHandler extends FeatureModuleBase {
                 this.missingMaterials,
                 this.litematica,
                 this.fallingPlacements,
-                runtime.materialRequests());
+                runtime.materialRequests(),
+                this.placementRateController);
     }
 
     public SchematicBlockContext getContext() {
@@ -79,14 +80,7 @@ public class PrintHandler extends FeatureModuleBase {
         if (this.printTasks.hasActiveWorkflow()) {
             return 0;
         }
-        int baseInterval = Configs.Placement.PLACE_INTERVAL.getIntegerValue();
-        if (Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue()) {
-            // 保证重放间隔不低于一次往返(RTT),避免在服务端确认上一次放置前就发下一个导致放错。
-            int rttFloor = this.rttReplayController.getExtraIntervalTicks(
-                    Configs.Placement.RTT_SAFETY_PERCENT.getIntegerValue());
-            return Math.max(baseInterval, rttFloor);
-        }
-        return baseInterval;
+        return this.placementRateController.effectiveIntervalTicks();
     }
 
     @Override

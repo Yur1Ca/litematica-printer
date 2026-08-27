@@ -27,21 +27,27 @@ public final class RttReplayController implements RuntimeComponent {
     private static final int MAX_EXTRA_TICKS = 40;
 
     private double smoothedRttMillis = 0.0D;
+    private long sampledTick = Long.MIN_VALUE;
+    private double sampledRttMillis = 0.0D;
 
     public RttReplayController() {
     }
 
     /**
-     * 返回应叠加到基础重放间隔之上的额外 tick 数。
+     * 返回 RTT 建议的最小重放间隔 tick 数；调用方再与基础间隔取最大值。
      *
      * @param safetyPercent 安全系数(百分比):以 RTT 的该百分比作为最小间隔,100 表示恰好一个往返。
-     * @return 额外 tick 数([0, {@link #MAX_EXTRA_TICKS}]);无有效 ping 时为 0。
+     * @return 最小间隔 tick 数([0, {@link #MAX_EXTRA_TICKS}]);无有效 ping 时为 0。
      */
     public int getExtraIntervalTicks(int safetyPercent) {
         double rttMillis = this.sampleRttMillis();
         if (rttMillis <= 0.0D) {
             return 0;
         }
+        return intervalTicksFor(rttMillis, safetyPercent);
+    }
+
+    static int intervalTicksFor(double rttMillis, int safetyPercent) {
         double effectiveMillis = rttMillis * Math.max(0, safetyPercent) / 100.0D;
         int ticks = (int) Math.ceil(effectiveMillis / MILLIS_PER_TICK);
         return Math.max(0, Math.min(MAX_EXTRA_TICKS, ticks));
@@ -54,22 +60,37 @@ public final class RttReplayController implements RuntimeComponent {
 
     public void reset() {
         this.smoothedRttMillis = 0.0D;
+        this.sampledTick = Long.MIN_VALUE;
+        this.sampledRttMillis = 0.0D;
     }
 
     @Override public void onEpochChanged(RuntimeEvent.EpochChanged event) { this.reset(); }
 
     private double sampleRttMillis() {
+        long currentTick = currentGameTick();
+        if (currentTick != Long.MIN_VALUE && currentTick == this.sampledTick) {
+            return this.sampledRttMillis;
+        }
         int rawLatency = readLatencyMillis();
         if (rawLatency <= 0) {
             // ping 不可用(单机/局域网/代理隐藏)。保留已平滑值不更新,返回 0 表示不施加额外间隔。
-            return this.smoothedRttMillis > 0.0D ? this.smoothedRttMillis : 0.0D;
+            this.sampledRttMillis = this.smoothedRttMillis > 0.0D ? this.smoothedRttMillis : 0.0D;
+            this.sampledTick = currentTick;
+            return this.sampledRttMillis;
         }
         if (this.smoothedRttMillis <= 0.0D) {
             this.smoothedRttMillis = rawLatency;
         } else {
             this.smoothedRttMillis = this.smoothedRttMillis * (1.0D - SMOOTHING) + rawLatency * SMOOTHING;
         }
-        return this.smoothedRttMillis;
+        this.sampledRttMillis = this.smoothedRttMillis;
+        this.sampledTick = currentTick;
+        return this.sampledRttMillis;
+    }
+
+    private static long currentGameTick() {
+        Minecraft client = Minecraft.getInstance();
+        return client.level == null ? Long.MIN_VALUE : client.level.getGameTime();
     }
 
     private static int readLatencyMillis() {

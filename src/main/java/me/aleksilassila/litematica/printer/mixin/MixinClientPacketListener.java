@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.mixin;
 
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
+import me.aleksilassila.litematica.printer.utils.mods.ChestTrackerBridge;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -51,6 +52,7 @@ public abstract class MixinClientPacketListener {
                 != client.player.containerMenu.containerId) {
             return;
         }
+        ChestTrackerBridge.onContainerContent();
         QuickShulkerBridge.onInventoryContent();
     }
 }

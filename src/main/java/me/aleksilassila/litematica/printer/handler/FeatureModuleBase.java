@@ -47,6 +47,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     protected final ActionPort actionBroker;
     protected final CooldownUtils cooldownUtils;
     protected final RttReplayController rttReplayController;
+    protected final PlacementRateController placementRateController;
     protected final HudStatsManager hudStats;
     protected final MissingMaterialTracker missingMaterials;
     protected final LitematicaAdapter litematica;
@@ -93,6 +94,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         this.actionBroker = runtime.actionBroker();
         this.cooldownUtils = runtime.cooldownUtils();
         this.rttReplayController = runtime.rttReplayController();
+        this.placementRateController = runtime.placementRateController();
         this.hudStats = runtime.hudStats();
         this.missingMaterials = runtime.missingMaterials();
         this.litematica = runtime.litematica();

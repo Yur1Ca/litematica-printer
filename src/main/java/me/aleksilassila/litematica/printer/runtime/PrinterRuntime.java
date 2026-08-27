@@ -11,6 +11,7 @@ import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.RttReplayController;
+import me.aleksilassila.litematica.printer.printer.PlacementRateController;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
@@ -20,6 +21,7 @@ import me.aleksilassila.litematica.printer.utils.InventoryMessageCooldown;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
 import me.aleksilassila.litematica.printer.integration.inventory.PlayerInventoryProvider;
+import me.aleksilassila.litematica.printer.integration.inventory.ChestTrackerAdapter;
 import me.aleksilassila.litematica.printer.integration.inventory.TakeItOutAdapter;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerAdapter;
@@ -52,9 +54,11 @@ public final class PrinterRuntime {
     private final CooldownUtils cooldownUtils;
     private final InteractionUtils interactionUtils;
     private final RttReplayController rttReplayController;
+    private final PlacementRateController placementRateController;
     private final MissingMaterialTracker missingMaterials;
     private final HudStatsManager hudStats;
     private final QuickShulkerAdapter quickShulkerAdapter;
+    private final ChestTrackerAdapter chestTrackerAdapter;
     private final InventorySwitchGuard inventorySwitchGuard;
     private final InventoryMessageCooldown inventoryMessageCooldown;
     private final LitematicaAdapter litematica;
@@ -87,12 +91,16 @@ public final class PrinterRuntime {
         this.scope.register(this.interactionUtils);
         this.rttReplayController = new RttReplayController();
         this.scope.register(this.rttReplayController);
+        this.placementRateController = new PlacementRateController(this.rttReplayController);
+        this.scope.register(this.placementRateController);
         this.missingMaterials = new MissingMaterialTracker();
         this.scope.register(this.missingMaterials);
         this.hudStats = new HudStatsManager(client, this::currentTick, this.rttReplayController);
         this.scope.register(this.hudStats);
         this.quickShulkerAdapter = new QuickShulkerAdapter(this.actionBroker);
         this.scope.register(this.quickShulkerAdapter);
+        this.chestTrackerAdapter = new ChestTrackerAdapter(this.actionBroker);
+        this.scope.register(this.chestTrackerAdapter);
         this.modules = new FeatureModuleSet(this);
     }
 
@@ -140,6 +148,10 @@ public final class PrinterRuntime {
         return this.rttReplayController;
     }
 
+    public PlacementRateController placementRateController() {
+        return this.placementRateController;
+    }
+
     public MissingMaterialTracker missingMaterials() {
         return this.missingMaterials;
     }
@@ -150,6 +162,10 @@ public final class PrinterRuntime {
 
     public QuickShulkerAdapter quickShulkerAdapter() {
         return this.quickShulkerAdapter;
+    }
+
+    public ChestTrackerAdapter chestTrackerAdapter() {
+        return this.chestTrackerAdapter;
     }
 
     public InventorySwitchGuard inventorySwitchGuard() {
@@ -189,7 +205,8 @@ public final class PrinterRuntime {
             this.materialRequests = new MaterialRequestCoordinator(List.of(
                     new PlayerInventoryProvider(Minecraft.getInstance()),
                     this.quickShulkerAdapter,
-                    new TakeItOutAdapter(this.actionBroker)
+                    new TakeItOutAdapter(this.actionBroker),
+                    this.chestTrackerAdapter
             ));
             this.scope.register(this.materialRequests);
         }
@@ -208,6 +225,7 @@ public final class PrinterRuntime {
 
         this.cooldownUtils.tick();
         QuickShulkerBridge.onTick();
+        this.chestTrackerAdapter.tick();
         if (this.materialRequests != null) {
             this.materialRequests.tick();
         }

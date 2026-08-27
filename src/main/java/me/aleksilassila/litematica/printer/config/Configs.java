@@ -28,6 +28,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     private static final String FILE_PATH = "./config/" + Reference.MOD_ID + ".json";
     private static final File CONFIG_DIR = new File("./config");
+    private static final int CONFIG_SCHEMA_VERSION = 2;
 
     private static final KeybindSettings GUI_NO_ORDER = KeybindSettings.create(KeybindSettings.Context.GUI, KeyAction.PRESS, false, false, false, true);
 
@@ -222,11 +223,22 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(ModLoadUtils::isTweakerooLoaded)
                 .build();
 
+        // Chest Tracker 远程取物开关
+        public static final ConfigBooleanHotkeyed REMOTE_TAKE = booleanHotkey("remoteTake")
+                .defaultValue(false)
+                .setVisible(ModLoadUtils::isChestTrackerLoaded)
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 //#if MC < 260200
                 UNLOCK_BEACON_EFFECTS,
                 //#endif
-                TWEAKEROO_ANGEL_BLOCK_MAY_BUILD
+                TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
+                Placement.QUICK_SHULKER,
+                Placement.QUICK_SHULKER_MODE,
+                Placement.QUICK_SHULKER_COOLDOWN,
+                Placement.STORE_ORDERLY,
+                REMOTE_TAKE
         );
     }
 
@@ -295,11 +307,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PLACE_COOLDOWN,
                 RTT_ADAPTIVE_INTERVAL,
                 RTT_SAFETY_PERCENT,
-                FALLING_CHECK,
-                STORE_ORDERLY,
-                QUICK_SHULKER,
-                QUICK_SHULKER_MODE,
-                QUICK_SHULKER_COOLDOWN
+                FALLING_CHECK
         );
     }
 
@@ -316,11 +324,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             return isCustom() && BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.BLACKLIST);
         }
 
-        // Legacy: the old delayed-destroy branch (same-tick START+STOP → server failedToMine → 10/s)
-        // has been replaced by hold-OPEN accumulation for delta<0.7 blocks. Retained for config-file
-        // compatibility; no longer selects a code path.
+        // Optional modern delayed confirmation. The legacy same-tick START+STOP exploit is never used.
         public static final ConfigBoolean BREAK_USE_DELAYED_DESTROY = bool("breakUseDelayedDestroy")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         // Ceiling for how many blocks the mine session may batch-break in one tick. Each candidate
@@ -382,11 +388,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 BREAK_INTERVAL,
                 BREAK_BLOCKS_PER_TICK,
+                BREAK_USE_DELAYED_DESTROY,
+                BREAK_PROGRESS_THRESHOLD,
+                BREAK_COOLDOWN,
                 BREAK_CHECK_HARDNESS,
                 BREAK_AUTO_TOOL,
-                BREAK_USE_DELAYED_DESTROY,
-                BREAK_COOLDOWN,
-                BREAK_PROGRESS_THRESHOLD,
                 // 限制器
                 BREAK_LIMITER,
                 BREAK_LIMIT,
@@ -720,6 +726,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(Core::isMultiMode) // 仅多模式时显示
                 .build();
 
+        // 选区容器缓存
+        public static final ConfigHotkey CACHE_SELECTION_CONTAINERS = hotkey("cacheSelectionContainers")
+                .defaultStorageString("")
+                .build();
+
+        public static final ConfigHotkey CLEAR_CONTAINER_CACHE = hotkey("clearContainerCache")
+                .defaultStorageString("")
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 OPEN_SCREEN,                  // 打开设置菜单
                 Core.WORK_SWITCH,
@@ -731,7 +746,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Core.MINE,                // 挖掘
                 Core.FILL,                    // 填充
                 Core.FLUID,                  // 排流体
-                BEDROCK                       // 破基岩
+                BEDROCK,                       // 破基岩
+                CACHE_SELECTION_CONTAINERS,
+                CLEAR_CONTAINER_CACHE
         );
     }
 
@@ -747,6 +764,16 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             if (jsonElement != null && jsonElement.isJsonObject()) {
                 JsonObject obj = jsonElement.getAsJsonObject();
                 ConfigUtils.readConfigBase(obj, Reference.MOD_ID, OPTIONS);
+                int schemaVersion = obj.has("configSchemaVersion")
+                        && obj.get("configSchemaVersion").isJsonPrimitive()
+                        && obj.get("configSchemaVersion").getAsJsonPrimitive().isNumber()
+                        ? obj.get("configSchemaVersion").getAsInt() : 0;
+                if (schemaVersion < CONFIG_SCHEMA_VERSION) {
+                    // The old field defaulted to true but was a no-op. Do not turn that
+                    // persisted compatibility value into a new runtime behavior on upgrade.
+                    Break.BREAK_USE_DELAYED_DESTROY.setBooleanValue(false);
+                    this.save();
+                }
             }
         }
     }
@@ -756,6 +783,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         File settingFile = new File(FILE_PATH);
         if ((CONFIG_DIR.exists() && CONFIG_DIR.isDirectory()) || CONFIG_DIR.mkdirs()) {
             JsonObject configRoot = new JsonObject();
+            configRoot.addProperty("configSchemaVersion", CONFIG_SCHEMA_VERSION);
             ConfigUtils.writeConfigBase(configRoot, Reference.MOD_ID, OPTIONS);
             //#if MC >= 12111
             JsonUtils.writeJsonToFile(configRoot, settingFile.toPath());

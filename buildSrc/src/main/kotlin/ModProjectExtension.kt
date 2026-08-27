@@ -97,6 +97,12 @@ val Project.placeholderProps: Map<String, Any?>
         } else {
             ""
         },
+        "chesttracker_client_mixins" to if (mcVersionInt >= 12104) {
+            "\"printer.chesttracker.ItemListWidgetAccessor\",\n" +
+                    "    \"printer.chesttracker.ItemListWidgetMixin\","
+        } else {
+            ""
+        },
         "malilib" to malilib,
         "litematica" to litematica
     ).filterValues { it != null }.mapValues { it.value!! }

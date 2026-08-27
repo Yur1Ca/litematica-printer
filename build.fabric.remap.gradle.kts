@@ -128,6 +128,14 @@ dependencies {
             exclude(group = "maven.modrinth", module = "modmenu")
         }
     }
+
+    val chestTrackerUrl = propStrOrNull("chesttracker")
+    if (chestTrackerUrl?.startsWith("http") == true) {
+        val chestTrackerFile = downloadDependencyMod(chestTrackerUrl)
+        if (chestTrackerFile != null && chestTrackerFile.exists()) {
+            modImplementation(files(chestTrackerFile))
+        }
+    }
 }
 
 tasks.withType<Test>().configureEach {

@@ -32,6 +32,9 @@ public interface MultiPlayerGameModeExtension {
         return false;
     }
 
+    default void litematica_printer$confirmServerBlockUpdate(BlockPos blockPos) {
+    }
+
     default void litematica_printer$resetRuntime() {
     }
 }

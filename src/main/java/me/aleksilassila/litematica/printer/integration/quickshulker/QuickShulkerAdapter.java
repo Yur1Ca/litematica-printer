@@ -13,6 +13,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.Item;
 
+import java.util.Collection;
+
 /** Public adapter around the Quick Shulker request and ordered-restore controllers. */
 public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComponent {
     private static final String LEASE_OWNER = "quick_shulker";
@@ -81,6 +83,20 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     public boolean hasPendingRequest() {
         return this.requests.hasPendingSwitchRequest();
+    }
+
+    /** Starts a nested-container extraction requested by another material provider. */
+    public boolean requestItemsDirect(Collection<Item> items) {
+        if (!Configs.Placement.QUICK_SHULKER.getBooleanValue() || items == null || items.isEmpty()) {
+            return false;
+        }
+        if (!this.acquireResources()) {
+            return false;
+        }
+        this.requests.requestItems(items);
+        boolean started = this.requests.switchItem();
+        this.synchronizeResources();
+        return started;
     }
 
     public boolean isOpenHandler() {

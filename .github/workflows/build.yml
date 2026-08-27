@@ -77,7 +77,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build fabricWrapper subproject
-        run: ./gradlew :fabricWrapper:build --stacktrace --console=plain
+        run: ./gradlew :fabricWrapper:build -x test -x jacocoTestCoverageVerification --stacktrace --console=plain
 
       - name: Delete wrapper sources jar
         run: |

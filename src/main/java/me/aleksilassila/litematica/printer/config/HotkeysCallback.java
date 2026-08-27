@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.config;
 import fi.dy.masa.malilib.hotkeys.IKeybind;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
 import me.aleksilassila.litematica.printer.gui.ConfigUi;
+import me.aleksilassila.litematica.printer.utils.mods.ChestTrackerBridge;
 import net.minecraft.client.Minecraft;
 
 
@@ -20,6 +21,19 @@ public class HotkeysCallback {
             //#else
             client.setScreen(new ConfigUi());
             //#endif
+            return true;
+        }
+
+        if (key == Configs.Hotkeys.CACHE_SELECTION_CONTAINERS.getKeybind()) {
+            int added = ChestTrackerBridge.addSelectionToCache();
+            me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils.setOverlayMessage(
+                    "Chest Tracker: 已加入 " + added + " 个选区容器");
+            return true;
+        }
+        if (key == Configs.Hotkeys.CLEAR_CONTAINER_CACHE.getKeybind()) {
+            int removed = ChestTrackerBridge.clearSelectionCache();
+            me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils.setOverlayMessage(
+                    "Chest Tracker: 已清除 " + removed + " 个容器缓存");
             return true;
         }
 

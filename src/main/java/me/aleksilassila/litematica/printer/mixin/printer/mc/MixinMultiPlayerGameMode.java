@@ -67,6 +67,9 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Override public boolean litematica_printer$isPendingDelayedDestroy(BlockPos pos) {
         return this.litematica_printer$controller().isPendingDelayedDestroy(pos);
     }
+    @Override public void litematica_printer$confirmServerBlockUpdate(BlockPos pos) {
+        this.litematica_printer$controller().confirmServerBlockUpdate(pos);
+    }
     @Override public BlockBreakResult litematica_printer$continueDestroyBlockForMine(
             BlockPos pos, Direction direction, boolean allowToolSwitch) {
         return this.litematica_printer$controller().continueForMine(pos, direction, allowToolSwitch);

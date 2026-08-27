@@ -47,10 +47,16 @@ public final class QuickShulkerBridge {
                 || player.isSpectator()
                 || (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
                     && !TakeItOutUtils.isAutoTakeoutEnabled())
-                || player.inventoryMenu.slots.stream().anyMatch(slot -> slot.getItem().is(item))) {
+                || player.inventoryMenu.slots.stream().anyMatch(slot -> slot.getItem().is(item))
+                // A print/CT request already owns the coordinator. Never turn
+                // that unrelated PENDING result into a middle-click intercept.
+                || RuntimeAccess.get().materialRequests().isBusy()) {
             return false;
         }
-        requestItem(item, MaterialRequest.Source.PICK_BLOCK);
+        MaterialReservation reservation = requestItem(item, MaterialRequest.Source.PICK_BLOCK);
+        if (reservation.state() == MaterialReservation.State.UNAVAILABLE) {
+            return false;
+        }
         switchItem();
         return true;
     }

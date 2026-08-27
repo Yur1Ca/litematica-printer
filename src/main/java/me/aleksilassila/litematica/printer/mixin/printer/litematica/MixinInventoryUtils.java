@@ -16,6 +16,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinInventoryUtils {
     @Inject(at = @At("TAIL"),method = "schematicWorldPickBlock")
     private static void schematicWorldPickBlock(ItemStack stack, BlockPos pos, Level schematicWorld, Minecraft mc, CallbackInfo ci) {
+        if (mc.player == null || mc.player.getAbilities().instabuild || mc.player.isSpectator()) {
+            return;
+        }
         QuickShulkerBridge.handlePickBlock(mc.player, stack);
     }
 

@@ -43,6 +43,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 - [Tweakeroo](https://modrinth.com/mod/tweakeroo)
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
 - [Take It Out](https://modrinth.com/mod/takeitout)，仅用于受支持的 1.21.x 和 26.x 版本
+- [Chest Tracker](https://github.com/ponuing/ChestTracker)，仅用于有对应版本构建的 1.21.4+ 和 26.x 版本
 
 所有前置模组都需要选择与当前 Minecraft 版本匹配的版本。
 
@@ -71,6 +72,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 - Quick Shulker 自动取料与有序存回。
 - 在受支持版本中使用 Take It Out 远程取物。
+- 在受支持版本中，仅从明确加入当前 Litematica 投影选区缓存的 Chest Tracker 容器远程取物。
 - 切换材料时锁定放置，尽量避免使用上一个快捷栏物品错放。
 
 打印机还包含大量原版方块的专用放置逻辑，包括楼梯、门、活版门、漏斗、箱子、拉杆、红石粉、藤蔓、垂落植物、砂轮、合成器和多种方向方块。

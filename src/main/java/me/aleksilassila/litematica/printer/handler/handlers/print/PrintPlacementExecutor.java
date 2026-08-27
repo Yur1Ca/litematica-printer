@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
+import me.aleksilassila.litematica.printer.printer.PlacementRateController;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
@@ -42,6 +43,7 @@ public final class PrintPlacementExecutor {
     private final LitematicaAdapter litematica;
     private final FallingPlacementTracker fallingPlacements;
     private final MaterialRequestCoordinator materialRequests;
+    private final PlacementRateController placementRateController;
     private static final Item[] EMPTY_HAND_ITEMS = {Items.AIR};
     private static final long RESERVE_NOTICE_COOLDOWN_TICKS = 100L;
     private long lastReserveNoticeTick = Long.MIN_VALUE;
@@ -54,7 +56,8 @@ public final class PrintPlacementExecutor {
             MissingMaterialTracker missingMaterials,
             LitematicaAdapter litematica,
             FallingPlacementTracker fallingPlacements,
-            MaterialRequestCoordinator materialRequests
+            MaterialRequestCoordinator materialRequests,
+            PlacementRateController placementRateController
     ) {
         this.actionBroker = actionBroker;
         this.cooldownUtils = cooldownUtils;
@@ -64,6 +67,7 @@ public final class PrintPlacementExecutor {
         this.litematica = litematica;
         this.fallingPlacements = fallingPlacements;
         this.materialRequests = materialRequests;
+        this.placementRateController = placementRateController;
     }
 
     public PrintPlacementResult execute(SchematicBlockContext context, Action action, @Nullable PrintTaskAction taskAction) {
@@ -157,7 +161,7 @@ public final class PrintPlacementExecutor {
             if (retrievalPending) {
                 // 换槽或外部取货只是暂时未就绪。多阶段任务必须保留当前阶段，
                 // 否则破冰放水会在材料到达前被当成永久失败并丢失目标。
-                return PrintPlacementResult.materialUnavailable(true);
+                return PrintPlacementResult.materialUnavailable(this.materialRequests.blocksPrinterWhilePending());
             }
             // 真正缺少材料属于无效放置，不应消耗每 tick 的有效放置预算。
             // 对多阶段任务也不能停止整轮；调度器会仅暂停当前任务，等待背包增加材料。
@@ -168,6 +172,11 @@ public final class PrintPlacementExecutor {
                 || requiredStackPredicate != null
                 && !requiredStackPredicate.test(context.client.player.getMainHandItem())) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "等待物品同步");
+            return PrintPlacementResult.deferred(true);
+        }
+
+        if (!this.placementRateController.canSend(context.level.getGameTime())) {
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "RTT节流");
             return PrintPlacementResult.deferred(true);
         }
 
@@ -275,6 +284,7 @@ public final class PrintPlacementExecutor {
         );
         this.hudStats.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
         this.hudStats.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
+        this.placementRateController.recordSent(context.level.getGameTime());
         if (context.requiredState.getBlock() instanceof FallingBlock) {
             this.fallingPlacements.mark(
                     context.blockPos,

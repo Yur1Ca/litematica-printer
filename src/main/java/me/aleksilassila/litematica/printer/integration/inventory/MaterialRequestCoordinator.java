@@ -15,8 +15,6 @@ import java.util.List;
  * same stack twice.</p>
  */
 public final class MaterialRequestCoordinator implements RuntimeComponent {
-    private static final long PROVIDER_TIMEOUT_TICKS = 80L;
-
     private final List<InventoryProvider> providers;
     private long nextToken = 1L;
     private long tick;
@@ -97,6 +95,13 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
         return this.active == null ? List.of() : this.active.request.acceptedItems();
     }
 
+    public boolean blocksPrinterWhilePending() {
+        if (this.active == null || this.active.providerIndex >= this.providers.size()) {
+            return false;
+        }
+        return this.providers.get(this.active.providerIndex).blocksPrinterWhilePending();
+    }
+
     @Override
     public void onEpochChanged(RuntimeEvent.EpochChanged event) {
         this.reset();
@@ -125,8 +130,9 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
                 this.active = null;
                 return result;
             }
+            long timeoutTicks = Math.max(1L, provider.pendingTimeoutTicks());
             if (result.state() == MaterialReservation.State.PENDING
-                    && this.tick - this.active.providerStartedTick <= PROVIDER_TIMEOUT_TICKS) {
+                    && this.tick - this.active.providerStartedTick <= timeoutTicks) {
                 return result;
             }
             if (result.state() == MaterialReservation.State.PENDING) {

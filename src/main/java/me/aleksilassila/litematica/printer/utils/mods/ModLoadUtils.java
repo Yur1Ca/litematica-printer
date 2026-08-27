@@ -11,7 +11,7 @@ public class ModLoadUtils {
     }
 
     public static boolean isChestTrackerLoaded(){
-        return false;
+        return isLoadMod("chesttracker");
     }
 
     public static boolean isQuickShulkerLoaded(){

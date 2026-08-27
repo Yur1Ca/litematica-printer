@@ -516,7 +516,8 @@ public class Render2D {
     private String formatModeSettings(HudStatsManager.Mode mode) {
         return switch (mode) {
             case PRINT, FILL, FLUID -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
-                    + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+                    + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue()
+                    + formatRttSettings(mode);
             case MINE -> (Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() == 0
                     ? "不限速"
                     : Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() + "/t")
@@ -525,6 +526,16 @@ public class Render2D {
                     + "/t 间隔" + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
             case TOTAL -> "--";
         };
+    }
+
+    private String formatRttSettings(HudStatsManager.Mode mode) {
+        if (mode != HudStatsManager.Mode.PRINT
+                || !Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue()) {
+            return "";
+        }
+        var rate = RuntimeAccess.get().placementRateController();
+        return " RTT" + RuntimeAccess.get().rttReplayController().getEstimatedRttMillis()
+                + "ms/" + rate.effectiveIntervalTicks() + "t";
     }
 
     private String humanizeBedrockReason(String reason) {

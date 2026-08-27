@@ -11,6 +11,16 @@ public interface InventoryProvider {
         return new MaterialReservation(request.token(), MaterialReservation.State.UNAVAILABLE);
     }
 
+    /** Maximum number of client ticks a pending request may stay with this provider. */
+    default long pendingTimeoutTicks() {
+        return 80L;
+    }
+
+    /** Whether a pending request must pause the whole printer while it owns resources. */
+    default boolean blocksPrinterWhilePending() {
+        return true;
+    }
+
     default void tick() {
     }
 

@@ -43,6 +43,7 @@ Optional integrations:
 - [Tweakeroo](https://modrinth.com/mod/tweakeroo)
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
 - [Take It Out](https://modrinth.com/mod/takeitout), on supported 1.21.x and 26.x versions
+- [Chest Tracker](https://github.com/ponuing/ChestTracker), on versions with a matching upstream build
 
 Dependency versions must match the Minecraft version being launched.
 
@@ -71,6 +72,7 @@ Dependency versions must match the Minecraft version being launched.
 
 - Quick Shulker material retrieval and ordered return.
 - Take It Out remote material retrieval on supported versions.
+- Chest Tracker retrieval from containers explicitly cached inside the active Litematica selection on supported versions.
 - Material switching safeguards intended to prevent placement with the previous hotbar item.
 
 The printer also contains special placement logic for many vanilla blocks, including stairs, doors, trapdoors, hoppers, chests, levers, redstone wire, vines, hanging plants, grindstones, crafters, flower clusters, and other directional blocks.

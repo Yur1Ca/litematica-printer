@@ -96,16 +96,37 @@ class MaterialRequestCoordinatorTest {
         assertTrue(coordinator.activeToken() == 0L);
     }
 
+    @Test
+    void providerCanStayPendingWithoutPausingPrinter() {
+        FakeProvider provider = new FakeProvider("non_blocking", MaterialReservation.State.PENDING, 3L, false);
+        MaterialRequestCoordinator coordinator = new MaterialRequestCoordinator(List.of(provider));
+
+        coordinator.request(Items.STONE, MaterialRequest.Source.PRINT);
+
+        assertFalse(coordinator.blocksPrinterWhilePending());
+        coordinator.tick();
+        coordinator.tick();
+        assertTrue(coordinator.isBusy());
+    }
+
     private static final class FakeProvider implements InventoryProvider {
         private final String id;
         private final MaterialReservation.State state;
         private int requestCount;
         private int resetCount;
         private MaterialRequest lastRequest;
+        private final long timeoutTicks;
+        private final boolean blocksPrinter;
 
         private FakeProvider(String id, MaterialReservation.State state) {
+            this(id, state, 80L, true);
+        }
+
+        private FakeProvider(String id, MaterialReservation.State state, long timeoutTicks, boolean blocksPrinter) {
             this.id = id;
             this.state = state;
+            this.timeoutTicks = timeoutTicks;
+            this.blocksPrinter = blocksPrinter;
         }
 
         @Override
@@ -123,6 +144,16 @@ class MaterialRequestCoordinatorTest {
         @Override
         public MaterialReservation status(MaterialRequest request) {
             return new MaterialReservation(request.token(), this.state);
+        }
+
+        @Override
+        public long pendingTimeoutTicks() {
+            return this.timeoutTicks;
+        }
+
+        @Override
+        public boolean blocksPrinterWhilePending() {
+            return this.blocksPrinter;
         }
 
         @Override

@@ -42,6 +42,7 @@ public record MaterialRequest(
     public enum Source {
         PRINT,
         PICK_BLOCK,
+        CHEST_TRACKER_SCREEN,
         OTHER
     }
 }

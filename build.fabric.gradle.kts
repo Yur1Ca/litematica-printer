@@ -113,6 +113,14 @@ dependencies {
         }
     }
 
+    val chestTrackerUrl = propStrOrNull("chesttracker")
+    if (chestTrackerUrl?.startsWith("http") == true) {
+        val chestTrackerFile = downloadDependencyMod(chestTrackerUrl)
+        if (chestTrackerFile != null && chestTrackerFile.exists()) {
+            implementation(files(chestTrackerFile))
+        }
+    }
+
     implementation("me.fallenbreath:conditional-mixin-fabric:0.6.4")
 }
 
@@ -144,6 +152,7 @@ tasks {
         }
         dependsOn("build")
     }
+
 }
 
 publishing {

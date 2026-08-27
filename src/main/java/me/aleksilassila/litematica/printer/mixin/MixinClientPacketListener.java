@@ -38,21 +38,25 @@ public abstract class MixinClientPacketListener {
         }
     }
 
+    @Inject(at = @At("TAIL"), method = "handleOpenScreen")
+    private void printer$trackContainerOpen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
+        ChestTrackerBridge.onContainerOpen(packet.getContainerId());
+    }
+
     @Inject(at = @At("TAIL"), method = "handleContainerContent")
     public void onInventory(ClientboundContainerSetContentPacket packet, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
+        //#if MC >= 12105
+        int containerId = packet.containerId();
+        //#else
+        //$$ int containerId = packet.getContainerId();
+        //#endif
+        ChestTrackerBridge.onContainerContent(containerId);
         if (client.player == null
                 || client.player.containerMenu == client.player.inventoryMenu
-                ||
-                //#if MC >= 12105
-                packet.containerId()
-                //#else
-                //$$ packet.getContainerId()
-                //#endif
-                != client.player.containerMenu.containerId) {
+                || containerId != client.player.containerMenu.containerId) {
             return;
         }
-        ChestTrackerBridge.onContainerContent();
         QuickShulkerBridge.onInventoryContent();
     }
 }

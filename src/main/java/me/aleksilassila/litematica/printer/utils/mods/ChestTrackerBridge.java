@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.utils.mods;
 
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
 
 /** Stable no-op boundary for the optional Chest Tracker integration. */
@@ -17,7 +18,18 @@ public final class ChestTrackerBridge {
     }
 
     public static void onContainerContent() {
-        RuntimeAccess.get().chestTrackerAdapter().onContainerContent();
+        if (Minecraft.getInstance().player != null) {
+            RuntimeAccess.get().chestTrackerAdapter().onContainerContent(
+                    Minecraft.getInstance().player.containerMenu.containerId);
+        }
+    }
+
+    public static void onContainerContent(int containerId) {
+        RuntimeAccess.get().chestTrackerAdapter().onContainerContent(containerId);
+    }
+
+    public static void onContainerOpen(int containerId) {
+        RuntimeAccess.get().chestTrackerAdapter().onContainerOpen(containerId);
     }
 
     public static boolean shouldSuppressContainerScreen() {

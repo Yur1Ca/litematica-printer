@@ -729,10 +729,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 选区容器缓存
         public static final ConfigHotkey CACHE_SELECTION_CONTAINERS = hotkey("cacheSelectionContainers")
                 .defaultStorageString("")
+                .setVisible(ModLoadUtils::isChestTrackerLoaded)
                 .build();
 
         public static final ConfigHotkey CLEAR_CONTAINER_CACHE = hotkey("clearContainerCache")
                 .defaultStorageString("")
+                .setVisible(ModLoadUtils::isChestTrackerLoaded)
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(

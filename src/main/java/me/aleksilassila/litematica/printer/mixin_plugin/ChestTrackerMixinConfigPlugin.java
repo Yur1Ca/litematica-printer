@@ -13,13 +13,30 @@ public final class ChestTrackerMixinConfigPlugin implements IMixinConfigPlugin {
     private static final String PREFIX =
             "me.aleksilassila.litematica.printer.mixin.printer.chesttracker.";
     private boolean loaded;
+    private boolean compatible;
 
     @Override public void onLoad(String mixinPackage) {
         this.loaded = FabricLoader.getInstance().isModLoaded("chesttracker");
+        this.compatible = this.loaded && hasItemListWidgetContract();
     }
 
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return !mixinClassName.startsWith(PREFIX) || this.loaded;
+        return !mixinClassName.startsWith(PREFIX) || this.compatible;
+    }
+
+    private static boolean hasItemListWidgetContract() {
+        try {
+            Class<?> widget = Class.forName(
+                    "red.jackf.chesttracker.impl.gui.widget.ItemListWidget",
+                    false,
+                    ChestTrackerMixinConfigPlugin.class.getClassLoader()
+            );
+            widget.getDeclaredField("gridWidth");
+            widget.getDeclaredMethod("getOffsetItems");
+            return true;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
     }
 
     @Override public String getRefMapperConfig() { return null; }

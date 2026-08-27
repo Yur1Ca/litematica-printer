@@ -86,6 +86,8 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private boolean restoringNestedShulker;
     private boolean suppressContainerScreen;
     private long restoreSyncDeadline;
+    private int expectedContainerId = -1;
+    private int nestedPlayerInventorySlot = -1;
 
     public ChestTrackerAdapter(ActionPort actionBroker) {
         this.client = Minecraft.getInstance();
@@ -116,12 +118,12 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         // Candidate failures are scoped to one material request. Keeping them
         // across requests would permanently hide a box after the first miss.
         this.invalidCandidates.clear();
-        rebuildIndex();
         this.activeRequest = request;
         this.requestedItem = item;
         this.requestedItems = request.acceptedItems();
         this.requestedStack = request.preferredItem() == null ? ItemStack.EMPTY : new ItemStack(item);
         this.exactMatch = false;
+        rebuildIndex();
         this.candidates = orderedCandidates(this.requestedItems);
         this.candidateIndex = 0;
         this.startedTick = gameTick();
@@ -139,6 +141,11 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     public MaterialReservation status(MaterialRequest request) {
         if (this.activeRequest == null || this.activeRequest.token() != request.token()) {
             return unavailable(request);
+        }
+        if (this.phase == Phase.WAITING_RESTORE_SYNC) {
+            if (gameTick() < this.restoreSyncDeadline) return pending(request);
+            finishAvailable();
+            return MaterialReservation.available(request, request.preferredItem());
         }
         for (Item item : request.acceptedItems()) {
             if (InventoryUtils.playerHasItemInInventory(this.client.player, item)) {
@@ -174,6 +181,10 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             finishAvailable();
             return;
         }
+        if (this.phase == Phase.RESTORE_WAIT_CONTENT && now >= this.openDeadline) {
+            failNestedRestore("归还超时");
+            return;
+        }
         if (this.phase == Phase.WAITING_CONTENT && now >= this.openDeadline) {
             failAndContinue();
         } else if (now >= this.requestDeadline) {
@@ -181,11 +192,32 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         }
     }
 
+    public void onContainerOpen(int containerId) {
+        if (this.activeRequest != null
+                && (this.phase == Phase.WAITING_CONTENT || this.phase == Phase.RESTORE_WAIT_CONTENT)
+                && this.suppressContainerScreen) {
+            this.expectedContainerId = containerId;
+        }
+    }
+
     /** Called after a matching container-content packet has populated the active menu. */
-    public void onContainerContent() {
-        if (this.activeRequest == null || this.phase != Phase.WAITING_CONTENT) return;
+    public void onContainerContent(int containerId) {
+        if (this.activeRequest == null
+                || (this.phase != Phase.WAITING_CONTENT && this.phase != Phase.RESTORE_WAIT_CONTENT)) return;
+        if (this.expectedContainerId >= 0 && this.expectedContainerId != containerId) {
+            boolean ownsCurrentMenu = this.client.player != null
+                    && this.client.player.containerMenu.containerId == this.expectedContainerId;
+            if (this.restoringNestedShulker) {
+                failNestedRestore("容器包不匹配", ownsCurrentMenu);
+            } else {
+                abortRequest("容器包不匹配", ownsCurrentMenu);
+            }
+            return;
+        }
+        this.expectedContainerId = -1;
         LocalPlayer player = this.client.player;
-        if (player == null || this.client.gameMode == null) {
+        if (player == null || player.containerMenu.containerId != containerId) return;
+        if (this.client.gameMode == null) {
             finishUnavailable(this.requestedItem);
             return;
         }
@@ -230,6 +262,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return;
         }
         ItemStack nestedSnapshot = nested ? menu.slots.get(sourceSlot).getItem().copy() : ItemStack.EMPTY;
+        List<ItemStack> inventoryBefore = nested ? inventorySnapshot(player) : List.of();
         quickMove(menu, sourceSlot, player);
         this.actionBroker.releaseOwner(LEASE_OWNER + "_take");
         closeContainer();
@@ -237,6 +270,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             this.nestedSourcePos = this.targetPos.immutable();
             this.nestedSourceSlot = sourceSlot;
             this.nestedShulkerSnapshot = nestedSnapshot;
+            this.nestedPlayerInventorySlot = locateMovedShulker(player, nestedSnapshot, inventoryBefore);
             this.phase = Phase.WAITING_INVENTORY;
             if (!TakeItOutUtils.tryRequestItem(this.requestedItem)) {
                 RuntimeAccess.get().quickShulkerAdapter().requestItemsDirect(List.of(this.requestedItem));
@@ -350,8 +384,11 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.nestedSourceSlot = -1;
         this.nestedShulkerSnapshot = ItemStack.EMPTY;
         this.restoringNestedShulker = false;
+        this.nestedPlayerInventorySlot = -1;
         this.suppressContainerScreen = false;
         this.restoreSyncDeadline = 0L;
+        this.expectedContainerId = -1;
+        this.nestedPlayerInventorySlot = -1;
         this.exactMatch = false;
         this.phase = Phase.IDLE;
         this.invalidCandidates.clear();
@@ -385,6 +422,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     private boolean open(BlockPos pos) {
         if (this.client.player == null || this.client.level == null) return false;
+        this.expectedContainerId = -1;
         if (!this.actionBroker.tryAcquire(LEASE_OWNER, EnumSet.of(ResourceLease.CONTAINER), 0L)) return false;
         if (!this.actionBroker.tryAcquire(DISPATCH_LEASE_OWNER,
                 EnumSet.of(ResourceLease.MAIN_HAND, ResourceLease.INTERACTION), 0L)) {
@@ -405,20 +443,31 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void failAndContinue() {
+        if (this.restoringNestedShulker) {
+            failNestedRestore("归还阶段中止");
+            return;
+        }
         if (this.targetPos != null) this.invalidCandidates.add(this.targetPos.immutable());
         closeContainer();
         if (!openNextCandidate()) finishUnavailable(this.requestedItem);
     }
 
     private void finishAvailable() {
-        closeContainer();
-        releaseResources();
+        finishAvailable(true);
+    }
+
+    private void finishAvailable(boolean closeOwnedMenu) {
+        if (closeOwnedMenu) closeContainer();
+        else releaseResources();
         this.activeRequest = null;
         this.phase = Phase.IDLE;
+        this.suppressContainerScreen = false;
+        this.expectedContainerId = -1;
         this.nestedSourcePos = null;
         this.nestedSourceSlot = -1;
         this.nestedShulkerSnapshot = ItemStack.EMPTY;
         this.restoringNestedShulker = false;
+        this.nestedPlayerInventorySlot = -1;
     }
 
     private void finishUnavailable(@Nullable Item item) {
@@ -434,6 +483,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.nestedSourceSlot = -1;
         this.nestedShulkerSnapshot = ItemStack.EMPTY;
         this.restoringNestedShulker = false;
+        this.nestedPlayerInventorySlot = -1;
     }
 
     private void closeContainer() {
@@ -444,6 +494,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.actionBroker.releaseOwner(LEASE_OWNER);
         this.resourcesAcquired = false;
         this.suppressContainerScreen = false;
+        this.expectedContainerId = -1;
     }
 
     private void releaseResources() {
@@ -491,6 +542,16 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return false;
     }
 
+    private static boolean shulkerContains(ItemStack stack, Item requested) {
+        try {
+            for (ItemStack inner : fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(stack, -1)) {
+                if (!inner.isEmpty() && inner.is(requested)) return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     private static boolean isShulker(ItemStack stack) {
         return !stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem
                 && blockItem.getBlock() instanceof ShulkerBoxBlock;
@@ -526,7 +587,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return;
         }
         this.targetPos = this.nestedSourcePos;
-        this.phase = Phase.WAITING_CONTENT;
+        this.phase = Phase.RESTORE_WAIT_CONTENT;
         this.openDeadline = gameTick() + OPEN_TIMEOUT_TICKS;
     }
 
@@ -540,14 +601,13 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             failNestedRestore("源槽位已被占用");
             return;
         }
-        int playerSlot = -1;
-        for (int slot = 0; slot < Math.min(36, player.getInventory().getContainerSize()); slot++) {
-            ItemStack candidate = player.getInventory().getItem(slot);
-            if (!candidate.isEmpty() && ItemStack.isSameItemSameComponents(candidate, this.nestedShulkerSnapshot)) {
-                playerSlot = findPlayerMenuSlot(menu, slot);
-                break;
-            }
+        int inventorySlot = this.nestedPlayerInventorySlot;
+        if (inventorySlot < 0 || inventorySlot >= Math.min(36, player.getInventory().getContainerSize())
+                || !isSameShulkerType(player.getInventory().getItem(inventorySlot), this.nestedShulkerSnapshot)) {
+            failNestedRestore("背包中的潜影盒位置已变化");
+            return;
         }
+        int playerSlot = findPlayerMenuSlot(menu, inventorySlot);
         if (playerSlot < 0) {
             failNestedRestore("背包中找不到原潜影盒");
             return;
@@ -565,11 +625,29 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void failNestedRestore(String reason) {
+        failNestedRestore(reason, true);
+    }
+
+    private void failNestedRestore(String reason, boolean closeOwnedMenu) {
         MessageUtils.setOverlayMessage("Chest Tracker: 潜影盒未能归还（" + reason + "），已保留在背包");
         this.invalidCandidates.add(this.nestedSourcePos == null ? this.targetPos.immutable() : this.nestedSourcePos.immutable());
-        closeContainer();
         this.restoringNestedShulker = false;
-        finishAvailable();
+        finishAvailable(closeOwnedMenu);
+    }
+
+    private void abortRequest(String reason, boolean closeOwnedMenu) {
+        MessageUtils.setOverlayMessage("Chest Tracker: 取物已取消（" + reason + "）");
+        if (closeOwnedMenu) closeContainer();
+        else releaseResources();
+        this.activeRequest = null;
+        this.phase = Phase.IDLE;
+        this.suppressContainerScreen = false;
+        this.expectedContainerId = -1;
+        this.nestedSourcePos = null;
+        this.nestedSourceSlot = -1;
+        this.nestedShulkerSnapshot = ItemStack.EMPTY;
+        this.nestedPlayerInventorySlot = -1;
+        this.restoringNestedShulker = false;
     }
 
     private static int findPlayerMenuSlot(AbstractContainerMenu menu, int playerInventorySlot) {
@@ -585,6 +663,37 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return -1;
     }
 
+    private static int locateMovedShulker(LocalPlayer player, ItemStack snapshot, List<ItemStack> before) {
+        int found = -1;
+        int size = Math.min(36, player.getInventory().getContainerSize());
+        for (int slot = 0; slot < size; slot++) {
+            ItemStack candidate = player.getInventory().getItem(slot);
+            boolean wasPresent = slot < before.size()
+                    && ItemStack.isSameItemSameComponents(before.get(slot), candidate);
+            if (!wasPresent && ItemStack.isSameItemSameComponents(candidate, snapshot)) {
+                if (found >= 0) return -1;
+                found = slot;
+            }
+        }
+        return found;
+    }
+
+    private static List<ItemStack> inventorySnapshot(LocalPlayer player) {
+        List<ItemStack> snapshot = new ArrayList<>();
+        int size = Math.min(36, player.getInventory().getContainerSize());
+        for (int slot = 0; slot < size; slot++) {
+            snapshot.add(player.getInventory().getItem(slot).copy());
+        }
+        return snapshot;
+    }
+
+    private static boolean isSameShulkerType(ItemStack candidate, ItemStack snapshot) {
+        return candidate != null && !candidate.isEmpty()
+                && candidate.getCount() == 1
+                && snapshot != null && !snapshot.isEmpty()
+                && candidate.getItem() == snapshot.getItem();
+    }
+
     private void rebuildIndex() {
         this.index.clear();
         //#if MC >= 12104
@@ -595,7 +704,9 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (memoryKey == null) return;
         String world = SelectedContainerCache.worldId(this.client);
         String dimension = SelectedContainerCache.dimensionId(this.client);
+        int candidateCount = 0;
         for (Map.Entry<BlockPos, Memory> entry : memoryKey.getMemories().entrySet()) {
+            if (candidateCount >= MAX_SCAN_CANDIDATES) break;
             BlockPos pos = entry.getKey();
             Memory memory = entry.getValue();
             if (memory == null || memory.container().isEmpty()
@@ -603,20 +714,24 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
                     || this.client.level == null || !this.client.level.isLoaded(pos)) continue;
             double distance = this.client.player == null ? 0.0D : this.client.player.distanceToSqr(Vec3.atCenterOf(pos));
             long timestamp = memory.inGameTimestamp() == null ? Long.MIN_VALUE : memory.inGameTimestamp();
-            for (ItemStack stack : memory.items()) {
-                if (stack.isEmpty()) continue;
-                this.index.computeIfAbsent(stack.getItem(), ignored -> new ArrayList<>())
-                        .add(new Candidate(pos, false, distance, timestamp));
-                if (isShulker(stack)) {
-                    try {
-                        for (ItemStack inner : fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(stack, -1)) {
-                            if (!inner.isEmpty()) {
-                                this.index.computeIfAbsent(inner.getItem(), ignored -> new ArrayList<>())
-                                        .add(new Candidate(pos, true, distance, timestamp));
-                            }
-                        }
-                    } catch (Exception ignored) {
+            for (Item requested : this.requestedItems) {
+                if (candidateCount >= MAX_SCAN_CANDIDATES) break;
+                boolean direct = false;
+                boolean nested = false;
+                for (ItemStack stack : memory.items()) {
+                    if (stack.isEmpty()) continue;
+                    if (stack.is(requested)) {
+                        direct = true;
+                        break;
                     }
+                    if (isShulker(stack) && shulkerContains(stack, requested)) {
+                        nested = true;
+                    }
+                }
+                if (direct || nested) {
+                    this.index.computeIfAbsent(requested, ignored -> new ArrayList<>())
+                            .add(new Candidate(pos, !direct, distance, timestamp));
+                    candidateCount++;
                 }
             }
         }
@@ -648,6 +763,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         IDLE,
         SCANNING,
         WAITING_CONTENT,
+        RESTORE_WAIT_CONTENT,
         WAITING_INVENTORY,
         WAITING_RESTORE_SYNC
     }

@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
+    private static final int MAX_SORT_BUFFER = 4096;
     private final ScanEngine scanEngine;
     private final Deque<BlockPos> queue = new ArrayDeque<>();
     private final LongSet queuedKeys = new LongOpenHashSet();
@@ -103,8 +104,8 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         boolean dirtyChanged = dirtyVersion != this.lastDirtyVersion;
         int configuredThroughput = Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
         int targetBufferSize = configuredThroughput > 0
-                ? Math.max(256, configuredThroughput * 16)
-                : Integer.MAX_VALUE;
+                ? Math.min(MAX_SORT_BUFFER, Math.max(256, configuredThroughput * 16))
+                : MAX_SORT_BUFFER;
         if (this.lastFillTick == currentTick
                 || !dirtyChanged && !this.hasMoreSource && this.queue.isEmpty()
                 || !dirtyChanged && this.queue.size() >= targetBufferSize) {

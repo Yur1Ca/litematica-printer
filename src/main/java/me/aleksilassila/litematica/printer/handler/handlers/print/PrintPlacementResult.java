@@ -22,7 +22,12 @@ public record PrintPlacementResult(
         return new PrintPlacementResult(false, skipIteration, TaskEvent.MATERIAL_UNAVAILABLE, -1);
     }
 
-    /** Material waits need an inventory wake-up; all existing transient failures keep retrying. */
+    /** A neighbouring world update must make this target placeable before it is scanned again. */
+    public static PrintPlacementResult worldBlocked() {
+        return new PrintPlacementResult(false, false, TaskEvent.WORLD_BLOCKED, -1);
+    }
+
+    /** Only transient submission failures retry immediately; external waits need a wake-up. */
     public boolean shouldRetryTarget() {
         return this.taskEvent == TaskEvent.DEFERRED
                 || this.taskEvent == TaskEvent.CANCELLED
@@ -35,6 +40,7 @@ public record PrintPlacementResult(
         DEFERRED,
         CANCELLED,
         MATERIAL_UNAVAILABLE,
+        WORLD_BLOCKED,
         FAILURE
     }
 }

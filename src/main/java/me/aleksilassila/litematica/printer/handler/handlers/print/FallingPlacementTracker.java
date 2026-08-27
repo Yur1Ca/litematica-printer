@@ -37,12 +37,13 @@ public final class FallingPlacementTracker {
         Iterator<Pending> iterator = this.pending.values().iterator();
         while (iterator.hasNext()) {
             Pending entry = iterator.next();
-            // A placement may be client-predicted into the source position for one tick. For
-            // real placements, the source is released as soon as it no longer contains the
-            // expected state. The three-argument compatibility overload retains the old
-            // confirmation semantics used by lightweight callers and tests.
+            // A placement may be client-predicted into the source position during the send tick.
+            // Real placements are only a same-tick column barrier: on the next tick the source
+            // either contains the supported falling block or has already spawned a falling
+            // entity. Keeping a supported block pending while it still matches expectedState
+            // permanently blocks every higher target in that column.
             boolean released = entry.originalState != null
-                    ? currentTick > entry.sentTick && !stateMatches.test(entry.pos, entry.expectedState)
+                    ? currentTick > entry.sentTick
                     : stateMatches.test(entry.pos, entry.expectedState);
             if (released) {
                 iterator.remove();

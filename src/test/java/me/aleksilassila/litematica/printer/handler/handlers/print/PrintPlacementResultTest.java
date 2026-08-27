@@ -17,4 +17,9 @@ class PrintPlacementResultTest {
         assertTrue(PrintPlacementResult.deferred(false).shouldRetryTarget());
         assertTrue(PrintPlacementResult.cancelled(false).shouldRetryTarget());
     }
+
+    @Test
+    void unsupportedFallingTargetWaitsForAWorldUpdateInsteadOfHotRetrying() {
+        assertFalse(PrintPlacementResult.worldBlocked().shouldRetryTarget());
+    }
 }

@@ -66,4 +66,18 @@ class SortedSchematicTargetQueueTest {
             }
         }
     }
+
+    @Test
+    void fallingTargetsAreBottomUpBeforeHeldItemPreference() {
+        var lowerSand = new SortedSchematicTargetQueue.TargetScore(
+                new BlockPos(0, 10, 0), true, true, 10, 100.0D, 1.0D);
+        var upperAnvil = new SortedSchematicTargetQueue.TargetScore(
+                new BlockPos(0, 11, 0), false, true, 11, 1.0D, 0.0D);
+        List<SortedSchematicTargetQueue.TargetScore> scores = new ArrayList<>(List.of(upperAnvil, lowerSand));
+
+        scores.sort(SortedSchematicTargetQueue.TargetScore.COMPARATOR);
+
+        assertEquals(lowerSand, scores.get(0));
+        assertEquals(upperAnvil, scores.get(1));
+    }
 }

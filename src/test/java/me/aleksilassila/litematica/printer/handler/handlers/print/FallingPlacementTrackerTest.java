@@ -62,4 +62,19 @@ class FallingPlacementTrackerTest {
         assertTrue(tracker.blocks(lower.above(), 100L, true, (pos, state) -> false));
         assertFalse(tracker.blocks(lower.above(), 101L, true, (pos, state) -> false));
     }
+
+    @Test
+    void supportedPlacementReleasesColumnOnNextTick() {
+        FallingPlacementTracker tracker = new FallingPlacementTracker();
+        BlockPos lower = new BlockPos(1, 10, 1);
+        tracker.mark(
+                lower,
+                Blocks.SAND.defaultBlockState(),
+                Blocks.AIR.defaultBlockState(),
+                100L
+        );
+
+        assertTrue(tracker.blocks(lower.above(), 100L, true, (pos, state) -> true));
+        assertFalse(tracker.blocks(lower.above(), 101L, true, (pos, state) -> true));
+    }
 }

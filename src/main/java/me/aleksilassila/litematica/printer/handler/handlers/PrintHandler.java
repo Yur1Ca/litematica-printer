@@ -304,6 +304,9 @@ public class PrintHandler extends FeatureModuleBase {
             case DEFERRED -> this.printTasks.onActionDeferred(this.ctx);
             case CANCELLED -> this.printTasks.onActionCancelled(taskAction, this.ctx, this.action);
             case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx);
+            case WORLD_BLOCKED -> {
+                // Falling blocks are ordinary targets, not multi-stage workflow actions.
+            }
             case FAILURE -> this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
         }
     }

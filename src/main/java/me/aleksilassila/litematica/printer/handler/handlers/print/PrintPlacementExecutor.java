@@ -73,7 +73,10 @@ public final class PrintPlacementExecutor {
             if (FallingBlock.isFree(context.level.getBlockState(downPos))) {
                 this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(context.requiredBlockName().getString()));
-                return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
+                // Do not hot-retry an unchanged unsupported column. PRINT invalidation expands a
+                // support block update to its neighbours, so this target is discovered again as
+                // soon as the block below changes while unrelated columns keep printing.
+                return PrintPlacementResult.worldBlocked();
             }
         }
 

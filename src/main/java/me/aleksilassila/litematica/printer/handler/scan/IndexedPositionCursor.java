@@ -11,6 +11,9 @@ import java.util.List;
 /** Distance-ordered cursor over the sparse non-air schematic index. */
 final class IndexedPositionCursor implements PositionCursor {
     private final List<BlockPos> positions;
+    private final int centerX;
+    private final int centerY;
+    private final int centerZ;
     private int index;
 
     IndexedPositionCursor(
@@ -18,6 +21,9 @@ final class IndexedPositionCursor implements PositionCursor {
             List<PrinterBox> sourceBoxes,
             ScanRegion region
     ) {
+        this.centerX = region.centerX();
+        this.centerY = region.centerY();
+        this.centerZ = region.centerZ();
         List<BlockPos> candidates = new ArrayList<>();
         LongIterator iterator = schematicIndex.positions().iterator();
         while (iterator.hasNext()) {
@@ -52,7 +58,7 @@ final class IndexedPositionCursor implements PositionCursor {
             return Long.MAX_VALUE;
         }
         BlockPos pos = this.positions.get(this.index);
-        return ScanGeometry.distanceSqr(pos, 0, 0, 0);
+        return ScanGeometry.distanceSqr(pos, this.centerX, this.centerY, this.centerZ);
     }
 
     @Override

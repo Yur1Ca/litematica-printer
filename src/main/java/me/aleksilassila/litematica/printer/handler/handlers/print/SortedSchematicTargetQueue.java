@@ -214,14 +214,15 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
          * ordering changes depending on the pair being compared.  In particular, comparing two
          * falling blocks by Y but a falling/non-falling pair by distance is not transitive.
          *
-         * <p>Keep material locality first, let ordinary placements make progress before a falling
-         * dependency in the same material group, and order falling blocks bottom-up. Coordinates
-         * are the deterministic final tie-breaker so incremental batches produce the same order.</p>
+         * <p>Let ordinary placements make progress before falling dependencies. Falling targets
+         * must then be ordered bottom-up before material locality; otherwise a held upper anvil
+         * can outrank a lower sand support and repeatedly fail the support check. Coordinates are
+         * the deterministic final tie-breaker so incremental batches produce the same order.</p>
          */
         static final Comparator<TargetScore> COMPARATOR = Comparator
-                .comparing(TargetScore::heldItemMismatch)
-                .thenComparing(TargetScore::fallingBlock)
+                .comparing(TargetScore::fallingBlock)
                 .thenComparingInt(score -> score.fallingBlock ? score.y : 0)
+                .thenComparing(TargetScore::heldItemMismatch)
                 .thenComparingDouble(TargetScore::distanceSqr)
                 .thenComparingDouble(TargetScore::viewAngleScore)
                 .thenComparingInt(score -> score.pos.getY())

@@ -28,4 +28,21 @@ class IndexedPositionCursorTest {
         assertEquals(new BlockPos(2, 0, 0), target);
         assertEquals(PositionCursor.PollResult.COMPLETE, cursor.poll(target));
     }
+
+    @Test
+    void reportsDistanceFromTheScanCenterInsteadOfTheWorldOrigin() {
+        SchematicBlockIndex index = new SchematicBlockIndex();
+        index.positions().add(BlockPos.asLong(1000, 80, -1000));
+        index.positions().add(BlockPos.asLong(1002, 80, -1000));
+
+        PrinterBox box = new PrinterBox(999, 79, -1001, 1003, 81, -999);
+        ScanRegion region = new ScanRegion(1000, 80, -1000, 62, 4, -63, 62, 5, -63, 8);
+        IndexedPositionCursor cursor = new IndexedPositionCursor(index, List.of(box), region);
+        BlockPos.MutableBlockPos target = new BlockPos.MutableBlockPos();
+
+        assertEquals(0L, cursor.peekDistanceSqr());
+        assertEquals(PositionCursor.PollResult.AVAILABLE, cursor.poll(target));
+        assertEquals(new BlockPos(1000, 80, -1000), target);
+        assertEquals(4L, cursor.peekDistanceSqr());
+    }
 }

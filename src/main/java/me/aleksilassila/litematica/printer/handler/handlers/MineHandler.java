@@ -5,7 +5,6 @@ import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.TickContext;
-import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -104,11 +103,7 @@ public class MineHandler extends FeatureModuleBase {
                 this.getScanGuardLimit(),
                 ScanIntent.MINE,
                 pos -> this.isMineScanCandidate(pos, false),
-                pos -> reachPredicate.test(pos) && selectionPredicate.test(pos),
-                // Mining continuously changes its own candidate set and reach window. A completed
-                // pass must be allowed to restart while the feature is active; the coordinator's
-                // FULL -> LAZY policy already stops genuinely idle rescans after empty passes.
-                ScanEngine.PassPolicy.RESTART
+                pos -> reachPredicate.test(pos) && selectionPredicate.test(pos)
         );
     }
 

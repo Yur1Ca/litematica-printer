@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.handler;
 
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
-import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 
@@ -34,19 +33,6 @@ final class ModuleCandidateSource {
                 module.getId(), sourceBoxes, module.level,
                 SchematicWorldHandler.getSchematicWorld(), module.player,
                 module.getScanGuardLimit(), intent, candidatePredicate,
-                pos -> reach.test(pos) && selection.test(pos),
-                cachedPassPolicy(intent));
-    }
-
-    /**
-     * PRINT has client-side eligibility that can change without a server block update: temporary
-     * break markers, falling-placement barriers and action readiness. Let a completed print pass
-     * restart so the lazy probe can recover those targets. World-driven feature scanners retain
-     * their invalidation-only behavior.
-     */
-    static ScanEngine.PassPolicy cachedPassPolicy(ScanIntent intent) {
-        return intent == ScanIntent.PRINT
-                ? ScanEngine.PassPolicy.RESTART
-                : ScanEngine.PassPolicy.INVALIDATIONS_ONLY;
+                pos -> reach.test(pos) && selection.test(pos));
     }
 }

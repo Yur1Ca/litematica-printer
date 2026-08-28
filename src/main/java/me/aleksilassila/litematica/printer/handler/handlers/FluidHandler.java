@@ -6,7 +6,6 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
-import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
@@ -180,10 +179,9 @@ public class FluidHandler extends FeatureModuleBase {
             return retainedTargets;
         }
 
-        // Finish the initial pass, then let ModuleScanCoordinator enter lazy mode. Subsequent
-        // updates are delivered through the dirty-region path; restarting the whole distance
-        // cursor every tick after the fluid is complete defeats lazy scanning and keeps a large
-        // selection needlessly hot.
+        // Finish the initial pass, then let ModuleScanCoordinator enter lazy mode. The lazy
+        // policy bounds restart frequency while retaining recovery when a client-side fluid
+        // condition changes; dirty regions still run first.
         //
         // Iterate the scan session directly (Beta2.6 behaviour). The session cursor resumes from
         // where the previous tick left off and yields distance-ordered targets for as long as the
@@ -201,8 +199,7 @@ public class FluidHandler extends FeatureModuleBase {
                 pos -> this.isReadyFluidTarget(pos)
                         && !this.retryTargets.contains(pos)
                         && !this.inFlightTargets.contains(pos),
-                pos -> reachPredicate.test(pos) && selectionPredicate.test(pos),
-                ScanEngine.PassPolicy.INVALIDATIONS_ONLY
+                pos -> reachPredicate.test(pos) && selectionPredicate.test(pos)
         );
         return retainedTargets.isEmpty()
                 ? source

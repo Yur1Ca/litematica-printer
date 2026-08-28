@@ -10,7 +10,6 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
-import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.PrinterUtils;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
@@ -264,8 +263,7 @@ public class FillHandler extends FeatureModuleBase {
                 pos -> this.isFillTarget(pos)
                         && !this.retryTargets.contains(pos)
                         && !this.inFlightTargets.contains(pos),
-                pos -> this.isFillCandidatePreFilter(pos, reachPredicate, selectionPredicate),
-                ScanEngine.PassPolicy.INVALIDATIONS_ONLY
+                pos -> this.isFillCandidatePreFilter(pos, reachPredicate, selectionPredicate)
         );
     }
 

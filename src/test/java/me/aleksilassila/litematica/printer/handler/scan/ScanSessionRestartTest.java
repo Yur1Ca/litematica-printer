@@ -10,25 +10,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ScanPassPolicyTest {
+class ScanSessionRestartTest {
     @Test
-    void completedPassCanWaitForInvalidationWithoutRestarting() {
+    void completedPassRestartsOnTheNextClientTick() {
         SectionScanSession session = session();
 
-        assertNull(session.next(null, 10L, () -> false, pos -> true, false, true));
-        assertFalse(session.canScan(11L, false));
-
-        session.invalidate(new BlockPos(0, 0, 0));
-        assertTrue(session.canScan(11L, false));
-    }
-
-    @Test
-    void normalPolicyRestartsACompletedPassOnTheNextTick() {
-        SectionScanSession session = session();
-
-        assertNull(session.next(null, 20L, () -> false, pos -> true, false, true));
-        assertFalse(session.canScan(20L, true));
-        assertTrue(session.canScan(21L, true));
+        assertNull(session.next(null, 20L, () -> false, pos -> true, false));
+        assertFalse(session.canScan(20L));
+        assertTrue(session.canScan(21L));
     }
 
     @Test
@@ -38,8 +27,8 @@ class ScanPassPolicyTest {
         session.close();
         session.invalidate(new BlockPos(0, 0, 0));
 
-        assertFalse(session.canScan(30L, true));
-        assertFalse(session.hasPendingSource(30L, true));
+        assertFalse(session.canScan(30L));
+        assertFalse(session.hasPendingSource(30L));
     }
 
     private static SectionScanSession session() {

@@ -64,8 +64,7 @@ final class ScanCandidateSourceFactory {
             ScanIntent intent,
             Predicate<BlockPos> exactPredicate,
             Predicate<BlockPos> preFilter,
-            boolean unbounded,
-            ScanCache.PassPolicy passPolicy
+            boolean unbounded
     ) {
         int scanLimit = unbounded ? Integer.MAX_VALUE : this.getScanLimit(scanGuardLimit);
         ScanMetricsAccumulator metrics = this.sessions.metrics(metricsOwnerKey);
@@ -117,8 +116,7 @@ final class ScanCandidateSourceFactory {
                         long budgetStart = System.nanoTime();
                         boolean budgetHit = false;
                         try {
-                            boolean restartCompletedPass = passPolicy == ScanCache.PassPolicy.RESTART;
-                            while (this.considered < scanLimit && session.canScan(tickTime, restartCompletedPass)) {
+                            while (this.considered < scanLimit && session.canScan(tickTime)) {
                                 if (!unbounded && ++this.budgetChecks % BUDGET_CHECK_INTERVAL == 0
                                         && ScanCandidateSourceFactory.this.budget.isExceeded(
                                         metricsOwnerKey, budgetStart)) {
@@ -132,8 +130,7 @@ final class ScanCandidateSourceFactory {
                                         () -> !unbounded && ScanCandidateSourceFactory.this.budget.isExceeded(
                                                 metricsOwnerKey, budgetStart),
                                         preFilter,
-                                        unbounded,
-                                        restartCompletedPass
+                                        unbounded
                                 );
                                 if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)) {
                                     break;
@@ -176,7 +173,7 @@ final class ScanCandidateSourceFactory {
                         if (state[0] == ScanAvailability.PAUSED) {
                             return;
                         }
-                        boolean pending = session.hasPendingSource(tickTime, passPolicy == ScanCache.PassPolicy.RESTART);
+                        boolean pending = session.hasPendingSource(tickTime);
                         if (pending && (budgetHit || this.considered >= scanLimit)) {
                             state[0] = ScanAvailability.PAUSED;
                         } else if (!pending) {

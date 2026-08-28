@@ -13,14 +13,6 @@ import java.util.List;
 import java.util.function.Predicate;
 
 public final class ScanCache {
-    /** Controls what a completed cursor may do on a later tick. */
-    public enum PassPolicy {
-        /** Start another full pass when the previous pass has completed. */
-        RESTART,
-        /** Stay completed until a block update invalidates a position in the scan region. */
-        INVALIDATIONS_ONLY
-    }
-
     private final SchematicBlockIndex schematicIndex = new SchematicBlockIndex();
     private final ScanSessionStore sessions = new ScanSessionStore(this.schematicIndex);
     private final DirtyRegionTracker dirtyRegions;
@@ -151,7 +143,7 @@ public final class ScanCache {
             Predicate<BlockPos> preFilter
     ) {
         return this.iterable(ownerKey, List.of(sourceBox), null, null, player, scanGuardLimit,
-                ScanIntent.CUSTOM, pos -> true, preFilter, false, PassPolicy.RESTART);
+                ScanIntent.CUSTOM, pos -> true, preFilter, false);
     }
 
     public Iterable<BlockPos> iterable(
@@ -178,7 +170,7 @@ public final class ScanCache {
             Predicate<BlockPos> preFilter
     ) {
         return this.iterable(ownerKey, List.of(sourceBox), level, schematic, player, Integer.MAX_VALUE,
-                intent, exactPredicate, preFilter, true, PassPolicy.RESTART);
+                intent, exactPredicate, preFilter, true);
     }
 
     public Iterable<BlockPos> iterable(
@@ -193,7 +185,7 @@ public final class ScanCache {
             Predicate<BlockPos> preFilter
     ) {
         return this.iterable(ownerKey, List.of(sourceBox), level, schematic, player, scanGuardLimit,
-                intent, exactPredicate, preFilter, false, PassPolicy.RESTART);
+                intent, exactPredicate, preFilter, false);
     }
 
     public Iterable<BlockPos> iterable(
@@ -230,32 +222,6 @@ public final class ScanCache {
             Predicate<BlockPos> exactPredicate,
             Predicate<BlockPos> preFilter
     ) {
-        return this.iterable(
-                ownerKey,
-                sourceBoxes,
-                level,
-                schematic,
-                player,
-                scanGuardLimit,
-                intent,
-                exactPredicate,
-                preFilter,
-                PassPolicy.RESTART
-        );
-    }
-
-    public Iterable<BlockPos> iterable(
-            String ownerKey,
-            List<PrinterBox> sourceBoxes,
-            ClientLevel level,
-            WorldSchematic schematic,
-            LocalPlayer player,
-            int scanGuardLimit,
-            ScanIntent intent,
-            Predicate<BlockPos> exactPredicate,
-            Predicate<BlockPos> preFilter,
-            PassPolicy passPolicy
-    ) {
         if (sourceBoxes == null || sourceBoxes.isEmpty()) {
             return List.of();
         }
@@ -268,7 +234,7 @@ public final class ScanCache {
             }
         }
         return this.iterable(ownerKey, sourceBoxes, level, schematic, player, scanGuardLimit,
-                intent, exactPredicate, preFilter, false, passPolicy);
+                intent, exactPredicate, preFilter, false);
     }
 
     private Iterable<BlockPos> iterable(
@@ -281,8 +247,7 @@ public final class ScanCache {
             ScanIntent intent,
             Predicate<BlockPos> exactPredicate,
             Predicate<BlockPos> preFilter,
-            boolean unbounded,
-            PassPolicy passPolicy
+            boolean unbounded
     ) {
         String cacheOwnerKey = this.cacheOwnerKey(ownerKey, intent);
         String metricsOwnerKey = normalizeMetricsOwnerKey(ownerKey);
@@ -305,8 +270,7 @@ public final class ScanCache {
                 intent,
                 exactPredicate,
                 preFilter,
-                unbounded,
-                passPolicy
+                unbounded
         );
     }
 

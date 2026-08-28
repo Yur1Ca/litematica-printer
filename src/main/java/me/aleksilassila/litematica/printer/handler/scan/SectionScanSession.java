@@ -107,14 +107,14 @@ final class SectionScanSession {
         // follow-up pass over the latest center and boxes before completion is reported.
     }
 
-    boolean canScan(long tickTime, boolean restartCompletedPass) {
+    boolean canScan(long tickTime) {
         if (this.closed) {
             return false;
         }
         if (this.exhaustedUntilTick == Long.MIN_VALUE) {
             return true;
         }
-        if (tickTime < this.exhaustedUntilTick || !restartCompletedPass) {
+        if (tickTime < this.exhaustedUntilTick) {
             return false;
         }
         this.resetProgress();
@@ -155,8 +155,8 @@ final class SectionScanSession {
         );
     }
 
-    boolean hasPendingSource(long tickTime, boolean restartCompletedPass) {
-        return this.canScan(tickTime, restartCompletedPass)
+    boolean hasPendingSource(long tickTime) {
+        return this.canScan(tickTime)
                 && (!this.dirtyPositions.isEmpty() || !this.distanceCursor.isComplete());
     }
 
@@ -211,11 +211,10 @@ final class SectionScanSession {
             long tickTime,
             BooleanSupplier shouldPause,
             Predicate<BlockPos> preFilter,
-            boolean unbounded,
-            boolean restartCompletedPass
+            boolean unbounded
     ) {
         this.paused = false;
-        if (!this.canScan(tickTime, restartCompletedPass)) {
+        if (!this.canScan(tickTime)) {
             return null;
         }
         return this.nextByPlayerDistance(observation, tickTime, shouldPause, preFilter, unbounded);

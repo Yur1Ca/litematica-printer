@@ -166,8 +166,7 @@ public final class BedrockCandidatePlanner {
                 pos -> true,
                 pos -> this.passesCheapFilters(level, pos)
                         && !this.candidateBacklog.contains(pos)
-                        && !this.isRejectedAtCurrentRevision(pos),
-                ScanEngine.PassPolicy.INVALIDATIONS_ONLY
+                        && !this.isRejectedAtCurrentRevision(pos)
         );
         Iterator<BlockPos> iterator = source.iterator();
         List<BedrockCandidatePlan> verticalCandidates = new ArrayList<>();

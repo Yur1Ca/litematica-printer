@@ -20,11 +20,6 @@ import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
  * depend on cache ownership, invalidation storage, or cursor internals.</p>
  */
 public final class ScanEngine implements RuntimeComponent {
-    public enum PassPolicy {
-        RESTART,
-        INVALIDATIONS_ONLY
-    }
-
     private final PrinterRuntime runtime;
     private final ScanCache cache;
 
@@ -127,34 +122,6 @@ public final class ScanEngine implements RuntimeComponent {
                 scanGuardLimit,
                 intent,
                 exactPredicate
-        );
-    }
-
-    public Iterable<BlockPos> iterable(
-            String ownerKey,
-            List<PrinterBox> sourceBoxes,
-            ClientLevel level,
-            WorldSchematic schematic,
-            LocalPlayer player,
-            int scanGuardLimit,
-            ScanIntent intent,
-            Predicate<BlockPos> exactPredicate,
-            Predicate<BlockPos> preFilter,
-            PassPolicy passPolicy
-    ) {
-        return this.cache.iterable(
-                ownerKey,
-                sourceBoxes,
-                level,
-                schematic,
-                player,
-                scanGuardLimit,
-                intent,
-                exactPredicate,
-                preFilter,
-                passPolicy == PassPolicy.INVALIDATIONS_ONLY
-                        ? ScanCache.PassPolicy.INVALIDATIONS_ONLY
-                        : ScanCache.PassPolicy.RESTART
         );
     }
 

@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.mixin.printer.litematica;
 
 
 import fi.dy.masa.litematica.util.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.mods.ChestTrackerBridge;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -17,6 +18,9 @@ public class MixinInventoryUtils {
     @Inject(at = @At("TAIL"),method = "schematicWorldPickBlock")
     private static void schematicWorldPickBlock(ItemStack stack, BlockPos pos, Level schematicWorld, Minecraft mc, CallbackInfo ci) {
         if (mc.player == null || mc.player.getAbilities().instabuild || mc.player.isSpectator()) {
+            return;
+        }
+        if (ChestTrackerBridge.handlePickBlock(mc.player, stack.getItem())) {
             return;
         }
         QuickShulkerBridge.handlePickBlock(mc.player, stack);

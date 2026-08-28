@@ -1,8 +1,12 @@
 package me.aleksilassila.litematica.printer.utils.mods;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
 
 /** Stable no-op boundary for the optional Chest Tracker integration. */
 public final class ChestTrackerBridge {
@@ -11,6 +15,17 @@ public final class ChestTrackerBridge {
 
     public static boolean isLoaded() {
         return ModLoadUtils.isChestTrackerLoaded();
+    }
+
+    /** Standalone Chest Tracker pick-block path used when Printer's work switch is off. */
+    public static boolean handlePickBlock(LocalPlayer player, Item item) {
+        Minecraft client = Minecraft.getInstance();
+        if (Configs.Core.WORK_SWITCH.getBooleanValue()
+                || client.gameMode == null
+                || client.gameMode.getPlayerMode() != GameType.SURVIVAL) {
+            return false;
+        }
+        return RuntimeAccess.get().chestTrackerAdapter().handlePickBlock(player, item);
     }
 
     public static void tick() {

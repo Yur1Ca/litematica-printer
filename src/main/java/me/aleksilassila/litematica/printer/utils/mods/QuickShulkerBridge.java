@@ -4,10 +4,12 @@ import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialReservation;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 
 /**
  * Compatibility boundary for the historical quick-shulker implementation.
@@ -41,12 +43,14 @@ public final class QuickShulkerBridge {
 
     /** Handles the optional inventory fallback for both vanilla and Litematica pick-block hooks. */
     public static boolean handlePickBlock(LocalPlayer player, Item item) {
+        Minecraft client = Minecraft.getInstance();
         if (player == null || item == null || item == Items.AIR
+                || client.gameMode == null
+                || client.gameMode.getPlayerMode() != GameType.SURVIVAL
                 || !Configs.Core.WORK_SWITCH.getBooleanValue()
-                || player.getAbilities().instabuild
-                || player.isSpectator()
                 || (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                    && !TakeItOutUtils.isAutoTakeoutEnabled())
+                    && !TakeItOutUtils.isAutoTakeoutEnabled()
+                    && !Configs.Special.REMOTE_TAKE.getBooleanValue())
                 || player.inventoryMenu.slots.stream().anyMatch(slot -> slot.getItem().is(item))
                 // A print/CT request already owns the coordinator. Never turn
                 // that unrelated PENDING result into a middle-click intercept.

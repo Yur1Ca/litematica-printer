@@ -28,6 +28,7 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -99,9 +100,31 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return "chest_tracker";
     }
 
+    /** Handles a standalone survival pick-block request when the printer switch is off. */
+    public boolean handlePickBlock(LocalPlayer player, Item item) {
+        if (!enabled() || player == null || item == null || item == Items.AIR
+                || player.containerMenu != player.inventoryMenu
+                || player.inventoryMenu.slots.stream().anyMatch(slot -> slot.getItem().is(item))) {
+            return false;
+        }
+        if (this.activeRequest != null) {
+            return this.activeRequest.source() == MaterialRequest.Source.PICK_BLOCK;
+        }
+        if (RuntimeAccess.get().materialRequests().isBusy()) {
+            return false;
+        }
+        MaterialReservation reservation = this.request(new MaterialRequest(
+                Long.MAX_VALUE,
+                List.of(item),
+                item,
+                1,
+                MaterialRequest.Source.PICK_BLOCK
+        ));
+        return reservation.state() != MaterialReservation.State.UNAVAILABLE;
+    }
+
     @Override
     public MaterialReservation request(MaterialRequest request) {
-        if (request.source() == MaterialRequest.Source.PICK_BLOCK) return unavailable(request);
         if (!enabled()) return unavailable(request);
         if (this.activeRequest != null) {
             return this.activeRequest.token() == request.token() ? this.status(request) : pending(request);
@@ -459,6 +482,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private void finishAvailable(boolean closeOwnedMenu) {
         if (closeOwnedMenu) closeContainer();
         else releaseResources();
+        selectCompletedPickBlockItem();
         this.activeRequest = null;
         this.phase = Phase.IDLE;
         this.suppressContainerScreen = false;
@@ -468,6 +492,21 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.nestedShulkerSnapshot = ItemStack.EMPTY;
         this.restoringNestedShulker = false;
         this.nestedPlayerInventorySlot = -1;
+    }
+
+    private void selectCompletedPickBlockItem() {
+        if (this.activeRequest == null
+                || this.activeRequest.source() != MaterialRequest.Source.PICK_BLOCK
+                || this.client.player == null
+                || this.client.player.containerMenu != this.client.player.inventoryMenu) {
+            return;
+        }
+        for (Item item : this.activeRequest.acceptedItems()) {
+            if (InventoryUtils.playerHasItemInInventory(this.client.player, item)) {
+                InventoryUtils.setPickedItemToHand(new ItemStack(item), this.client);
+                return;
+            }
+        }
     }
 
     private void finishUnavailable(@Nullable Item item) {

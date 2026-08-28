@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import me.aleksilassila.litematica.printer.utils.mods.ChestTrackerBridge;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -39,6 +40,9 @@ public abstract class MixinMinecraftPickBlock {
         Minecraft client = Minecraft.getInstance();
         Item item = client.level == null ? Items.AIR : client.level.getBlockState(pos).getBlock().asItem();
         if (QuickShulkerBridge.handlePickBlock(client.player, item)) {
+            return;
+        }
+        if (ChestTrackerBridge.handlePickBlock(client.player, item)) {
             return;
         }
         original.call(gameMode, pos, includeData);

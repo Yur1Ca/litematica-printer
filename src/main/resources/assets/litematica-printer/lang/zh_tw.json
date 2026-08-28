@@ -268,9 +268,9 @@
   "litematica-printer.config.printBonemealCropsClicks": "農作物催熟連點次數",
   "litematica-printer.config.printBonemealCropsClicks.desc": "每次處理作物時連續使用骨粉的次數。\n數值越高，催熟越快，但骨粉消耗也會更猛。",
   "litematica-printer.config.bedrockInterval": "破基岩間隔時間",
-  "litematica-printer.config.bedrockInterval.desc": "破基岩執行窗口的全域間隔時間（單位為遊戲刻）。\n每次控制器消耗吞吐預算後，會等待該間隔再開啟下一輪執行。\n設為 0 則連續執行；數值越大越穩定，但速度越慢。",
+  "litematica-printer.config.bedrockInterval.desc": "破基岩並發鏈路啟動之間的間隔（單位為遊戲刻）。\n例如間隔 2、並發上限 6 時，每 2 刻啟動 1 條新鏈路，最多同時運行 6 條；已有機器仍會每刻繼續推進。\n間隔越大，新鏈路進入越慢。",
   "litematica-printer.config.bedrockBlocksPerTick": "每刻破基岩方塊數",
-  "litematica-printer.config.bedrockBlocksPerTick.desc": "破基岩每遊戲刻的吞吐上限。\n它會同時影響每刻可推進、可提交及可並行的目標數。\n數值越高通常越快，但也更容易出現清理堆積與機器重疊。",
+  "litematica-printer.config.bedrockBlocksPerTick.desc": "單個破基岩執行窗口可提交及推進的目標上限。\n間隔決定窗口多久開啟一次；並行活躍目標上限也跟隨此值。\n數值越高通常越快，但也更容易出現清理堆積與機器重疊。",
   "litematica-printer.config.tweakerooAngelBlockMayBuild": "放寬 Tweakeroo 憑空放置限制",
   "litematica-printer.config.tweakerooAngelBlockMayBuild.desc": "啟用後，可讓 Tweakeroo 的憑空放置通過創造模式判斷，並在生存模式使用。\n關閉後維持 Tweakeroo 原本僅創造模式可用的行為。"
 }

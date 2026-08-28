@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BedrockCandidateBacklogTest {
     @Test
-    void unselectedAndRejectedCandidatesRemainUntilSuccessfulSubmission() {
+    void boundedBacklogRetainsUnselectedCandidatesUntilSubmission() {
         BedrockCandidateBacklog<String> backlog = new BedrockCandidateBacklog<>(4);
         BlockPos first = new BlockPos(0, 0, 0);
         BlockPos second = new BlockPos(1, 0, 0);
@@ -37,10 +37,10 @@ class BedrockCandidateBacklogTest {
 
         assertTrue(backlog.offer(first, "old"));
         assertTrue(backlog.offer(second, "second"));
-        assertTrue(backlog.offer(new BlockPos(2, 0, 0), "third"));
+        assertFalse(backlog.offer(new BlockPos(2, 0, 0), "third"));
         assertFalse(backlog.offer(first, "refreshed"));
 
-        assertEquals(Integer.MAX_VALUE, backlog.remainingCapacity());
+        assertEquals(0, backlog.remainingCapacity());
         assertEquals("refreshed", backlog.snapshot().get(0));
     }
 

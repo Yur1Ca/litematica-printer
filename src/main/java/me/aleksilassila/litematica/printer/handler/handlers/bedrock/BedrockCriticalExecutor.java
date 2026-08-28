@@ -20,9 +20,15 @@ final class BedrockCriticalExecutor {
     private long currentTick = Long.MIN_VALUE;
     private int reservedPistons;
     private final BedrockPlacer placer;
+    private final BedrockRunStats stats;
 
     BedrockCriticalExecutor(BedrockPlacer placer) {
+        this(placer, null);
+    }
+
+    BedrockCriticalExecutor(BedrockPlacer placer, BedrockRunStats stats) {
         this.placer = placer;
+        this.stats = stats;
     }
 
     BedrockPlacer placer() {
@@ -79,6 +85,13 @@ final class BedrockCriticalExecutor {
         // Do not branch on packet results from this point onward. The exploit is the
         // ordering of this break immediately followed by the reverse piston placement.
         BedrockBreaker.sendCriticalBreakPackets(pistonPos, executeFacing);
-        return this.placer.placePiston(pistonPos, executeFacing);
+        boolean accepted = this.placer.placePiston(pistonPos, executeFacing);
+        if (accepted) {
+            this.placer.schedulePistonRetry(bedrockPos, pistonPos, executeFacing);
+        } else {
+            reservedPistons--;
+            if (this.stats != null) this.stats.lastReason = "piston_place_failed";
+        }
+        return accepted;
     }
 }

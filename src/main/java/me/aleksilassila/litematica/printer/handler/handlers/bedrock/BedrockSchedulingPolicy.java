@@ -33,10 +33,13 @@ final class BedrockSchedulingPolicy {
     }
 
     static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.UNINITIALIZED
-                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
-                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE
-                || status == BedrockTarget.Status.EXTENDED;
+        // A waiting/retracting target still owns its piston, head and power footprint until the
+        // server confirms the outcome. Excluding these states lets admission reuse the same
+        // coordinates while packets are in flight, which corrupts the next machine.
+        return status != null
+                && status != BedrockTarget.Status.FAILED
+                && status != BedrockTarget.Status.STUCK
+                && status != BedrockTarget.Status.RETRACTED;
     }
 
     static boolean isFastLane(BedrockTarget.Status status) {

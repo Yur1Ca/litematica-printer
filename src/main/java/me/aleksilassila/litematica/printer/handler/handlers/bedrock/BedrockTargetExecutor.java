@@ -129,6 +129,7 @@ final class BedrockTargetExecutor {
         if (target.isHorizontalLayout()) {
             this.placer.clearHorizontalLookState();
         }
+        this.placer.cancelPistonRetry(target.getPistonPos());
         iterator.remove();
         for (BlockPos tempPos : target.getCleanupPositions()) {
             this.cleanup.cleanupBlockOrQueue(tempPos, false, this.targets::isReserved);

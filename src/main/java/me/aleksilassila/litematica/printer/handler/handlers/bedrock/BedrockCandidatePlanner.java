@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class BedrockCandidatePlanner {
     private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
@@ -26,7 +28,9 @@ public final class BedrockCandidatePlanner {
     private final BedrockCandidateBacklog<BedrockCandidatePlan> candidateBacklog = new BedrockCandidateBacklog<>();
     /** Avoid rebuilding the same unavailable piston layout on every scan pass. */
     private final Long2LongOpenHashMap rejectedPlanRevisions = new Long2LongOpenHashMap();
+    private final Map<BlockPos, Long> retryUntil = new HashMap<>();
     private boolean sourceHasMore;
+    private long plannerTick;
 
     public BedrockCandidatePlanner(ScanEngine scanEngine, LitematicaAdapter litematica) {
         this.scanEngine = scanEngine;
@@ -34,10 +38,15 @@ public final class BedrockCandidatePlanner {
     }
 
     public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, LocalPlayer player, int maxEffectiveExecutions, int scanGuardLimit) {
+        this.plannerTick++;
+        this.candidateBacklog.setCapacity(Math.max(maxEffectiveExecutions * 2, 16));
         this.pruneCandidateBacklog(sourceBox, level);
         int selectionLimit = this.getCandidateSelectionLimit(maxEffectiveExecutions);
         List<BedrockCandidatePlan> candidates = this.getEligibleCandidates();
-        if (candidates.size() < selectionLimit && BedrockController.canScanForTargets()) {
+        boolean backlogNeedsScanAdvance = this.candidateBacklog.remainingCapacity() == 0
+                && this.sourceHasMore;
+        if ((candidates.size() < selectionLimit || backlogNeedsScanAdvance)
+                && (backlogNeedsScanAdvance || BedrockController.canScanForTargets())) {
             CandidateShard shard = this.collectCandidateShard(
                     sourceBox,
                     level,
@@ -96,11 +105,15 @@ public final class BedrockCandidatePlanner {
     public void recordSubmissionResult(BlockPos pos, boolean submitted) {
         if (submitted) {
             this.candidateBacklog.remove(pos);
+            this.retryUntil.remove(pos);
+        } else if (pos != null) {
+            this.retryUntil.put(pos.immutable(), this.plannerTick + 1L);
         }
     }
 
     public void discard(BlockPos pos) {
         this.candidateBacklog.remove(pos);
+        this.retryUntil.remove(pos);
     }
 
     public boolean hasPendingCandidates() {
@@ -118,7 +131,9 @@ public final class BedrockCandidatePlanner {
     public void reset() {
         this.candidateBacklog.clear();
         this.rejectedPlanRevisions.clear();
+        this.retryUntil.clear();
         this.sourceHasMore = false;
+        this.plannerTick = 0L;
     }
 
     private List<BedrockCandidatePlan> getEligibleCandidates() {
@@ -126,6 +141,9 @@ public final class BedrockCandidatePlanner {
         List<BedrockCandidatePlan> sideCandidates = new ArrayList<>();
         for (BedrockCandidatePlan candidate : this.candidateBacklog.snapshot()) {
             if (BedrockController.isPositionOnRetryCooldown(candidate.pos())) {
+                continue;
+            }
+            if (this.retryUntil.getOrDefault(candidate.pos(), Long.MIN_VALUE) > this.plannerTick) {
                 continue;
             }
             if (candidate.layout().isHorizontal()) {
@@ -146,6 +164,7 @@ public final class BedrockCandidatePlanner {
             return !sourceBox.contains(pos)
                     || !this.litematica.isWithinSelectionRange(pos);
         });
+        this.retryUntil.keySet().removeIf(pos -> !this.candidateBacklog.contains(pos));
     }
 
     private CandidateShard collectCandidateShard(
@@ -194,6 +213,9 @@ public final class BedrockCandidatePlanner {
             }
             BlockPos pos = iterator.next();
             scanned++;
+            if (this.candidateBacklog.remainingCapacity() == 0) {
+                continue;
+            }
             modeled++;
             BedrockCandidatePlan candidate = this.buildModeledCandidate(level, pos, allowSide);
             if (candidate != null) {

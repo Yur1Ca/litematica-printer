@@ -60,6 +60,9 @@ public class BedrockHandler extends FeatureModuleBase {
         // prevent already discovered candidates from reaching the controller. Previously this
         // gate made the last cached bedrock positions wait until player movement rebuilt the
         // interaction window and invoked the scanner again.
+        if (!BedrockController.canSubmitInCurrentWindow()) {
+            return false;
+        }
         return this.candidatePlanner.hasPendingCandidates()
                 || BedrockController.canScanForTargets();
     }

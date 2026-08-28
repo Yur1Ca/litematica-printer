@@ -71,9 +71,6 @@ final class BedrockTargetActionExecutor {
         if (!allowExecute || this.host.hasTried()) return;
         BedrockMachineLayout layout = this.host.layout();
         if (!this.host.placer().preparePistonPlacementLook(this.host.pistonPos(), layout.getExecuteFacing())) return;
-        for (int offset = 1; offset < 6; offset++) {
-            this.host.recordTemporary(this.host.pistonPos().relative(layout.getPistonOffset(), offset));
-        }
         if (!this.host.criticalExecutor().submit(
                 this.host.level(),
                 this.host.bedrockPos(),
@@ -81,6 +78,9 @@ final class BedrockTargetActionExecutor {
                 layout.getExecuteFacing(),
                 this.host.ownedTorchPositions()
         )) return;
+        for (int offset = 1; offset < 6; offset++) {
+            this.host.recordTemporary(this.host.pistonPos().relative(layout.getPistonOffset(), offset));
+        }
         this.host.setHasTried(true);
         this.host.setExecuteTick(this.host.tickTimes());
         this.host.markThroughputAction();

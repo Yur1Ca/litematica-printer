@@ -41,6 +41,7 @@ final class BedrockAdmissionController {
     private long nextAcceptTick;
     private int cleanupPressure;
     private int blockedCleanupDemand;
+    private int submissionBudget = 1;
 
     BedrockAdmissionController(
             Minecraft client,
@@ -72,11 +73,16 @@ final class BedrockAdmissionController {
         this.nextAcceptTick = 0L;
         this.cleanupPressure = 0;
         this.blockedCleanupDemand = 0;
+        this.submissionBudget = 1;
     }
 
     void beginTick(ClientLevel level) {
         this.blockedCleanupDemand = 0;
         this.cleanupPressure = this.cleanup.samplePressure(level, this.targets::isReserved);
+    }
+
+    void setSubmissionBudget(int budget) {
+        this.submissionBudget = Math.max(0, budget);
     }
 
     void refreshCleanupPressure(ClientLevel level) {
@@ -169,6 +175,7 @@ final class BedrockAdmissionController {
         }
         this.targets.add(target);
         this.stats.acceptedThisTick++;
+        this.submissionBudget--;
         this.stats.submittedTargets++;
         this.stats.lastReason = "running";
         return true;
@@ -297,6 +304,9 @@ final class BedrockAdmissionController {
     }
 
     private AcceptProbe probeCanScanForTargets() {
+        if (this.submissionBudget <= 0) {
+            return AcceptProbe.reject("interval_window");
+        }
         if (this.stats.confirmedSuccesses == 0
                 && this.configuredThroughput() <= 1
                 && !this.targets.isEmpty()) {

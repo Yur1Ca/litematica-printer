@@ -26,6 +26,7 @@ public final class BedrockEngine implements RuntimeComponent {
     private final BedrockThroughputScheduler throughputScheduler = new BedrockThroughputScheduler();
     private final LongSupplier tickClock;
     private long lastProcessedTick = Long.MIN_VALUE;
+    private int submissionBudget;
 
     public BedrockEngine(
             Minecraft client,
@@ -36,7 +37,7 @@ public final class BedrockEngine implements RuntimeComponent {
         this.client = client;
         this.tickClock = tickClock;
         this.placer = new BedrockPlacer(client);
-        this.criticalExecutor = new BedrockCriticalExecutor(this.placer);
+        this.criticalExecutor = new BedrockCriticalExecutor(this.placer, this.stats);
         this.cleanup = new BedrockCleanupCoordinator(client, cooldownUtils);
         this.admission = new BedrockAdmissionController(
                 client, this.targets, this.cleanup, this.stats, cooldownUtils, tickClock,
@@ -63,6 +64,7 @@ public final class BedrockEngine implements RuntimeComponent {
         this.placer.clearHorizontalLookState();
         this.criticalExecutor.reset();
         this.throughputScheduler.reset();
+        this.submissionBudget = 0;
         this.lastProcessedTick = Long.MIN_VALUE;
         HudStatsManager.getRuntime().resetMode(HudStatsManager.Mode.BEDROCK);
     }
@@ -85,6 +87,7 @@ public final class BedrockEngine implements RuntimeComponent {
         this.stats.beginTick();
         this.cleanup.beginTick();
         this.criticalExecutor.beginTick(now);
+        this.placer.tickPistonRetries();
         this.admission.purgeTargetsOutsideSelection();
         this.admission.beginTick(level);
 
@@ -92,11 +95,18 @@ public final class BedrockEngine implements RuntimeComponent {
                 this.admission.configuredThroughput(),
                 this.admission.configuredInterval()
         );
+        boolean submissionWindowOpen = allocation.total() > 0;
+        int throughput = this.admission.configuredThroughput();
+        this.submissionBudget = submissionWindowOpen ? throughput : 0;
+        this.admission.setSubmissionBudget(this.submissionBudget);
+        int continuationTotal = throughput;
+        int continuationCritical = (continuationTotal + 1) / 2;
+        int continuationPreparation = continuationTotal - continuationCritical;
         Set<BedrockTarget> processedTargets = new LinkedHashSet<>();
         BedrockTarget sideLookTarget = this.targets.findSideLookTarget();
         int unusedFastLaneBudget = this.targetExecutor.process(
-                level, allocation.critical(), true, processedTargets, sideLookTarget);
-        int preparationBudget = allocation.preparation() + unusedFastLaneBudget;
+                level, continuationCritical, true, processedTargets, sideLookTarget);
+        int preparationBudget = continuationPreparation + unusedFastLaneBudget;
         int unusedBudget = this.targetExecutor.process(
                 level, preparationBudget, false, processedTargets, sideLookTarget);
         if (unusedBudget > 0) {
@@ -122,6 +132,10 @@ public final class BedrockEngine implements RuntimeComponent {
 
     public boolean canScanForTargets() {
         return this.admission.canScanForTargets();
+    }
+
+    boolean canSubmitInCurrentWindow() {
+        return this.submissionBudget > 0;
     }
 
     public boolean canAccept(BlockPos pos) {

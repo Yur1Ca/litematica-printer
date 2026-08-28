@@ -20,8 +20,8 @@ class BedrockSchedulingPolicyTest {
     void onlyActionableMachineStatesConsumeActiveCapacity() {
         assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.UNINITIALIZED));
         assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.EXTENDED));
-        assertFalse(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.NEEDS_WAITING));
-        assertFalse(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.RETRACTING));
+        assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.NEEDS_WAITING));
+        assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.RETRACTING));
     }
 
     @Test

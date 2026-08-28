@@ -8,17 +8,23 @@ import java.util.function.BiPredicate;
 
 /** Retains modeled bedrock candidates until the controller accepts or invalidates them. */
 final class BedrockCandidateBacklog<T> {
+    private static final int DEFAULT_CAPACITY = 16;
     private final LinkedHashMap<BlockPos, T> entries = new LinkedHashMap<>();
+    private int capacity;
 
     BedrockCandidateBacklog() {
+        this(DEFAULT_CAPACITY);
     }
 
-    /**
-     * Compatibility constructor for existing tests and pre-refactor callers.  Retention is no
-     * longer spatially capped; the argument is intentionally ignored.
-     */
-    BedrockCandidateBacklog(int ignoredCapacity) {
-        this();
+    BedrockCandidateBacklog(int capacity) {
+        this.capacity = Math.max(1, capacity);
+    }
+
+    void setCapacity(int capacity) {
+        this.capacity = Math.max(1, capacity);
+        while (this.entries.size() > this.capacity) {
+            this.entries.remove(this.entries.keySet().iterator().next());
+        }
     }
 
     boolean offer(BlockPos pos, T candidate) {
@@ -28,6 +34,9 @@ final class BedrockCandidateBacklog<T> {
         BlockPos stablePos = pos.immutable();
         if (this.entries.containsKey(stablePos)) {
             this.entries.put(stablePos, candidate);
+            return false;
+        }
+        if (this.entries.size() >= this.capacity) {
             return false;
         }
         this.entries.put(stablePos, candidate);
@@ -53,7 +62,7 @@ final class BedrockCandidateBacklog<T> {
     }
 
     int remainingCapacity() {
-        return Integer.MAX_VALUE;
+        return Math.max(0, this.capacity - this.entries.size());
     }
 
     int size() {

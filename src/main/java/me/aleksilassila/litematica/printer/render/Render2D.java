@@ -325,6 +325,7 @@ public class Render2D {
                 + " | 清理 " + bedrock.cleanupQueueSize()
                 + " | 压力 " + bedrock.cleanupPressure(), new Color(255, 255, 255, 255)));
         lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
+                + "/窗口 间隔 " + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue()
                 + " | 提交 " + bedrock.acceptedThisTick() + "/" + bedrock.submitCap()
                 + " | 阻塞 " + bedrock.rejectedThisTick()
                 + " | 扫描 " + formatScanState(RuntimeAccess.get().modules().bedrock())

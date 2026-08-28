@@ -10,6 +10,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
@@ -23,6 +24,7 @@ import java.util.Map;
 public final class BedrockPlacer {
     private final Minecraft client;
     private final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
+    private final Map<BlockPos, PendingPistonRetry> pendingPistonRetries = new HashMap<>();
 
     BedrockPlacer(Minecraft client) {
         this.client = client;
@@ -30,7 +32,50 @@ public final class BedrockPlacer {
 
     public void clearHorizontalLookState() {
         pendingHorizontalPistonPlacements.clear();
+        pendingPistonRetries.clear();
         NetworkUtils.clearScopedLookOverride();
+    }
+
+    void schedulePistonRetry(BlockPos bedrockPos, BlockPos pistonPos, Direction facing) {
+        if (bedrockPos == null || pistonPos == null || facing == null) {
+            return;
+        }
+        this.pendingPistonRetries.put(pistonPos.immutable(), new PendingPistonRetry(
+                bedrockPos.immutable(), facing, RuntimeAccess.get().currentTick() + 1L, 0));
+    }
+
+    void cancelPistonRetry(BlockPos pistonPos) {
+        if (pistonPos != null) {
+            this.pendingPistonRetries.remove(pistonPos.immutable());
+        }
+    }
+
+    void tickPistonRetries() {
+        if (this.client.level == null) {
+            this.pendingPistonRetries.clear();
+            return;
+        }
+        long now = RuntimeAccess.get().currentTick();
+        var iterator = this.pendingPistonRetries.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            PendingPistonRetry retry = entry.getValue();
+            if (!BedrockTargetBlocks.isTargetBlock(this.client.level.getBlockState(retry.bedrockPos()))
+                    || this.client.level.getBlockState(entry.getKey()).is(Blocks.PISTON)) {
+                iterator.remove();
+                continue;
+            }
+            if (retry.attempts() >= 4) {
+                iterator.remove();
+                continue;
+            }
+            if (now < retry.nextTick()) {
+                continue;
+            }
+            this.placePiston(entry.getKey(), retry.facing());
+            entry.setValue(new PendingPistonRetry(
+                    retry.bedrockPos(), retry.facing(), now + 1L, retry.attempts() + 1));
+        }
     }
 
     public boolean hasPendingHorizontalLook(BlockPos pistonPos) {
@@ -49,8 +94,8 @@ public final class BedrockPlacer {
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
-        placeBlockAggressively(player, hitResult, true);
-        return true;
+        boolean accepted = placeBlockAggressively(player, hitResult, true);
+        return accepted;
     }
 
     public boolean placePiston(BlockPos pistonPos, Direction facing) {
@@ -102,19 +147,20 @@ public final class BedrockPlacer {
 
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);
 
-        placeBlockAggressively(player, hitResult, false);
+        boolean accepted = placeBlockAggressively(player, hitResult, false);
         NetworkUtils.clearScopedLookOverride();
-        return true;
+        return accepted;
     }
 
-    private void placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult, boolean allowLocalUseFallback) {
+    private boolean placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult, boolean allowLocalUseFallback) {
         boolean useShift = client.level != null && BedrockTargetBlocks.requiresSneakPlacement(client.level.getBlockState(hitResult.getBlockPos()));
         boolean wasSneak = player.isShiftKeyDown();
         if (useShift && !wasSneak) {
             RuntimeAccess.get().actionBroker().setShift(player, true);
         }
+        InteractionResult result;
         try {
-            InteractionUtils.getRuntime().useItemOn(false, InteractionHand.OFF_HAND, hitResult);
+            result = InteractionUtils.getRuntime().useItemOn(false, InteractionHand.OFF_HAND, hitResult);
             if (allowLocalUseFallback) {
                 ItemStack offhand = player.getOffhandItem();
                 if (!offhand.isEmpty()) {
@@ -126,6 +172,7 @@ public final class BedrockPlacer {
             RuntimeAccess.get().actionBroker().setShift(player, false);
             }
         }
+        return result != InteractionResult.FAIL;
     }
 
     private boolean ensureHorizontalLookSettled(LocalPlayer player, BlockPos pistonPos, Direction facing, PlayerLook look, boolean consumeReadyPlacement) {
@@ -169,5 +216,13 @@ public final class BedrockPlacer {
     }
 
     private record PendingHorizontalPlacement(Direction facing, long sentTick) {
+    }
+
+    private record PendingPistonRetry(
+            BlockPos bedrockPos,
+            Direction facing,
+            long nextTick,
+            int attempts
+    ) {
     }
 }

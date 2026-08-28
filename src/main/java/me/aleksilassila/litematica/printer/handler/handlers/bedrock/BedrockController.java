@@ -43,6 +43,10 @@ public final class BedrockController {
         return engine().canScanForTargets();
     }
 
+    public static boolean canSubmitInCurrentWindow() {
+        return engine().canSubmitInCurrentWindow();
+    }
+
     public static boolean canAccept(BlockPos pos) {
         return engine().canAccept(pos);
     }

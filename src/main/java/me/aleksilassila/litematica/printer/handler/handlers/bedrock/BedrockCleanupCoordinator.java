@@ -17,12 +17,14 @@ import java.util.function.Predicate;
 /** Owns temporary machine residue and its retry/cooldown policy. */
 final class BedrockCleanupCoordinator {
     private static final String RETRY_COOLDOWN_KEY = "cleanup_retry";
+    private static final int MAX_QUEUE_SIZE = 512;
 
     private final Minecraft client;
     private final CooldownUtils cooldownUtils;
     private final Set<BlockPos> queue = new LinkedHashSet<>();
     private final Set<BlockPos> conservative = new LinkedHashSet<>();
     private final Set<BlockPos> blocked = new LinkedHashSet<>();
+    private boolean orderDirty;
 
     BedrockCleanupCoordinator(Minecraft client, CooldownUtils cooldownUtils) {
         this.client = client;
@@ -33,6 +35,7 @@ final class BedrockCleanupCoordinator {
         this.queue.clear();
         this.conservative.clear();
         this.blocked.clear();
+        this.orderDirty = false;
     }
 
     void beginTick() {
@@ -56,6 +59,15 @@ final class BedrockCleanupCoordinator {
             return;
         }
         this.queue.add(pos);
+        if (this.queue.size() > MAX_QUEUE_SIZE) {
+            BlockPos oldest = this.queue.iterator().next();
+            if (!oldest.equals(pos)) {
+                this.queue.remove(oldest);
+                this.conservative.remove(oldest);
+                this.blocked.remove(oldest);
+            }
+        }
+        this.orderDirty = true;
         if (!predictRemoval) {
             this.conservative.add(pos);
         }
@@ -65,11 +77,13 @@ final class BedrockCleanupCoordinator {
         this.queue.remove(pos);
         this.conservative.remove(pos);
         this.blocked.remove(pos);
+        this.orderDirty = true;
     }
 
     void markBlocked(BlockPos pos) {
         if (pos != null) {
             this.blocked.add(pos);
+            this.orderDirty = true;
         }
     }
 
@@ -142,11 +156,19 @@ final class BedrockCleanupCoordinator {
 
     int samplePressure(ClientLevel level, Predicate<BlockPos> reserved) {
         int pressure = 0;
-        for (BlockPos pos : this.queue) {
+        Iterator<BlockPos> iterator = this.queue.iterator();
+        while (iterator.hasNext()) {
+            BlockPos pos = iterator.next();
             if (pos == null || reserved.test(pos)) {
                 continue;
             }
             BlockState state = level.getBlockState(pos);
+            if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+                iterator.remove();
+                this.conservative.remove(pos);
+                this.blocked.remove(pos);
+                continue;
+            }
             if (!state.isAir() && BedrockTargetBlocks.isCleanupResidue(state)) {
                 pressure += pressureWeight(state);
             }
@@ -188,7 +210,7 @@ final class BedrockCleanupCoordinator {
 
     private void reorder() {
         ClientLevel level = this.client.level;
-        if (this.queue.size() < 2 || level == null) {
+        if (!this.orderDirty || this.queue.size() < 2 || level == null) {
             return;
         }
         List<BlockPos> ordered = new ArrayList<>(this.queue);
@@ -198,6 +220,7 @@ final class BedrockCleanupCoordinator {
         ));
         this.queue.clear();
         this.queue.addAll(ordered);
+        this.orderDirty = false;
     }
 
     private int priority(BlockPos pos, BlockState state) {

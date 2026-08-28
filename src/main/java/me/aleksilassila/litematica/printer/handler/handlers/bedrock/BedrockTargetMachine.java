@@ -143,7 +143,9 @@ final class BedrockTargetMachine {
                 && this.slimePos.equals(this.torchPlacement.getSupportPos())
                 && BedrockEnvironment.isSlimePlacementUsable(this.level, this.torchPlacement)) {
             if (!this.level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)) {
-                this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem());
+                if (!this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem())) {
+                    return false;
+                }
                 this.footprint.recordTemporary(this.slimePos);
             }
             this.torchSupportPos = this.torchSupportFromPlacement();
@@ -189,7 +191,9 @@ final class BedrockTargetMachine {
         this.torchPlacement = slimePlacement;
         this.slimePos = slimePlacement.getSupportPos();
         if (!this.level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)) {
-            this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem());
+            if (!this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem())) {
+                return false;
+            }
             this.footprint.recordTemporary(this.slimePos);
             markThroughput.run();
         }

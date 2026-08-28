@@ -35,6 +35,18 @@ final class ModuleCandidateSource {
                 SchematicWorldHandler.getSchematicWorld(), module.player,
                 module.getScanGuardLimit(), intent, candidatePredicate,
                 pos -> reach.test(pos) && selection.test(pos),
-                ScanEngine.PassPolicy.INVALIDATIONS_ONLY);
+                cachedPassPolicy(intent));
+    }
+
+    /**
+     * PRINT has client-side eligibility that can change without a server block update: temporary
+     * break markers, falling-placement barriers and action readiness. Let a completed print pass
+     * restart so the lazy probe can recover those targets. World-driven feature scanners retain
+     * their invalidation-only behavior.
+     */
+    static ScanEngine.PassPolicy cachedPassPolicy(ScanIntent intent) {
+        return intent == ScanIntent.PRINT
+                ? ScanEngine.PassPolicy.RESTART
+                : ScanEngine.PassPolicy.INVALIDATIONS_ONLY;
     }
 }

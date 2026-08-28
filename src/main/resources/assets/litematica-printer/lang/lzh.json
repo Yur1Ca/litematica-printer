@@ -102,6 +102,8 @@
   "litematica-printer.config.iteratorShapeType.sphere": "球體",
   "litematica-printer.config.mine": "採掘",
   "litematica-printer.config.mine.desc": "掘選界內所有非液體之石。",
+  "litematica-printer.config.mineTrenchMode": "挖溝模式",
+  "litematica-printer.config.mineTrenchMode.desc": "掘前先以沙填選界內及直線選界兩側相鄰方塊之流體。預設閉。",
   "litematica-printer.config.mineSelectionType": "選界類",
   "litematica-printer.config.mineSelectionType.desc": "採掘模式之工作界域則：同填方模式之選界類。",
   "litematica-printer.config.modeSwitch": "工作類",

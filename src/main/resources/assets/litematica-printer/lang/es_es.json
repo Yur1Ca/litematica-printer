@@ -106,6 +106,8 @@
   "litematica-printer.config.iteratorShapeType.sphere": "Esfera",
   "litematica-printer.config.mine": "Minería",
   "litematica-printer.config.mine.desc": "Mina todos los bloques no líquidos dentro del área seleccionada.",
+  "litematica-printer.config.mineTrenchMode": "Modo zanja",
+  "litematica-printer.config.mineTrenchMode.desc": "Antes de minar, rellena con arena los fluidos dentro de la selección y en los bloques contiguos a ambos lados de una selección recta. Desactivado por defecto.",
   "litematica-printer.config.mineSelectionType": "Tipo de selección",
   "litematica-printer.config.mineSelectionType.desc": "Reglas del área de trabajo del modo minería:\n§dSelección de la proyección§r: Usa como área de trabajo toda la selección actual de la proyección\n§dCapa renderizada de la proyección§r: Solo mina dentro de la capa que se muestra actualmente\n§dSelección de la proyección bajo el jugador§r: Solo procesa las zonas de la selección por debajo de la altura del jugador\n§dSelección de la proyección sobre el jugador§r: Solo procesa las zonas de la selección por encima de la altura del jugador (predeterminado)",
   "litematica-printer.config.modeSwitch": "Tipo de trabajo",

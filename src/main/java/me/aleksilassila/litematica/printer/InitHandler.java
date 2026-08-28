@@ -57,6 +57,7 @@ public class InitHandler implements IInitializationHandler {
         Break.BREAK_LIMIT.setValueChangeCallback(b -> ConfigUi.refresh());
         Mine.EXCAVATE_LIMITER.setValueChangeCallback(b -> ConfigUi.refresh());
         Mine.EXCAVATE_LIMIT.setValueChangeCallback(b -> ConfigUi.refresh());
+        Mine.MINE_TRENCH_MODE.setValueChangeCallback(b -> ConfigUi.refresh());
         Fill.FILL_BLOCK_MODE.setValueChangeCallback(b -> ConfigUi.refresh());
         Core.LAG_CHECK.setValueChangeCallback(b -> ConfigUi.refresh());
         Core.RENDER_HUD.setValueChangeCallback(b -> ConfigUi.refresh());

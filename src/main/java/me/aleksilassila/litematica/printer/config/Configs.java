@@ -609,6 +609,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(SelectionType.LITEMATICA_SELECTION)
                 .build();
 
+        public static final ConfigBoolean MINE_TRENCH_MODE = bool("mineTrenchMode")
+                .defaultValue(false)
+                .build();
+
         // 挖掘模式限制器
         public static final ConfigOptionList EXCAVATE_LIMITER = optionList("excavateLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -632,6 +636,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 MINE_SELECTION_TYPE,          // 挖掘 - 选区类型
+                MINE_TRENCH_MODE,             // 挖掘 - 挖沟模式
                 EXCAVATE_LIMITER,             // 挖掘 - 挖掘模式限制器
                 EXCAVATE_LIMIT,               // 挖掘 - 挖掘模式限制
                 EXCAVATE_WHITELIST,           // 挖掘 - 挖掘白名单

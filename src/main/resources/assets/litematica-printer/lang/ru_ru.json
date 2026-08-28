@@ -106,6 +106,8 @@
   "litematica-printer.config.iteratorShapeType.sphere": "Сфера",
   "litematica-printer.config.mine": "Добыча",
   "litematica-printer.config.mine.desc": "Добывает все нежидкие блоки в пределах выделенной области.",
+  "litematica-printer.config.mineTrenchMode": "Режим траншеи",
+  "litematica-printer.config.mineTrenchMode.desc": "Перед добычей заполняет песком жидкости внутри выделения и в блоках непосредственно по обеим сторонам прямого выделения. По умолчанию выключен.",
   "litematica-printer.config.mineSelectionType": "Тип выделения",
   "litematica-printer.config.mineSelectionType.desc": "Правила рабочей области режима добычи:\n§dВыделение проекции§r: Использовать всю текущую выделенную область проекции\n§dОтображаемый слой проекции§r: Выполнять добычу только в пределах текущего отображаемого слоя\n§dВыделение проекции ниже игрока§r: Обрабатывать только области ниже высоты игрока\n§dВыделение проекции выше игрока§r: Обрабатывать только области выше высоты игрока (по умолчанию)",
   "litematica-printer.config.modeSwitch": "Тип работы",

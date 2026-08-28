@@ -106,6 +106,8 @@
   "litematica-printer.config.iteratorShapeType.sphere": "Sphere",
   "litematica-printer.config.mine": "Mining",
   "litematica-printer.config.mine.desc": "Mine all non-liquid blocks within selection range.",
+  "litematica-printer.config.mineTrenchMode": "Trench Mode",
+  "litematica-printer.config.mineTrenchMode.desc": "Before mining, fill fluids inside the selection and in the blocks immediately beside both sides of a straight selection with sand. Disabled by default.",
   "litematica-printer.config.mineSelectionType": "Selection Type",
   "litematica-printer.config.mineSelectionType.desc": "Working selection range rules for mining mode:\n§dProjection Selection§r: Use complete selection currently selected in projection as working range\n§dProjection Render Layer§r: Only execute mining within current render layer range of projection\n§dProjection Selection Below Player§r: Only process areas below player's height in selection\n§dProjection Selection Above Player§r: Only process areas above player's height in selection (default)",
   "litematica-printer.config.modeSwitch": "Work Type",

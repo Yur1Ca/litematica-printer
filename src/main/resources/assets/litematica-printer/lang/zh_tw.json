@@ -102,6 +102,8 @@
   "litematica-printer.config.iteratorShapeType.sphere": "球體",
   "litematica-printer.config.mine": "挖掘",
   "litematica-printer.config.mine.desc": "挖掘選區範圍內的所有非液體方塊。",
+  "litematica-printer.config.mineTrenchMode": "挖溝模式",
+  "litematica-printer.config.mineTrenchMode.desc": "挖掘前先用沙子填充選區內及直線選區兩側緊鄰方塊中的流體。預設關閉。",
   "litematica-printer.config.mineSelectionType": "選區類型",
   "litematica-printer.config.mineSelectionType.desc": "挖掘模式的工作選區範圍規則：\n§d投影選區§r：使用投影當前選中的完整選區作為工作範圍\n§d投影渲染層§r：僅在投影當前渲染層範圍內執行挖掘\n§d投影選區 玩家之下§r：僅處理選區中玩家所在高度以下的區域\n§d投影選區 玩家之上§r：僅處理選區中玩家所在高度以上的區域(預設)",
   "litematica-printer.config.modeSwitch": "工作類型",

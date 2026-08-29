@@ -156,6 +156,9 @@ public final class MiningInteractionController {
             if (this.port.isDestroying()) this.resetDestroyState(player, this.port.destroyPos());
             this.feedback.resetHitSound();
             this.feedback.playHitSound(player, level, state, pos, true);
+            if (progress >= 0.7F) {
+                this.feedback.playBreakSound(pos, state);
+            }
             this.send(Action.START_DESTROY_BLOCK, pos, direction);
             if (!player.getAbilities().instabuild) {
                 if (progress >= 1.0F) {
@@ -180,7 +183,7 @@ public final class MiningInteractionController {
             return BlockBreakResult.IN_PROGRESS;
         }
         if (this.feedback.hasPending(pos)) return BlockBreakResult.IN_PROGRESS;
-        BlockBreakResult result = this.continueDestroy(true, pos, direction, false, allowToolSwitch);
+        BlockBreakResult result = this.continueDestroy(true, pos, direction, false, allowToolSwitch, true);
         if (result == BlockBreakResult.FAILED) return result;
         return this.pendingDelayedDestroys.containsKey(pos) || this.feedback.hasPending(pos)
                 ? BlockBreakResult.IN_PROGRESS : result;
@@ -193,13 +196,25 @@ public final class MiningInteractionController {
             boolean forceDelayedDestroy,
             boolean allowToolSwitch
     ) {
+        return this.continueDestroy(
+                localPrediction, pos, direction, forceDelayedDestroy, allowToolSwitch, false);
+    }
+
+    private BlockBreakResult continueDestroy(
+            boolean localPrediction,
+            BlockPos pos,
+            Direction direction,
+            boolean forceDelayedDestroy,
+            boolean allowToolSwitch,
+            boolean miningFeedback
+    ) {
         LocalPlayer player = this.port.client().player;
         ClientLevel level = this.port.client().level;
         if (player == null || level == null || this.port.client().gameMode == null) return BlockBreakResult.FAILED;
         boolean delayedConfirmation = delayedConfirmation(forceDelayedDestroy);
         boolean localEffects = localPrediction || forceDelayedDestroy;
         boolean localRemoval = localPrediction && !delayedConfirmation;
-        boolean manualSound = forceDelayedDestroy || !localPrediction;
+        boolean manualSound = miningFeedback || forceDelayedDestroy || !localPrediction;
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
             this.feedback.flushPendingBreakSound(pos);
@@ -242,7 +257,7 @@ public final class MiningInteractionController {
             // breaks immediately. This is normal mining (accumulation), not the same-tick exploit that
             // the old useDelayed branch used (which always failed to failedToMine for delta < 0.7 → 10/s).
             if (this.port.destroyProgress() >= completionThreshold(forceDelayedDestroy)) {
-                if (!localRemoval) this.feedback.playBreakSound(pos, state);
+                if (miningFeedback || !localRemoval) this.feedback.playBreakSound(pos, state);
                 NetworkUtils.sendPacket(sequence -> {
                     if (delayedConfirmation) this.queuePendingDestroy(pos, localPrediction);
                     if (localRemoval) this.port.destroyBlock(pos);
@@ -267,7 +282,7 @@ public final class MiningInteractionController {
         // ceiling; here only suppressFastBreak propagates the durability downgrade from
         // continueForMine so the Tweakeroo near-broken-tool protection is never punched through.
         if (!this.suppressFastBreak && progress >= completionThreshold(forceDelayedDestroy)) {
-            if (!localRemoval) this.feedback.playBreakSound(pos, state);
+            if (miningFeedback || !localRemoval) this.feedback.playBreakSound(pos, state);
             this.send(Action.START_DESTROY_BLOCK, pos, direction);
             NetworkUtils.sendPacket(sequence -> {
                 if (delayedConfirmation) this.queuePendingDestroy(pos, localPrediction);

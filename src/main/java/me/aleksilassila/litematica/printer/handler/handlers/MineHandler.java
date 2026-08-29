@@ -430,9 +430,9 @@ public class MineHandler extends FeatureModuleBase {
         for (PrinterBox box : this.getScanSourceBoxes(interactionBox)) {
             // A trench is a one-block-wide horizontal line. Keep non-line selections a safe no-op.
             if (box.minX != box.maxX && box.minZ != box.maxZ) continue;
-            Direction[] sides = box.minX == box.maxX
-                    ? new Direction[]{Direction.EAST, Direction.WEST}
-                    : new Direction[]{Direction.NORTH, Direction.SOUTH};
+            Direction[] sides = {
+                    Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+            };
             for (BlockPos pos : box) {
                 BlockState state = this.level.getBlockState(pos);
                 if (this.isFluid(state)) discovered.add(pos.immutable());

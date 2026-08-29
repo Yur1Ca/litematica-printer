@@ -9,7 +9,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Classifies and cleans transient machine residue for one target. */
 final class BedrockTargetResidue {
-    private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int CLEANUP_INTERVAL_TICKS = 4;
 
     private final ClientLevel level;
@@ -98,12 +97,13 @@ final class BedrockTargetResidue {
             boolean hasTried,
             int executeTick,
             int tickTimes,
+            int syncTimeoutTicks,
             BedrockTorchPlacement torchPlacement,
             BlockPos torchSupportPos,
             BlockPos slimePos
     ) {
         return this.isPollutedPistonState()
-                || this.isPollutedHeadState(hasTried, executeTick, tickTimes)
+                || this.isPollutedHeadState(hasTried, executeTick, tickTimes, syncTimeoutTicks)
                 || this.isPollutedTorchSupportState(torchPlacement, torchSupportPos, slimePos)
                 || this.isPollutedTorchState(torchPlacement)
                 || this.isPollutedSlimeSupportState(slimePos);
@@ -113,6 +113,7 @@ final class BedrockTargetResidue {
             int tickTimes,
             boolean hasTried,
             int executeTick,
+            int syncTimeoutTicks,
             BedrockTorchPlacement torchPlacement,
             BlockPos torchSupportPos,
             BlockPos slimePos
@@ -122,7 +123,7 @@ final class BedrockTargetResidue {
             return false;
         }
         boolean pollutedPiston = this.isPollutedPistonState();
-        boolean pollutedHead = this.isPollutedHeadState(hasTried, executeTick, tickTimes);
+        boolean pollutedHead = this.isPollutedHeadState(hasTried, executeTick, tickTimes, syncTimeoutTicks);
         boolean pollutedTorchSupport = this.isPollutedTorchSupportState(
                 torchPlacement, torchSupportPos, slimePos);
         boolean pollutedTorch = this.isPollutedTorchState(torchPlacement);
@@ -174,13 +175,18 @@ final class BedrockTargetResidue {
         return BedrockTargetBlocks.isCleanupResidue(state);
     }
 
-    private boolean isPollutedHeadState(boolean hasTried, int executeTick, int tickTimes) {
+    private boolean isPollutedHeadState(
+            boolean hasTried,
+            int executeTick,
+            int tickTimes,
+            int syncTimeoutTicks
+    ) {
         BlockState state = this.level.getBlockState(this.headPos);
         if (state.isAir() || state.is(Blocks.MOVING_PISTON) || state.is(Blocks.PISTON_HEAD)) {
             return false;
         }
         if (hasTried && executeTick >= 0
-                && tickTimes - executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && tickTimes - executeTick < syncTimeoutTicks
                 && state.is(Blocks.PISTON)) {
             return false;
         }

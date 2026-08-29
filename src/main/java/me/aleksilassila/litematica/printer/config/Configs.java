@@ -416,6 +416,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        public static final ConfigBoolean BEDROCK_MULTIPLAYER_ADAPTIVE = bool("bedrockMultiplayerAdaptive")
+                .defaultValue(true)
+                .build();
+
         public static final ConfigStringList BEDROCK_WHITELIST = stringList("bedrockWhitelist")
                 .build();
 
@@ -423,6 +427,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BEDROCK_INTERVAL,
                 BEDROCK_BLOCKS_PER_TICK,
                 BEDROCK_ALLOW_SIDE,
+                BEDROCK_MULTIPLAYER_ADAPTIVE,
                 BEDROCK_WHITELIST
         );
     }

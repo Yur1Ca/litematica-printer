@@ -17,6 +17,7 @@ final class BedrockTargetExecutor {
     private final BedrockCleanupCoordinator cleanup;
     private final BedrockRunStats stats;
     private final BedrockPlacer placer;
+    private final BedrockNetworkSync networkSync;
     private final BiConsumer<BlockPos, Integer> retryCooldown;
 
     BedrockTargetExecutor(
@@ -24,13 +25,15 @@ final class BedrockTargetExecutor {
             BedrockCleanupCoordinator cleanup,
             BedrockRunStats stats,
             BiConsumer<BlockPos, Integer> retryCooldown,
-            BedrockPlacer placer
+            BedrockPlacer placer,
+            BedrockNetworkSync networkSync
     ) {
         this.targets = targets;
         this.cleanup = cleanup;
         this.stats = stats;
         this.retryCooldown = retryCooldown;
         this.placer = placer;
+        this.networkSync = networkSync;
     }
 
     int process(
@@ -110,21 +113,28 @@ final class BedrockTargetExecutor {
     ) {
         if (target.getStatus() == BedrockTarget.Status.FAILED
                 || target.getStatus() == BedrockTarget.Status.STUCK) {
-            this.retryCooldown.accept(target.getBedrockPos(), FAILURE_RETRY_COOLDOWN_TICKS);
+            int delay = this.networkSync.retryDelayTicks(FAILURE_RETRY_COOLDOWN_TICKS);
+            this.retryCooldown.accept(target.getBedrockPos(), delay);
         } else if ("out_of_range".equals(reason)) {
-            this.retryCooldown.accept(target.getBedrockPos(), OUT_OF_RANGE_RETRY_COOLDOWN_TICKS);
+            int delay = this.networkSync.retryDelayTicks(OUT_OF_RANGE_RETRY_COOLDOWN_TICKS);
+            this.retryCooldown.accept(target.getBedrockPos(), delay);
         }
         if (reason == null && !BedrockTargetBlocks.isTargetBlock(level.getBlockState(target.getBedrockPos()))) {
+            this.networkSync.confirmed(target.getBedrockPos());
             this.stats.confirmedSuccesses++;
             this.stats.lastReason = "running";
             HudStatsManager.getRuntime().recordRateUnit(HudStatsManager.Mode.BEDROCK, 1);
         }
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
+            this.networkSync.discarded(target.getBedrockPos(), false);
             this.stats.failedTargets++;
             this.stats.lastReason = "failed";
         } else if (target.getStatus() == BedrockTarget.Status.STUCK) {
+            this.networkSync.discarded(target.getBedrockPos(), true);
             this.stats.stuckTargets++;
             this.stats.lastReason = "stuck";
+        } else if ("out_of_range".equals(reason)) {
+            this.networkSync.discarded(target.getBedrockPos(), false);
         }
         if (target.isHorizontalLayout()) {
             this.placer.clearHorizontalLookState();

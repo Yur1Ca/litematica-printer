@@ -29,6 +29,7 @@ final class BedrockTargetActionExecutor {
         void setInitializeTick(int value);
         void setExecuteTick(int value);
         void recordTemporary(BlockPos pos);
+        void recordNetworkAttempt();
         Set<BlockPos> ownedTorchPositions();
         boolean conservativeSync();
         BedrockCriticalExecutor criticalExecutor();
@@ -81,6 +82,9 @@ final class BedrockTargetActionExecutor {
         for (int offset = 1; offset < 6; offset++) {
             this.host.recordTemporary(this.host.pistonPos().relative(layout.getPistonOffset(), offset));
         }
+        // The critical START -> STOP -> placement bundle above is intentionally complete
+        // before network tracking starts; tracking is observation only and never gates it.
+        this.host.recordNetworkAttempt();
         this.host.setHasTried(true);
         this.host.setExecuteTick(this.host.tickTimes());
         this.host.markThroughputAction();

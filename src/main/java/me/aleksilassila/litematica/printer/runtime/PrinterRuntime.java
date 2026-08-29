@@ -72,6 +72,7 @@ public final class PrinterRuntime {
         this.scope.register(this.cooldownUtils);
         this.litematica = new LitematicaAdapter();
         this.bedrockEngine = new BedrockEngine(client, this.cooldownUtils, this::currentTick, this.litematica);
+        this.events.subscribe(this.bedrockEngine::onRuntimeEvent);
         this.scope.register(new MinecraftInteractionRuntime(client));
         this.scope.register(this.bedrockEngine);
         this.actionBroker = new ActionBroker(this, new ActionManager());

@@ -4,6 +4,8 @@
   "litematica-printer.config.bedrock.desc": "藉BedrockMiner妙法鑿穿基巖。若未修此術，則不可用。",
   "litematica-printer.config.bedrockAllowSide": "允側向機關",
   "litematica-printer.config.bedrockAllowSide.desc": "無可用垂直機關時，許用側向活塞機關破基巖。\n預設閉之，以免側向視角遲滯拖慢多層；開啟後亦先候垂直之勢。",
+  "litematica-printer.config.bedrockMultiplayerAdaptive": "多人破基岩自適應",
+  "litematica-printer.config.bedrockMultiplayerAdaptive.desc": "依多人伺服器 RTT 與方塊更新延遲，局部延長確認寬限並延後同一目標重試。RTT 為 0 時維持目前速度。",
   "litematica-printer.config.bedrockWhitelist": "額外允採冊",
   "litematica-printer.config.bedrockWhitelist.desc": "額外允入破基巖機巧之方塊冊。\n可入方塊ID或今語譯名，例：§bminecraft:obsidian§r §b黑曜石§r。\n前加§b#§r則為標籤配，例：§l#minecraft:dragon_immune§r。\n亦可兼入文字與濾則（以逗號隔），例：§l深板岩,c§r。\n其中「c」謂含配，先試拼音或直配。",
   "litematica-printer.config.breakBlacklist": "摹形自破禁冊",

@@ -330,6 +330,11 @@ public class Render2D {
                 + " | 阻塞 " + bedrock.rejectedThisTick()
                 + " | 扫描 " + formatScanState(RuntimeAccess.get().modules().bedrock())
                 + " | 状态 " + status, new Color(255, 255, 255, 255)));
+        lines.add(new HudLine("待确认 " + bedrock.pendingServerUpdates()
+                + " | RTT退避 " + bedrock.adaptiveBackoffs()
+                + " | 更新超时 " + bedrock.serverUpdateTimeouts()
+                + " | 最近 " + humanizeBedrockNetworkResult(bedrock.lastNetworkResult()),
+                new Color(255, 230, 150, 255)));
     }
 
     private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,
@@ -563,6 +568,20 @@ public class Render2D {
             case "target_failed_on_create", "failed" -> "任务失败";
             case "stuck" -> "任务卡死";
             default -> reason;
+        };
+    }
+
+    private String humanizeBedrockNetworkResult(String result) {
+        if (result == null || result.isBlank()) {
+            return "空闲";
+        }
+        return switch (result) {
+            case "dispatched" -> "已发包";
+            case "confirmed" -> "已确认";
+            case "late_update" -> "迟到更新";
+            case "retry" -> "重试";
+            case "stuck" -> "卡死";
+            default -> result;
         };
     }
 

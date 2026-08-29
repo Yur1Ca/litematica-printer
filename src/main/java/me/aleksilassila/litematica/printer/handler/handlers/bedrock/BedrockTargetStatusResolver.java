@@ -9,7 +9,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Resolves observed target state while keeping recovery effects explicit on the host. */
 final class BedrockTargetStatusResolver {
-    private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
     private static final int INITIALIZE_SYNC_TIMEOUT_TICKS = 40;
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
@@ -37,6 +36,8 @@ final class BedrockTargetStatusResolver {
         void cleanupPollutedMachineState();
         void cleanupStablePostExecuteResidue();
         void incrementStuckTicks();
+        int postExecuteSyncTimeoutTicks();
+        void recordNetworkTimeout();
         void resetPostExecuteAttempt(BedrockTarget.Status recoveryStatus);
     }
 
@@ -65,6 +66,7 @@ final class BedrockTargetStatusResolver {
         if (pistonState.is(Blocks.MOVING_PISTON)) return BedrockTarget.Status.RETRACTING;
         if (!targetBlock && this.host.hasMachineCleanupResidue()) return BedrockTarget.Status.RETRACTED;
         if (this.hasExceededSyncWaitTimeout()) {
+            this.host.recordNetworkTimeout();
             BedrockTarget.Status recovery = this.getRecoverablePostExecuteStatus();
             if (recovery != null) {
                 if (applyRecovery) this.host.resetPostExecuteAttempt(recovery);
@@ -166,7 +168,7 @@ final class BedrockTargetStatusResolver {
     private boolean hasExceededSyncWaitTimeout() {
         return this.host.hasTried()
                 && this.host.executeTick() >= 0
-                && this.host.tickTimes() - this.host.executeTick() >= POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && this.host.tickTimes() - this.host.executeTick() >= this.host.postExecuteSyncTimeoutTicks()
                 && (this.host.level().getBlockState(this.host.pistonPos()).isAir()
                 || this.host.hasPostExecuteSyncResidue());
     }
@@ -183,7 +185,7 @@ final class BedrockTargetStatusResolver {
         return this.isPostExecuteCollapsed()
                 && this.host.executeTick() >= 0
                 && this.host.tickTimes() - this.host.executeTick() >= POST_EXECUTE_AIR_SETTLE_TICKS
-                && this.host.tickTimes() - this.host.executeTick() < POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && this.host.tickTimes() - this.host.executeTick() < this.host.postExecuteSyncTimeoutTicks()
                 && this.host.hasStablePostExecuteResidue();
     }
 

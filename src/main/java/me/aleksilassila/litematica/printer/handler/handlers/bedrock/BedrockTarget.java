@@ -32,6 +32,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     private final BedrockTargetLifecycle lifecycle;
     private final BedrockCriticalExecutor criticalExecutor;
     private final BedrockPlacer placer;
+    private final BedrockNetworkSync networkSync;
     private final BedrockTargetState state = new BedrockTargetState();
 
     public BedrockTarget(BlockPos bedrockPos, ClientLevel level) {
@@ -44,11 +45,21 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     BedrockTarget(BlockPos bedrockPos, ClientLevel level, BedrockCriticalExecutor criticalExecutor, BedrockPlacer placer) {
-        this(bedrockPos, level, null, null, null, criticalExecutor, placer);
+        this(bedrockPos, level, null, null, null, criticalExecutor, placer, null);
+    }
+
+    BedrockTarget(
+            BlockPos bedrockPos,
+            ClientLevel level,
+            BedrockCriticalExecutor criticalExecutor,
+            BedrockPlacer placer,
+            BedrockNetworkSync networkSync
+    ) {
+        this(bedrockPos, level, null, null, null, criticalExecutor, placer, networkSync);
     }
 
     private BedrockTarget(BlockPos bedrockPos, ClientLevel level, BedrockPlacer placer) {
-        this(bedrockPos, level, null, null, null, new BedrockCriticalExecutor(placer), placer);
+        this(bedrockPos, level, null, null, null, new BedrockCriticalExecutor(placer), placer, null);
     }
 
     private BedrockTarget(
@@ -60,7 +71,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
             BedrockPlacer placer
     ) {
         this(bedrockPos, level, precomputedLayout, precomputedPlacement, precomputedSlimePos,
-                new BedrockCriticalExecutor(placer), placer);
+                new BedrockCriticalExecutor(placer), placer, null);
     }
 
     BedrockTarget(
@@ -70,12 +81,14 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
             BedrockTorchPlacement precomputedPlacement,
             BlockPos precomputedSlimePos,
             BedrockCriticalExecutor criticalExecutor,
-            BedrockPlacer placer
+            BedrockPlacer placer,
+            BedrockNetworkSync networkSync
     ) {
         this.bedrockPos = bedrockPos;
         this.level = level;
         this.criticalExecutor = criticalExecutor;
         this.placer = placer;
+        this.networkSync = networkSync;
         this.layout = precomputedLayout != null ? precomputedLayout : BedrockMachineLayout.find(level, bedrockPos);
         this.pistonPos = this.layout == null ? bedrockPos.above() : this.layout.getPistonPos();
         this.headPos = this.layout == null ? this.pistonPos.above() : this.layout.getHeadPos();
@@ -232,6 +245,15 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     @Override
+    public void recordNetworkAttempt() { if (this.networkSync != null) this.networkSync.beginAttempt(this.bedrockPos, this.getMachineFootprint()); }
+
+    @Override
+    public int postExecuteSyncTimeoutTicks() { return this.networkSync == null ? BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS : this.networkSync.confirmationTimeoutTicks(); }
+
+    @Override
+    public void recordNetworkTimeout() { if (this.networkSync != null) this.networkSync.recordTimeout(this.bedrockPos); }
+
+    @Override
     public boolean canBuildInitialMachine() {
         return this.machine.canBuildInitialMachine();
     }
@@ -248,6 +270,9 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
 
     @Override
     public void resetPostExecuteAttempt(Status recoveryStatus) {
+        if (this.networkSync != null) {
+            this.networkSync.recordRetry(this.bedrockPos);
+        }
         clearPostExecuteAttemptState();
     }
 
@@ -299,6 +324,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
                 this.state.hasTried(),
                 this.state.executeTick(),
                 this.state.tickTimes(),
+                this.postExecuteSyncTimeoutTicks(),
                 this.machine.torchPlacement(),
                 getTorchSupportPos(),
                 getSlimePos()
@@ -311,6 +337,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
                 this.state.tickTimes(),
                 this.state.hasTried(),
                 this.state.executeTick(),
+                this.postExecuteSyncTimeoutTicks(),
                 this.machine.torchPlacement(),
                 getTorchSupportPos(),
                 getSlimePos()

@@ -19,6 +19,7 @@ public final class BedrockEngine implements RuntimeComponent {
     private final BedrockTargetRegistry targets = new BedrockTargetRegistry();
     private final BedrockCleanupCoordinator cleanup;
     private final BedrockRunStats stats = new BedrockRunStats();
+    private final BedrockNetworkSync networkSync;
     private final BedrockPlacer placer;
     private final BedrockCriticalExecutor criticalExecutor;
     private final BedrockAdmissionController admission;
@@ -36,18 +37,24 @@ public final class BedrockEngine implements RuntimeComponent {
     ) {
         this.client = client;
         this.tickClock = tickClock;
-        this.placer = new BedrockPlacer(client);
+        this.networkSync = new BedrockNetworkSync(
+                tickClock,
+                () -> me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get()
+                        .rttReplayController().getExtraIntervalTicks(100)
+        );
+        this.placer = new BedrockPlacer(client, this.networkSync);
         this.criticalExecutor = new BedrockCriticalExecutor(this.placer, this.stats);
-        this.cleanup = new BedrockCleanupCoordinator(client, cooldownUtils);
+        this.cleanup = new BedrockCleanupCoordinator(client, cooldownUtils, this.networkSync);
         this.admission = new BedrockAdmissionController(
                 client, this.targets, this.cleanup, this.stats, cooldownUtils, tickClock,
-                this.criticalExecutor, this.placer, litematica);
+                this.criticalExecutor, this.placer, litematica, this.networkSync);
         this.targetExecutor = new BedrockTargetExecutor(
                 this.targets,
                 this.cleanup,
                 this.stats,
                 this.admission::setRetryCooldown,
-                this.placer
+                this.placer,
+                this.networkSync
         );
     }
 
@@ -61,6 +68,7 @@ public final class BedrockEngine implements RuntimeComponent {
         this.cleanup.reset();
         this.admission.reset();
         this.stats.reset();
+        this.networkSync.reset();
         this.placer.clearHorizontalLookState();
         this.criticalExecutor.reset();
         this.throughputScheduler.reset();
@@ -71,6 +79,14 @@ public final class BedrockEngine implements RuntimeComponent {
 
     public void clearHorizontalLookState() {
         this.placer.clearHorizontalLookState();
+    }
+
+    public void onRuntimeEvent(RuntimeEvent event) {
+        if (event instanceof RuntimeEvent.BlockUpdated update) {
+            BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
+            this.networkSync.onServerBlockUpdate(pos);
+            this.cleanup.onServerBlockUpdate(pos);
+        }
     }
 
     public void tick() {
@@ -211,7 +227,11 @@ public final class BedrockEngine implements RuntimeComponent {
                 this.admission.verticalActiveCap(),
                 this.admission.sideCap(),
                 this.stats.successRate(),
-                this.stats.lastReason
+                this.stats.lastReason,
+                this.networkSync.pendingCount(),
+                this.networkSync.adaptiveBackoffs(),
+                this.networkSync.serverUpdateTimeouts(),
+                this.networkSync.lastResult()
         );
     }
 
@@ -235,7 +255,11 @@ public final class BedrockEngine implements RuntimeComponent {
             int verticalActiveCap,
             int sideCap,
             double successRate,
-            String lastReason
+            String lastReason,
+            int pendingServerUpdates,
+            int adaptiveBackoffs,
+            int serverUpdateTimeouts,
+            String lastNetworkResult
     ) {
     }
 }

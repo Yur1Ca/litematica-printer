@@ -8,9 +8,11 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -21,25 +23,37 @@ final class BedrockCleanupCoordinator {
 
     private final Minecraft client;
     private final CooldownUtils cooldownUtils;
+    private final BedrockNetworkSync networkSync;
     private final Set<BlockPos> queue = new LinkedHashSet<>();
     private final Set<BlockPos> conservative = new LinkedHashSet<>();
     private final Set<BlockPos> blocked = new LinkedHashSet<>();
+    private final Map<BlockPos, Long> cleanupGraceUntil = new HashMap<>();
+    private final Map<BlockPos, Long> recentAuthoritativeCleanup = new HashMap<>();
     private boolean orderDirty;
 
     BedrockCleanupCoordinator(Minecraft client, CooldownUtils cooldownUtils) {
+        this(client, cooldownUtils, null);
+    }
+
+    BedrockCleanupCoordinator(Minecraft client, CooldownUtils cooldownUtils, BedrockNetworkSync networkSync) {
         this.client = client;
         this.cooldownUtils = cooldownUtils;
+        this.networkSync = networkSync;
     }
 
     void reset() {
         this.queue.clear();
         this.conservative.clear();
         this.blocked.clear();
+        this.cleanupGraceUntil.clear();
+        this.recentAuthoritativeCleanup.clear();
         this.orderDirty = false;
     }
 
     void beginTick() {
         this.blocked.clear();
+        long now = this.currentTick();
+        this.recentAuthoritativeCleanup.entrySet().removeIf(entry -> entry.getValue() < now);
     }
 
     boolean isEmpty() {
@@ -65,6 +79,7 @@ final class BedrockCleanupCoordinator {
                 this.queue.remove(oldest);
                 this.conservative.remove(oldest);
                 this.blocked.remove(oldest);
+                this.cleanupGraceUntil.remove(oldest);
             }
         }
         this.orderDirty = true;
@@ -77,6 +92,8 @@ final class BedrockCleanupCoordinator {
         this.queue.remove(pos);
         this.conservative.remove(pos);
         this.blocked.remove(pos);
+        this.cleanupGraceUntil.remove(pos);
+        this.recentAuthoritativeCleanup.remove(pos);
         this.orderDirty = true;
     }
 
@@ -102,19 +119,23 @@ final class BedrockCleanupCoordinator {
             }
             BlockState state = level.getBlockState(pos);
             if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+                if (this.isWithinCleanupGrace(pos)) {
+                    continue;
+                }
                 iterator.remove();
                 this.conservative.remove(pos);
                 this.blocked.remove(pos);
+                this.cleanupGraceUntil.remove(pos);
                 continue;
             }
             if (reserved.test(pos)) {
                 this.markBlocked(pos);
                 continue;
             }
-            int retryDelay = retryDelay(state);
             if (!this.cooldownUtils.isOnCooldown(level, RETRY_COOLDOWN_KEY, pos)) {
                 boolean predictRemoval = !this.conservative.contains(pos);
                 if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
+                    int retryDelay = this.adaptiveRetryDelay(state);
                     this.cooldownUtils.setCooldown(level, RETRY_COOLDOWN_KEY, pos, retryDelay);
                     count++;
                 }
@@ -132,8 +153,11 @@ final class BedrockCleanupCoordinator {
             return;
         }
         BlockState state = level.getBlockState(pos);
+        if (!predictRemoval && this.shouldDeferAuthoritativeCleanup(pos, state)) {
+            return;
+        }
         if (BedrockTargetBlocks.isCleanupResidue(state) && BedrockBreaker.breakBlock(pos, predictRemoval)) {
-            this.cooldownUtils.setCooldown(level, RETRY_COOLDOWN_KEY, pos, retryDelay(state));
+            this.cooldownUtils.setCooldown(level, RETRY_COOLDOWN_KEY, pos, this.adaptiveRetryDelay(state));
         }
     }
 
@@ -148,8 +172,11 @@ final class BedrockCleanupCoordinator {
         if (this.cooldownUtils.isOnCooldown(level, RETRY_COOLDOWN_KEY, pos)) {
             return;
         }
-        int retryDelay = retryDelay(state);
+        if (this.shouldDeferAuthoritativeCleanup(pos, state)) {
+            return;
+        }
         if (BedrockBreaker.breakBlock(pos, false)) {
+            int retryDelay = this.adaptiveRetryDelay(state);
             this.cooldownUtils.setCooldown(level, RETRY_COOLDOWN_KEY, pos, retryDelay);
         }
     }
@@ -164,9 +191,13 @@ final class BedrockCleanupCoordinator {
             }
             BlockState state = level.getBlockState(pos);
             if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+                if (this.isWithinCleanupGrace(pos)) {
+                    continue;
+                }
                 iterator.remove();
                 this.conservative.remove(pos);
                 this.blocked.remove(pos);
+                this.cleanupGraceUntil.remove(pos);
                 continue;
             }
             if (!state.isAir() && BedrockTargetBlocks.isCleanupResidue(state)) {
@@ -190,6 +221,56 @@ final class BedrockCleanupCoordinator {
             return 8;
         }
         return 6;
+    }
+
+    private int adaptiveRetryDelay(BlockState state) {
+        int delay = retryDelay(state);
+        return this.networkSync == null ? delay : this.networkSync.retryDelayTicks(delay);
+    }
+
+    void onServerBlockUpdate(BlockPos pos) {
+        if (pos == null || !this.recentAuthoritativeCleanup.containsKey(pos)) {
+            return;
+        }
+        ClientLevel level = this.client.level;
+        if (level == null) {
+            return;
+        }
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+            this.remove(pos);
+            return;
+        }
+        this.queue.add(pos.immutable());
+        this.conservative.add(pos.immutable());
+        this.cleanupGraceUntil.remove(pos);
+        this.orderDirty = true;
+    }
+
+    private boolean shouldDeferAuthoritativeCleanup(BlockPos pos, BlockState state) {
+        if (this.networkSync == null || !this.networkSync.isAdaptiveMultiplayer()) {
+            return false;
+        }
+        long now = this.currentTick();
+        this.recentAuthoritativeCleanup.put(
+                pos.immutable(), now + this.networkSync.cleanupWatchTicks());
+        int delay = this.networkSync.retryDelayTicks(
+                state != null && BedrockTargetBlocks.isCleanupResidue(state) ? retryDelay(state) : 1);
+        this.cleanupGraceUntil.put(
+                pos.immutable(), now + this.networkSync.confirmationTimeoutTicks());
+        if (this.client.level != null) {
+            this.cooldownUtils.setCooldown(this.client.level, RETRY_COOLDOWN_KEY, pos, delay);
+        }
+        return true;
+    }
+
+    private boolean isWithinCleanupGrace(BlockPos pos) {
+        Long deadline = this.cleanupGraceUntil.get(pos);
+        return deadline != null && deadline >= this.currentTick();
+    }
+
+    private long currentTick() {
+        return this.client.level == null ? Long.MIN_VALUE : this.client.level.getGameTime();
     }
 
     int schedulingPenalty(BlockState state) {

@@ -23,11 +23,17 @@ import java.util.Map;
 
 public final class BedrockPlacer {
     private final Minecraft client;
+    private final BedrockNetworkSync networkSync;
     private final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
     private final Map<BlockPos, PendingPistonRetry> pendingPistonRetries = new HashMap<>();
 
     BedrockPlacer(Minecraft client) {
+        this(client, null);
+    }
+
+    BedrockPlacer(Minecraft client, BedrockNetworkSync networkSync) {
         this.client = client;
+        this.networkSync = networkSync;
     }
 
     public void clearHorizontalLookState() {
@@ -40,8 +46,10 @@ public final class BedrockPlacer {
         if (bedrockPos == null || pistonPos == null || facing == null) {
             return;
         }
+        long now = RuntimeAccess.get().currentTick();
+        long delay = this.networkSync == null ? 1L : this.networkSync.retryDelayTicks(1);
         this.pendingPistonRetries.put(pistonPos.immutable(), new PendingPistonRetry(
-                bedrockPos.immutable(), facing, RuntimeAccess.get().currentTick() + 1L, 0));
+                bedrockPos.immutable(), facing, now + delay, 0));
     }
 
     void cancelPistonRetry(BlockPos pistonPos) {
@@ -73,8 +81,9 @@ public final class BedrockPlacer {
                 continue;
             }
             this.placePiston(entry.getKey(), retry.facing());
+            long delay = this.networkSync == null ? 1L : this.networkSync.retryDelayTicks(1);
             entry.setValue(new PendingPistonRetry(
-                    retry.bedrockPos(), retry.facing(), now + 1L, retry.attempts() + 1));
+                    retry.bedrockPos(), retry.facing(), now + delay, retry.attempts() + 1));
         }
     }
 

@@ -32,6 +32,7 @@ final class BedrockAdmissionController {
     private final LongSupplier tickClock;
     private final BedrockCriticalExecutor criticalExecutor;
     private final BedrockPlacer placer;
+    private final BedrockNetworkSync networkSync;
     private final LitematicaAdapter litematica;
     private final BedrockExposureGate<BlockPos> exposureGate =
             new BedrockExposureGate<>(MAX_VERTICAL_EXPOSURE_DEFERS);
@@ -52,7 +53,8 @@ final class BedrockAdmissionController {
             LongSupplier tickClock,
             BedrockCriticalExecutor criticalExecutor,
             BedrockPlacer placer,
-            LitematicaAdapter litematica
+            LitematicaAdapter litematica,
+            BedrockNetworkSync networkSync
     ) {
         this.client = client;
         this.targets = targets;
@@ -63,6 +65,7 @@ final class BedrockAdmissionController {
         this.criticalExecutor = criticalExecutor;
         this.placer = placer;
         this.litematica = litematica;
+        this.networkSync = networkSync;
         this.schedulingProbe = new BedrockSchedulingProbe(client, targets, cleanup);
     }
 
@@ -142,8 +145,8 @@ final class BedrockAdmissionController {
                 this.tickClock.getAsLong()
         );
         BedrockTarget target = plan != null
-                ? new BedrockTarget(stablePos, level, plan.layout(), plan.placement(), plan.slimePos(), this.criticalExecutor, this.placer)
-                : new BedrockTarget(stablePos, level, this.criticalExecutor, this.placer);
+                ? new BedrockTarget(stablePos, level, plan.layout(), plan.placement(), plan.slimePos(), this.criticalExecutor, this.placer, this.networkSync)
+                : new BedrockTarget(stablePos, level, this.criticalExecutor, this.placer, this.networkSync);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             this.stats.lastReason = "target_failed_on_create";
             this.setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);

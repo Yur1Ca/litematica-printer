@@ -18,6 +18,8 @@
   "litematica-printer.config.bedrockBlocksPerTick.desc": "Maximum targets submitted and advanced in one execution window.\nThe interval controls how often that window opens; active-target capacity follows this value.\nHigher values are faster, but also increase cleanup pressure and machine overlap risk.",
   "litematica-printer.config.bedrockAllowSide": "Allow Horizontal (Side) Layouts",
   "litematica-printer.config.bedrockAllowSide.desc": "Allow bedrock breaking to use horizontal piston layouts when no vertical layout is available.\nDisabled by default to avoid horizontal look-settle delays slowing multi-layer jobs; when enabled, exposed vertical layouts are still preferred.",
+  "litematica-printer.config.bedrockMultiplayerAdaptive": "Adaptive Multiplayer Bedrock",
+  "litematica-printer.config.bedrockMultiplayerAdaptive.desc": "Use server RTT and block-update timing to extend confirmation grace and back off retries for the same target. RTT 0 keeps the current singleplayer speed.",
   "litematica-printer.config.bedrockWhitelist": "Extra Target Whitelist",
   "litematica-printer.config.bedrockWhitelist.desc": "Additional blocks allowed into the bedrock-breaking state machine.\nCan input block ID or translated name in current language, example: §bminecraft:obsidian§r §bobsidian§r.\nPrefix §b#§r for tag matching, example: §l#minecraft:dragon_immune§r.\nInput text and filter conditions simultaneously (separated by English comma), example: §ldeepslate,c§r.\nWhere \"c\" represents contains matching, prioritizing pinyin or direct matching.",
   "litematica-printer.config.breakInterval": "Mining Interval",

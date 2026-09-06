@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.HudStatus;
 import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
@@ -75,7 +76,7 @@ public final class PrintPlacementExecutor {
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && context.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(context.level.getBlockState(downPos))) {
-                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
+                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.FALLING_NO_SUPPORT);
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(context.requiredBlockName().getString()));
                 // Do not hot-retry an unchanged unsupported column. PRINT invalidation expands a
                 // support block update to its neighbours, so this target is discovered again as
@@ -86,7 +87,7 @@ public final class PrintPlacementExecutor {
 
         Direction side = action.getValidSide(context.level, blockPos);
         if (side == null) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "无有效放置面");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.NO_VALID_FACE);
             return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
         }
 
@@ -127,7 +128,7 @@ public final class PrintPlacementExecutor {
                     : ItemStack.EMPTY;
             if (retrievalPending) {
                 if (!this.materialRequests.isBusy()) {
-                    this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+                    this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.MISSING_MATERIAL);
                     this.missingMaterials.recordMissing(
                             requiredItems,
                             requiredStackPredicate,
@@ -136,7 +137,7 @@ public final class PrintPlacementExecutor {
                     );
                     return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
                 }
-                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "等待取货");
+                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_RETRIEVAL);
                 // The HUD describes what is currently absent from the player inventory. Keep the
                 // requirement visible while an external material provider is working; tick() removes it
                 // as soon as the requested stack actually arrives.
@@ -147,7 +148,7 @@ public final class PrintPlacementExecutor {
                         context.level.getGameTime()
                 );
             } else if (reserveBlockedStack.isEmpty()) {
-                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.MISSING_MATERIAL);
                 this.missingMaterials.recordMissing(
                         requiredItems,
                         requiredStackPredicate,
@@ -155,7 +156,7 @@ public final class PrintPlacementExecutor {
                         context.level.getGameTime()
                 );
             } else {
-                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "达到保留数量");
+                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.RESERVE_LIMIT);
                 showReserveNotice(context, reserveBlockedStack);
             }
             if (retrievalPending) {
@@ -171,18 +172,18 @@ public final class PrintPlacementExecutor {
         if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)
                 || requiredStackPredicate != null
                 && !requiredStackPredicate.test(context.client.player.getMainHandItem())) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "等待物品同步");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_ITEM_SYNC);
             return PrintPlacementResult.deferred(true);
         }
 
         if (!this.placementRateController.canSend(context.level.getGameTime())) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "RTT节流");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.RTT_THROTTLED);
             return PrintPlacementResult.deferred(true);
         }
 
         boolean useShift = getUseShift(context, action, side);
         if (!action.queueAction(this.actionBroker, blockPos, side, useShift, context.client.player, requiredItems)) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "动作队列占用");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.ACTION_QUEUE_BUSY);
             return PrintPlacementResult.cancelled(true);
         }
         this.actionBroker.setExpectedStackPredicate(requiredStackPredicate);
@@ -238,7 +239,7 @@ public final class PrintPlacementExecutor {
         ActionPort.SendResult sendResult = this.actionBroker.sendQueue(context.client.player);
         if (sendResult.isWaiting()) {
             deferred.set(true);
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_LOOK);
             return new PrintPlacementResult(
                     consumedEffectiveExecution,
                     true,
@@ -283,7 +284,7 @@ public final class PrintPlacementExecutor {
                         : taskAction.expectedBlockState(context, action)
         );
         this.hudStats.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
-        this.hudStats.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
+        this.hudStats.recordStatus(HudStatsManager.Mode.PRINT, HudStatus.RUNNING);
         this.placementRateController.recordSent(context.level.getGameTime());
         if (context.requiredState.getBlock() instanceof FallingBlock) {
             this.fallingPlacements.mark(
@@ -297,13 +298,13 @@ public final class PrintPlacementExecutor {
 
     private static String describeSendFailure(ActionPort.SendResult result) {
         return switch (result) {
-            case STALE_POSITION -> "移动后动作失效";
-            case HELD_ITEM_CHANGED -> "手持物品已变化";
-            case RESERVE_LIMIT -> "达到保留数量";
-            case NO_PLAYER, NO_GAME_MODE -> "客户端状态未就绪";
-            case INTERACTION_REJECTED -> "交互被拒绝";
-            case NO_QUEUED_ACTION -> "动作未入队";
-            default -> "动作未发送";
+            case STALE_POSITION -> HudStatus.MOVED_STALE;
+            case HELD_ITEM_CHANGED -> HudStatus.HELD_ITEM_CHANGED;
+            case RESERVE_LIMIT -> HudStatus.RESERVE_LIMIT;
+            case NO_PLAYER, NO_GAME_MODE -> HudStatus.CLIENT_NOT_READY;
+            case INTERACTION_REJECTED -> HudStatus.INTERACTION_REJECTED;
+            case NO_QUEUED_ACTION -> HudStatus.ACTION_NOT_QUEUED;
+            default -> HudStatus.ACTION_NOT_SENT;
         };
     }
 

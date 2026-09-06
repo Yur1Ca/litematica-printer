@@ -56,6 +56,7 @@ public class ActionManager {
         GENERIC,
         PRINT,
         FILL,
+        COVER,
         FLUID
     }
 
@@ -248,7 +249,7 @@ public class ActionManager {
 
     private void armTaskAnvilScreenSuppression(QueuedClick click) {
         if (!this.screenSessions.hasManualAnvilScreenAllowance(System.nanoTime())
-                && (click.source == ActionSource.PRINT || click.source == ActionSource.FILL)
+                && (click.source == ActionSource.PRINT || click.source == ActionSource.FILL || click.source == ActionSource.COVER)
                 && Reference.MINECRAFT.level != null
                 && Reference.MINECRAFT.level.getBlockState(click.target).getBlock() instanceof AnvilBlock) {
             this.screenSessions.armTaskAnvilScreen(System.nanoTime());

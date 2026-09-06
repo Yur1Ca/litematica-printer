@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.HudStatus;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
@@ -98,11 +99,11 @@ public class FluidHandler extends FeatureModuleBase {
             fluids = fluidBlocks.isEmpty() ? Set.of() : RegistryFilterResolver.resolveFluids(this.fluidBlocks);
         }
         if (fillItems.isEmpty()) {
-            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, "无流体填充方块");
+            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, HudStatus.NO_FLUID_BLOCK);
         } else if (this.fluidBlocks.isEmpty()) {
-            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, "无目标流体配置");
+            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, HudStatus.NO_FLUID_CONFIG);
         } else {
-            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
+            this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, HudStatus.RUNNING);
         }
         int scanConfigHash = this.getScanConfigHash();
         if (this.observedScanConfigHash != Integer.MIN_VALUE
@@ -223,7 +224,7 @@ public class FluidHandler extends FeatureModuleBase {
             return;
         }
         if (!InventoryUtils.switchToItems(player, fillItemArray)) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "缺少流体填充方块");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.MISSING_FLUID_FILL_BLOCK);
             this.missingMaterials.recordMissing(
                     fillItemArray,
                     null,
@@ -243,7 +244,7 @@ public class FluidHandler extends FeatureModuleBase {
         if (!Configs.Print.PLACE_IN_AIR.getBooleanValue()) {
             Direction placementSide = this.findPlacementSide(blockPos);
             if (placementSide == null) {
-                this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "无有效放置面");
+                this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.NO_VALID_FACE);
                 // This was ready when scanned but its support disappeared before execution.
                 setIterationConsumedEffectiveExecution(false);
                 this.retryTargets.add(blockPos.immutable());
@@ -261,7 +262,7 @@ public class FluidHandler extends FeatureModuleBase {
                 fillItemArray,
                 ActionPort.ActionSource.FLUID
         )) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "动作队列占用");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.ACTION_QUEUE_BUSY);
             setIterationConsumedEffectiveExecution(false);
             this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
@@ -270,13 +271,13 @@ public class FluidHandler extends FeatureModuleBase {
         BlockState previousState = level.getBlockState(blockPos);
         ActionPort.SendResult sendResult = this.actionBroker.sendQueue(player);
         if (sendResult.isWaiting()) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.WAITING_LOOK);
             this.retryTargets.add(blockPos.immutable());
             skipIteration.set(true);
             return;
         }
         if (!sendResult.isSent()) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, "放置动作未发送");
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.PLACEMENT_NOT_SENT);
             setIterationConsumedEffectiveExecution(false);
             this.retryTargets.add(blockPos.immutable());
             return;
@@ -287,7 +288,7 @@ public class FluidHandler extends FeatureModuleBase {
         this.inFlightSince.put(retainedPos, this.level.getGameTime());
         this.hudStats.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, previousState);
         this.hudStats.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
-        this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
+        this.hudStats.recordStatus(HudStatsManager.Mode.FLUID, HudStatus.RUNNING);
         this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
     }
 

@@ -28,7 +28,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     private static final String FILE_PATH = "./config/" + Reference.MOD_ID + ".json";
     private static final File CONFIG_DIR = new File("./config");
-    private static final int CONFIG_SCHEMA_VERSION = 2;
+    private static final int CONFIG_SCHEMA_VERSION = 3;
+    private static final List<String> DEFAULT_COVER_BLOCK_FILTERS = List.of(
+            "#minecraft:carpets",
+            "#minecraft:slabs",
+            "#minecraft:rails"
+    );
 
     private static final KeybindSettings GUI_NO_ORDER = KeybindSettings.create(KeybindSettings.Context.GUI, KeyAction.PRESS, false, false, false, true);
 
@@ -46,6 +51,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         optionSet.addAll(Print.OPTIONS);          // 打印
         optionSet.addAll(Mine.OPTIONS);           // 挖掘
         optionSet.addAll(Fill.OPTIONS);           // 填充
+        optionSet.addAll(Cover.OPTIONS);          // 铺盖
         optionSet.addAll(Fluid.OPTIONS);          // 排流体
         optionSet.addAll(Bedrock.OPTIONS);        // 破基岩
         OPTIONS = ImmutableList.copyOf(optionSet);
@@ -102,6 +108,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigBooleanHotkeyed FLUID = booleanHotkey("fluid")
                 .defaultValue(false)
                 .setVisible(Core::isMultiMode) // 仅多模式时显示
+                .build();
+
+        // 多模 - 铺盖防刷怪
+        public static final ConfigBooleanHotkeyed COVER = booleanHotkey("cover")
+                .defaultValue(false)
+                .setVisible(Core::isMultiMode)
                 .build();
 
         // 核心 - 单模模式
@@ -194,6 +206,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 MINE,
                 FILL,
                 FLUID,
+                COVER,
                 WORK_RANGE,
                 SCAN_TIME_BUDGET_MS,
                 LAZY_ENTER_TICKS,
@@ -683,6 +696,33 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         );
     }
 
+    public static class Cover {
+        private static boolean isBlocklist() {
+            return COVER_BLOCK_MODE.getOptionListValue().equals(FillBlockModeType.BLOCKLIST);
+        }
+
+        public static final ConfigOptionList COVER_SELECTION_TYPE = optionList("coverSelectionType")
+                .defaultValue(SelectionType.LITEMATICA_SELECTION)
+                .build();
+
+        public static final ConfigOptionList COVER_BLOCK_MODE = optionList("coverBlockMode")
+                .defaultValue(FillBlockModeType.BLOCKLIST)
+                .build();
+
+        public static final ConfigStringList COVER_BLOCK_LIST = stringList("coverBlockList")
+                // Keep the nested config class independent from outer Configs initialization.
+                // Cover can be initialized first by FeatureModuleSet during client startup.
+                .defaultValue("#minecraft:carpets", "#minecraft:slabs", "#minecraft:rails")
+                .setVisible(Cover::isBlocklist)
+                .build();
+
+        public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                COVER_SELECTION_TYPE,
+                COVER_BLOCK_MODE,
+                COVER_BLOCK_LIST
+        );
+    }
+
     public static class Fluid {
 
         // 选区类型
@@ -758,6 +798,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Core.MINE,                // 挖掘
                 Core.FILL,                    // 填充
                 Core.FLUID,                  // 排流体
+                Core.COVER,                  // 铺盖
                 BEDROCK,                       // 破基岩
                 CACHE_SELECTION_CONTAINERS,
                 CLEAR_CONTAINER_CACHE
@@ -781,6 +822,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                         && obj.get("configSchemaVersion").getAsJsonPrimitive().isNumber()
                         ? obj.get("configSchemaVersion").getAsInt() : 0;
                 if (schemaVersion < CONFIG_SCHEMA_VERSION) {
+                    if (schemaVersion < 3 && isLegacyCoverBlockList(Cover.COVER_BLOCK_LIST.getStrings())) {
+                        Cover.COVER_BLOCK_LIST.setStrings(DEFAULT_COVER_BLOCK_FILTERS);
+                    }
                     // The old field defaulted to true but was a no-op. Do not turn that
                     // persisted compatibility value into a new runtime behavior on upgrade.
                     Break.BREAK_USE_DELAYED_DESTROY.setBooleanValue(false);
@@ -819,5 +863,14 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     public static void saveToFile() {
         Configs.INSTANCE.save();
+    }
+
+    private static boolean isLegacyCoverBlockList(List<String> filters) {
+        if (filters == null || filters.size() != 1) {
+            return false;
+        }
+        String filter = filters.get(0);
+        return "minecraft:smooth_stone_slab".equals(filter)
+                || "minecraft:tuff_slab".equals(filter);
     }
 }

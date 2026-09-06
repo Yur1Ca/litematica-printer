@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.utils;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -313,7 +314,7 @@ public class FilterUtils {
         Stream<TagKey<Block>> blockTagStream = blockState.tags();
         return blockTagStream
                 .map(tag -> tag.location().toString())
-                .anyMatch(tagFullName -> matchString(tagFullName, tagName, matchRules));
+                .anyMatch(tagFullName -> matchTagName(tagFullName, tagName, matchRules));
     }
 
     /**
@@ -323,11 +324,27 @@ public class FilterUtils {
         if (tagName.isEmpty()) {
             return false;
         }
-        // 直接处理Item类型的TagKey流，无类型转换
-        Stream<TagKey<Item>> itemTagStream = itemStack.tags();
-        return itemTagStream
+        // 物品标签和方块标签是两套注册表标签。铺盖等方块材料通常
+        // 使用方块标签配置，但实际切换材料时拿到的是 BlockItem，二者都要匹配。
+        boolean itemTagMatched = itemStack.tags()
                 .map(tag -> tag.location().toString())
-                .anyMatch(tagFullName -> matchString(tagFullName, tagName, matchRules));
+                .anyMatch(tagFullName -> matchTagName(tagFullName, tagName, matchRules));
+        if (itemTagMatched) {
+            return true;
+        }
+        if (!(itemStack.getItem() instanceof BlockItem blockItem)) {
+            return false;
+        }
+        return blockItem.getBlock().defaultBlockState().tags()
+                .map(tag -> tag.location().toString())
+                .anyMatch(tagFullName -> matchTagName(tagFullName, tagName, matchRules));
+    }
+
+    private static boolean matchTagName(String actual, String requested, String[] matchRules) {
+        // Keep the configured legacy carpet tag usable on versions that renamed it.
+        // Also retain direct matching for worlds/data packs that still define carpets.
+        return matchString(actual, requested, matchRules)
+                || "minecraft:carpets".equals(requested) && "minecraft:wool_carpets".equals(actual);
     }
 
     private record ParsedFilter(String coreName, String[] matchRules, ParsedBlockStateFilter stateFilter) {

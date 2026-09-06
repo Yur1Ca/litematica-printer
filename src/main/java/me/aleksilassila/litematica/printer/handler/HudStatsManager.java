@@ -28,6 +28,7 @@ public final class HudStatsManager implements RuntimeComponent {
     private final Map<BlockPos, Long> pendingMineTargets = new LinkedHashMap<>();
     private final Map<BlockPos, PendingStateChange> pendingFillTargets = new LinkedHashMap<>();
     private final Map<BlockPos, PendingStateChange> pendingFluidTargets = new LinkedHashMap<>();
+    private final Map<BlockPos, PendingStateChange> pendingCoverTargets = new LinkedHashMap<>();
     private long lastFallbackFlushTick = Long.MIN_VALUE;
 
     public HudStatsManager(
@@ -52,6 +53,7 @@ public final class HudStatsManager implements RuntimeComponent {
         this.pendingMineTargets.clear();
         this.pendingFillTargets.clear();
         this.pendingFluidTargets.clear();
+        this.pendingCoverTargets.clear();
         for (Mode mode : Mode.values()) {
             this.resetMode(mode);
         }
@@ -65,6 +67,7 @@ public final class HudStatsManager implements RuntimeComponent {
             case MINE -> this.pendingMineTargets.clear();
             case FILL -> this.pendingFillTargets.clear();
             case FLUID -> this.pendingFluidTargets.clear();
+            case COVER -> this.pendingCoverTargets.clear();
             default -> {
             }
         }
@@ -134,6 +137,8 @@ public final class HudStatsManager implements RuntimeComponent {
             this.pendingFillTargets.put(pos.immutable(), pending);
         } else if (mode == Mode.FLUID) {
             this.pendingFluidTargets.put(pos.immutable(), pending);
+        } else if (mode == Mode.COVER) {
+            this.pendingCoverTargets.put(pos.immutable(), pending);
         }
     }
 
@@ -167,6 +172,7 @@ public final class HudStatsManager implements RuntimeComponent {
 
         this.confirmStateChange(now, Mode.FILL, pos, currentState, this.pendingFillTargets);
         this.confirmStateChange(now, Mode.FLUID, pos, currentState, this.pendingFluidTargets);
+        this.confirmStateChange(now, Mode.COVER, pos, currentState, this.pendingCoverTargets);
     }
 
     public Snapshot snapshot(Mode mode) {
@@ -196,6 +202,7 @@ public final class HudStatsManager implements RuntimeComponent {
         flushConfirmedMineClears(this.client, now, maxChecksPerMode);
         flushConfirmedBlockChanges(this.client, now, Mode.FILL, this.pendingFillTargets, maxChecksPerMode);
         flushConfirmedBlockChanges(this.client, now, Mode.FLUID, this.pendingFluidTargets, maxChecksPerMode);
+        flushConfirmedBlockChanges(this.client, now, Mode.COVER, this.pendingCoverTargets, maxChecksPerMode);
     }
 
     private void flushConfirmedPrintPlacements(Minecraft client, long now, int maxChecks) {
@@ -277,6 +284,7 @@ public final class HudStatsManager implements RuntimeComponent {
         MINE,
         FILL,
         FLUID,
+        COVER,
         BEDROCK
     }
 
@@ -307,7 +315,7 @@ public final class HudStatsManager implements RuntimeComponent {
         private long lifetimeUnits;
         private long lifetimeFailures;
         private long lifetimeDeferred;
-        private String lastReason = "空闲";
+        private String lastReason = HudStatus.IDLE;
 
         private void reset() {
             this.finished = 0;
@@ -316,7 +324,7 @@ public final class HudStatsManager implements RuntimeComponent {
             this.lifetimeUnits = 0;
             this.lifetimeFailures = 0;
             this.lifetimeDeferred = 0;
-            this.lastReason = "空闲";
+            this.lastReason = HudStatus.IDLE;
             this.rateCounter.reset();
             this.completedCounter.reset();
             this.failureCounter.reset();
@@ -328,14 +336,14 @@ public final class HudStatsManager implements RuntimeComponent {
             this.rateCounter.add(count);
             this.lifetimeUnits += count;
             this.updateProgress();
-            this.lastReason = "运行中";
+            this.lastReason = HudStatus.RUNNING;
         }
 
         private void recordConfirmedUnit(long tick, int count) {
             this.finished += count;
             this.completedCounter.add(count);
             this.updateProgress();
-            this.lastReason = "运行中";
+            this.lastReason = HudStatus.RUNNING;
         }
 
         private void recordFailure(String reason) {
@@ -375,7 +383,7 @@ public final class HudStatsManager implements RuntimeComponent {
         }
 
         private static String normalizeReason(String reason) {
-            return reason == null || reason.isBlank() ? "运行中" : reason;
+            return reason == null || reason.isBlank() ? HudStatus.RUNNING : reason;
         }
     }
 

@@ -17,7 +17,7 @@ import java.util.function.Predicate;
 
 /** Feature-facing action capability, independent of the queue implementation. */
 public interface ActionPort {
-    enum ActionSource { GENERIC, PRINT, FILL, FLUID }
+    enum ActionSource { GENERIC, PRINT, FILL, COVER, FLUID }
 
     enum SendResult {
         SENT,

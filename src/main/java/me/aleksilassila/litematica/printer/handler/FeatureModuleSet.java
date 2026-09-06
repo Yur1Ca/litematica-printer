@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler;
 
 import com.google.common.collect.ImmutableList;
 import me.aleksilassila.litematica.printer.handler.handlers.BedrockHandler;
+import me.aleksilassila.litematica.printer.handler.handlers.CoverHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.FillHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.FluidHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.GuiHandler;
@@ -17,6 +18,7 @@ public final class FeatureModuleSet {
     private final MineHandler mine;
     private final FluidHandler fluid;
     private final BedrockHandler bedrock;
+    private final CoverHandler cover;
     private final ImmutableList<FeatureModuleBase> values;
     private final TickScheduler scheduler;
 
@@ -27,7 +29,8 @@ public final class FeatureModuleSet {
         this.mine = new MineHandler(runtime);
         this.fluid = new FluidHandler(runtime);
         this.bedrock = new BedrockHandler(runtime);
-        this.values = ImmutableList.of(this.gui, this.mine, this.fluid, this.print, this.fill, this.bedrock);
+        this.cover = new CoverHandler(runtime);
+        this.values = ImmutableList.of(this.gui, this.mine, this.fluid, this.print, this.fill, this.cover, this.bedrock);
         for (FeatureModuleBase module : this.values) {
             runtime.register(module);
         }
@@ -41,6 +44,7 @@ public final class FeatureModuleSet {
     public MineHandler mine() { return this.mine; }
     public FluidHandler fluid() { return this.fluid; }
     public BedrockHandler bedrock() { return this.bedrock; }
+    public CoverHandler cover() { return this.cover; }
     public ImmutableList<FeatureModuleBase> values() { return this.values; }
 
     public void tick() { this.scheduler.tick(); }

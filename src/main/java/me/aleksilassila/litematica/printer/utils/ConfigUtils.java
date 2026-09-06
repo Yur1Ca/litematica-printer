@@ -59,6 +59,13 @@ public class ConfigUtils {
         return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.FLUID;
     }
 
+    public static boolean isCoverMode() {
+        if (isMultiMode()) {
+            return Configs.Core.COVER.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.COVER;
+    }
+
     public static boolean isBedrockMode() {
         if (isMultiMode()) {
             return Configs.Hotkeys.BEDROCK.getBooleanValue();

@@ -4,11 +4,13 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ScanState;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.HudStatus;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEngine;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.StringUtils;
 import me.aleksilassila.litematica.printer.utils.render.Render2DUtils;
 import net.minecraft.client.Minecraft;
 
@@ -114,7 +116,7 @@ public class Render2D {
         // 延迟过大警告
         if (Configs.Core.LAG_CHECK.getBooleanValue() &&
                 RuntimeAccess.get().modules().packetTick() > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
-            Render2DUtils.drawString("延迟过大，已暂停运行", centerX, centerY - 22, Color.ORANGE, true, true);
+            Render2DUtils.drawString(hud("warning.lag_paused"), centerX, centerY - 22, Color.ORANGE, true, true);
         }
 
         HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight, forceRefresh);
@@ -252,16 +254,17 @@ public class Render2D {
     private List<HudLine> buildHudSummaryLines() {
         List<HudLine> lines = new ArrayList<>();
         boolean enabled = ConfigUtils.isEnable();
-        String workMode = ((WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue()).equals(WorkingModeType.SINGLE) ? "单模" : "多模";
-        lines.add(new HudLine("工作: " + (enabled ? "运行中" : "已关闭") + " | 模式: " + workMode + " | 功能: " + getActiveModeSummary(), new Color(255, 255, 255, 255)));
+        String workMode = ((WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue()).equals(WorkingModeType.SINGLE)
+                ? hud("mode.single") : hud("mode.multi");
+        lines.add(new HudLine(hud("summary.work", enabled ? hud("state.running") : hud("state.closed"), workMode, getActiveModeSummary()), new Color(255, 255, 255, 255)));
 
         String pauseReason = RuntimeAccess.get().modules().lastPauseReason();
         if (!enabled) {
-            lines.add(new HudLine("调度: 已关闭", new Color(255, 204, 102, 255)));
+            lines.add(new HudLine(hud("scheduler.closed"), new Color(255, 204, 102, 255)));
         } else if (pauseReason != null) {
-            lines.add(new HudLine("调度: 暂停 | 原因: " + humanizeSchedulerReason(pauseReason), new Color(255, 180, 90, 255)));
+            lines.add(new HudLine(hud("scheduler.paused", humanizeSchedulerReason(pauseReason)), new Color(255, 180, 90, 255)));
         } else {
-            lines.add(new HudLine("调度: 运行中 | Tick: " + RuntimeAccess.get().currentTick(), new Color(180, 255, 180, 255)));
+            lines.add(new HudLine(hud("scheduler.running", RuntimeAccess.get().currentTick()), new Color(180, 255, 180, 255)));
         }
         return lines;
     }
@@ -272,6 +275,7 @@ public class Render2D {
         appendCommonModeLines(lines, HudStatsManager.Mode.MINE, getModeDisplayName(HudStatsManager.Mode.MINE), ConfigUtils.isMineMode());
         appendCommonModeLines(lines, HudStatsManager.Mode.FILL, getModeDisplayName(HudStatsManager.Mode.FILL), ConfigUtils.isFillMode());
         appendCommonModeLines(lines, HudStatsManager.Mode.FLUID, getModeDisplayName(HudStatsManager.Mode.FLUID), ConfigUtils.isFluidMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.COVER, getModeDisplayName(HudStatsManager.Mode.COVER), ConfigUtils.isCoverMode());
         appendBedrockLines(lines, ConfigUtils.isBedrockMode());
         return lines;
     }
@@ -283,16 +287,16 @@ public class Render2D {
         HudStatsManager.Snapshot snapshot = HudStatsManager.getRuntime().snapshot(mode);
         double actualRate = getDisplayedModeRate(mode, snapshot);
         String status = humanizeCommonModeReason(mode, snapshot, actualRate);
-        StringBuilder text = new StringBuilder("[").append(label).append("] ");
+        StringBuilder text = new StringBuilder(hud("mode.prefix", label)).append(' ');
         if (shouldDisplayModeRate(mode)) {
-            text.append(getModeRateLabel(mode)).append(' ').append(formatRate(actualRate)).append("/s | ");
+            text.append(hud("metric.rate", getModeRateLabel(mode), formatRate(actualRate))).append(" | ");
         }
         FeatureModuleBase module = getModule(mode);
-        text.append("设置 ").append(formatModeSettings(mode));
+        text.append(hud("metric.settings", formatModeSettings(mode)));
         if (module != null) {
-            text.append(" | 扫描 ").append(formatScanState(module));
+            text.append(" | ").append(hud("metric.scan", formatScanState(module)));
         }
-        text.append(" | 状态 ").append(status);
+        text.append(" | ").append(hud("metric.status", status));
         lines.add(new HudLine(text.toString(), new Color(120, 220, 255, 255)));
     }
 
@@ -311,29 +315,19 @@ public class Render2D {
         );
         int totalFailures = bedrock.failedTargets() + bedrock.stuckTargets();
         String status = humanizeBedrockReason(bedrock.lastReason());
-        if (bedrock.totalTargets() <= 0 && bedrock.submittedTargets() <= 0 && "运行中".equals(status)) {
-            status = "无目标";
+        if (bedrock.totalTargets() <= 0 && bedrock.submittedTargets() <= 0 && HudStatus.RUNNING.equals(bedrock.lastReason())) {
+            status = hud("state.no_target");
         }
 
-        lines.add(new HudLine("[破基岩] 进度 " + progressText
-                + " | 成功率 " + formatPercent(bedrock.successRate())
-                + " | 成功速率 " + formatRate(snapshot.ratePerSecond()) + "/s", new Color(120, 255, 170, 255)));
-        lines.add(new HudLine("成功 " + bedrock.confirmedSuccesses()
-                + " | 失败 " + totalFailures
-                + " | 垂直 " + bedrock.verticalActiveTargets() + "/" + bedrock.verticalActiveCap()
-                + " | 水平 " + bedrock.sideTargets() + "/" + bedrock.sideCap()
-                + " | 清理 " + bedrock.cleanupQueueSize()
-                + " | 压力 " + bedrock.cleanupPressure(), new Color(255, 255, 255, 255)));
-        lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
-                + "/窗口 间隔 " + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue()
-                + " | 提交 " + bedrock.acceptedThisTick() + "/" + bedrock.submitCap()
-                + " | 阻塞 " + bedrock.rejectedThisTick()
-                + " | 扫描 " + formatScanState(RuntimeAccess.get().modules().bedrock())
-                + " | 状态 " + status, new Color(255, 255, 255, 255)));
-        lines.add(new HudLine("待确认 " + bedrock.pendingServerUpdates()
-                + " | RTT退避 " + bedrock.adaptiveBackoffs()
-                + " | 更新超时 " + bedrock.serverUpdateTimeouts()
-                + " | 最近 " + humanizeBedrockNetworkResult(bedrock.lastNetworkResult()),
+        lines.add(new HudLine(hud("bedrock.progress", progressText, formatPercent(bedrock.successRate()), formatRate(snapshot.ratePerSecond())), new Color(120, 255, 170, 255)));
+        lines.add(new HudLine(hud("bedrock.counts", bedrock.confirmedSuccesses(), totalFailures,
+                bedrock.verticalActiveTargets(), bedrock.verticalActiveCap(), bedrock.sideTargets(), bedrock.sideCap(),
+                bedrock.cleanupQueueSize(), bedrock.cleanupPressure()), new Color(255, 255, 255, 255)));
+        lines.add(new HudLine(hud("bedrock.throughput", bedrock.configuredThroughput(), Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue(),
+                bedrock.acceptedThisTick(), bedrock.submitCap(), bedrock.rejectedThisTick(),
+                formatScanState(RuntimeAccess.get().modules().bedrock()), status), new Color(255, 255, 255, 255)));
+        lines.add(new HudLine(hud("bedrock.network", bedrock.pendingServerUpdates(), bedrock.adaptiveBackoffs(),
+                bedrock.serverUpdateTimeouts(), humanizeBedrockNetworkResult(bedrock.lastNetworkResult())),
                 new Color(255, 230, 150, 255)));
     }
 
@@ -353,7 +347,7 @@ public class Render2D {
 
     private String getActiveModeSummary() {
         if (!ConfigUtils.isEnable()) {
-            return "无";
+            return hud("state.none");
         }
         List<String> names = new ArrayList<>();
         if (ConfigUtils.isPrintMode()) {
@@ -368,20 +362,24 @@ public class Render2D {
         if (ConfigUtils.isFluidMode()) {
             names.add(getModeDisplayName(HudStatsManager.Mode.FLUID));
         }
+        if (ConfigUtils.isCoverMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.COVER));
+        }
         if (ConfigUtils.isBedrockMode()) {
             names.add(getModeDisplayName(HudStatsManager.Mode.BEDROCK));
         }
-        return names.isEmpty() ? "无" : String.join(", ", names);
+        return names.isEmpty() ? hud("state.none") : String.join(", ", names);
     }
 
     private String getModeDisplayName(HudStatsManager.Mode mode) {
         return switch (mode) {
-            case PRINT -> "打印";
-            case MINE -> "挖掘";
-            case FILL -> "填充";
-            case FLUID -> "排流体";
-            case BEDROCK -> "破基岩";
-            case TOTAL -> "总计";
+            case PRINT -> hud("mode.print");
+            case MINE -> hud("mode.mine");
+            case FILL -> hud("mode.fill");
+            case FLUID -> hud("mode.fluid");
+            case COVER -> hud("mode.cover");
+            case BEDROCK -> hud("mode.bedrock");
+            case TOTAL -> hud("mode.total");
         };
     }
 
@@ -407,44 +405,45 @@ public class Render2D {
 
     private String humanizeSchedulerReason(String reason) {
         if (reason == null || reason.isBlank()) {
-            return "运行中";
+            return hud("state.running");
         }
         if (reason.startsWith("shared_precheck")) {
-            return "容器打开或切物品中";
+            return hud("scheduler.shared_precheck");
         }
         if (reason.startsWith("handler_precheck")) {
-            return "共享前置阻塞";
+            return hud("scheduler.handler_precheck");
         }
         if (reason.startsWith("send_queue_wait_modify_look") || reason.startsWith("action_wait_modify_look")) {
-            return "等待转头";
+            return hud("status.waiting_look");
         }
         if (reason.startsWith("lag_check")) {
-            return "延迟过大";
+            return hud("status.lag_too_high");
         }
-        return reason;
+        return hud("status.unknown", reason);
     }
 
     private boolean shouldDisplayModeRate(HudStatsManager.Mode mode) {
         return mode == HudStatsManager.Mode.PRINT
                 || mode == HudStatsManager.Mode.MINE
                 || mode == HudStatsManager.Mode.FILL
-                || mode == HudStatsManager.Mode.FLUID;
+                || mode == HudStatsManager.Mode.FLUID
+                || mode == HudStatsManager.Mode.COVER;
     }
 
     private double getDisplayedModeRate(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot) {
         return switch (mode) {
             case PRINT -> snapshot.completedRatePerSecond();
-            case MINE, FILL, FLUID -> snapshot.completedRatePerSecond();
+            case MINE, FILL, FLUID, COVER -> snapshot.completedRatePerSecond();
             default -> 0.0D;
         };
     }
 
     private String getModeRateLabel(HudStatsManager.Mode mode) {
         return switch (mode) {
-            case PRINT, FILL, FLUID -> "放置";
-            case MINE -> "破坏";
-            case BEDROCK -> "成功";
-            case TOTAL -> "速率";
+            case PRINT, FILL, FLUID, COVER -> hud("metric.place");
+            case MINE -> hud("metric.break");
+            case BEDROCK -> hud("metric.success");
+            case TOTAL -> hud("metric.rate_short");
         };
     }
 
@@ -454,6 +453,7 @@ public class Render2D {
             case MINE -> RuntimeAccess.get().modules().mine();
             case FILL -> RuntimeAccess.get().modules().fill();
             case FLUID -> RuntimeAccess.get().modules().fluid();
+            case COVER -> RuntimeAccess.get().modules().cover();
             case BEDROCK -> RuntimeAccess.get().modules().bedrock();
             case TOTAL -> null;
         };
@@ -462,22 +462,20 @@ public class Render2D {
     private String formatScanState(FeatureModuleBase module) {
         ScanState state = module.getScanState();
         String text = switch (state) {
-            case FULL -> "全量";
-            case PARTIAL -> "局部";
-            case LAZY -> module.getPendingIterationWorkCount() > 0 ? "前沿" : "惰性";
+            case FULL -> hud("scan.full");
+            case PARTIAL -> hud("scan.partial");
+            case LAZY -> module.getPendingIterationWorkCount() > 0 ? hud("scan.frontier") : hud("scan.lazy");
         };
         int dirtyRegions = module.getPendingDirtyRegionCount();
         if (dirtyRegions > 0) {
-            text += "(" + dirtyRegions + ")";
+            text += hud("scan.dirty", dirtyRegions);
         }
         var metrics = RuntimeAccess.get().scanEngine().metricsFor(module.getId());
         if (metrics.hasActivity()) {
-            text += " " + formatScanMillis(metrics.scanNanos())
-                    + "ms " + metrics.scannedBlocks()
-                    + "块/" + metrics.scannedSections()
-                    + "区 " + metrics.acceptedTargets() + "目标";
+            text += " " + hud("scan.activity", formatScanMillis(metrics.scanNanos()), metrics.scannedBlocks(),
+                    metrics.scannedSections(), metrics.acceptedTargets());
             if (metrics.budgetPauses() > 0) {
-                text += " 切片" + metrics.budgetPauses();
+                text += " " + hud("scan.slices", metrics.budgetPauses());
             }
         }
         return text;
@@ -492,45 +490,59 @@ public class Render2D {
 
     private String humanizeCommonModeReason(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot, double actualRate) {
         String reason = snapshot.lastReason();
-        if (reason == null || reason.isBlank() || "空闲".equals(reason)) {
-            return actualRate > 0.0D ? "工作中" : "无目标";
+        if (reason == null || reason.isBlank() || HudStatus.IDLE.equals(reason)) {
+            return actualRate > 0.0D ? hud("state.working") : hud("state.no_target");
         }
         if (snapshot.total() <= 0
                 && actualRate <= 0.0D
-                && !reason.contains("缺少")
-                && !reason.contains("配置")
-                && !reason.contains("列表为空")
-                && !reason.contains("列表无匹配")
-                && !reason.contains("失败")) {
-            return "无目标";
+                && !isMissingStatus(reason)
+                && !isUnconfiguredStatus(reason)
+                && !HudStatus.BREAKING_FAILED.equals(reason)) {
+            return hud("state.no_target");
         }
-        if (reason.contains("失败")) {
-            return "失败";
+        if (HudStatus.BREAKING_FAILED.equals(reason)) {
+            return hud("state.failed");
         }
-        if (reason.contains("配置") || reason.contains("列表为空") || reason.contains("列表无匹配")) {
-            return "未配置";
+        if (isUnconfiguredStatus(reason)) {
+            return hud("state.unconfigured");
         }
-        if (reason.contains("缺少") || reason.contains("主手无可填充方块")) {
-            return "缺少方块";
+        if (isMissingStatus(reason)) {
+            return hud("state.missing_block");
         }
-        if ("运行中".equals(reason) && snapshot.total() <= 0 && actualRate <= 0.0D) {
-            return "无目标";
+        if (HudStatus.RUNNING.equals(reason) && snapshot.total() <= 0 && actualRate <= 0.0D) {
+            return hud("state.no_target");
         }
-        return "工作中";
+        return hud("state.working");
+    }
+
+    private boolean isMissingStatus(String reason) {
+        return HudStatus.MISSING_MATERIAL.equals(reason)
+                || HudStatus.MISSING_FILL_MATERIAL.equals(reason)
+                || HudStatus.MISSING_FLUID_FILL_BLOCK.equals(reason)
+                || HudStatus.MAIN_HAND_NO_BLOCK.equals(reason);
+    }
+
+    private boolean isUnconfiguredStatus(String reason) {
+        return HudStatus.FILL_LIST_EMPTY.equals(reason)
+                || HudStatus.LIST_NO_MATCH.equals(reason)
+                || HudStatus.NO_FLUID_CONFIG.equals(reason);
     }
 
     private String formatModeSettings(HudStatsManager.Mode mode) {
         return switch (mode) {
-            case PRINT, FILL, FLUID -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
-                    + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue()
-                    + formatRttSettings(mode);
-            case MINE -> (Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() == 0
-                    ? "不限速"
-                    : Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() + "/t")
-                    + " 间隔" + Configs.Break.BREAK_INTERVAL.getIntegerValue();
-            case BEDROCK -> Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue()
-                    + "/t 间隔" + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
-            case TOTAL -> "--";
+            case PRINT, FILL, FLUID, COVER -> hud("settings.place",
+                    Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue(),
+                    hud("settings.interval", Configs.Placement.PLACE_INTERVAL.getIntegerValue()),
+                    formatRttSettings(mode));
+            case MINE -> hud("settings.mine",
+                    Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() == 0
+                            ? hud("settings.unlimited")
+                            : Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() + "/t",
+                    Configs.Break.BREAK_INTERVAL.getIntegerValue());
+            case BEDROCK -> hud("settings.place",
+                    Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue(),
+                    hud("settings.interval", Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue()), "");
+            case TOTAL -> hud("state.unknown_value");
         };
     }
 
@@ -540,49 +552,52 @@ public class Render2D {
             return "";
         }
         var rate = RuntimeAccess.get().placementRateController();
-        return " RTT" + RuntimeAccess.get().rttReplayController().getEstimatedRttMillis()
-                + "ms/" + rate.effectiveIntervalTicks() + "t";
+        return hud("settings.rtt", RuntimeAccess.get().rttReplayController().getEstimatedRttMillis(), rate.effectiveIntervalTicks());
     }
 
     private String humanizeBedrockReason(String reason) {
         if (reason == null || reason.isBlank()) {
-            return "运行中";
+            return hud("status.running");
         }
         return switch (reason) {
-            case "idle" -> "空闲";
-            case "running", "accepted" -> "运行中";
-            case "startup_serial" -> "启动串行";
-            case "accept_backpressure" -> "接受背压";
-            case "submit_cap" -> "提交上限";
-            case "active_cap" -> "活跃上限";
-            case "side_disabled" -> "水平通道关闭";
-            case "side_lane_busy" -> "水平通道占用";
-            case "retry_cooldown" -> "重试冷却";
-            case "reserved_by_active_target" -> "被活跃任务占位";
-            case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> "超出交互范围";
-            case "await_target_exposure" -> "等待目标暴露";
-            case "duplicate_active_target" -> "重复目标";
-            case "occupied_by_active_piston" -> "活塞占位";
-            case "pending_cleanup" -> "等待清理";
-            case "machine_overlap" -> "机器重叠";
-            case "target_failed_on_create", "failed" -> "任务失败";
-            case "stuck" -> "任务卡死";
-            default -> reason;
+            case "idle" -> hud("status.idle");
+            case "running", "accepted" -> hud("status.running");
+            case "startup_serial" -> hud("status.bedrock.startup_serial");
+            case "accept_backpressure" -> hud("status.bedrock.accept_backpressure");
+            case "submit_cap" -> hud("status.bedrock.submit_cap");
+            case "active_cap" -> hud("status.bedrock.active_cap");
+            case "side_disabled" -> hud("status.bedrock.side_disabled");
+            case "side_lane_busy" -> hud("status.bedrock.side_lane_busy");
+            case "retry_cooldown" -> hud("status.bedrock.retry_cooldown");
+            case "reserved_by_active_target" -> hud("status.bedrock.reserved_by_active_target");
+            case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> hud("status.out_of_range");
+            case "await_target_exposure" -> hud("status.bedrock.await_target_exposure");
+            case "duplicate_active_target" -> hud("status.bedrock.duplicate_active_target");
+            case "occupied_by_active_piston" -> hud("status.bedrock.occupied_by_active_piston");
+            case "pending_cleanup" -> hud("status.bedrock.pending_cleanup");
+            case "machine_overlap" -> hud("status.bedrock.machine_overlap");
+            case "target_failed_on_create", "failed" -> hud("status.failed");
+            case "stuck" -> hud("status.bedrock.stuck");
+            default -> hud("status.unknown", reason);
         };
     }
 
     private String humanizeBedrockNetworkResult(String result) {
         if (result == null || result.isBlank()) {
-            return "空闲";
+            return hud("status.idle");
         }
         return switch (result) {
-            case "dispatched" -> "已发包";
-            case "confirmed" -> "已确认";
-            case "late_update" -> "迟到更新";
-            case "retry" -> "重试";
-            case "stuck" -> "卡死";
-            default -> result;
+            case "dispatched" -> hud("network.dispatched");
+            case "confirmed" -> hud("network.confirmed");
+            case "late_update" -> hud("network.late_update");
+            case "retry" -> hud("network.retry");
+            case "stuck" -> hud("network.stuck");
+            default -> hud("status.unknown", result);
         };
+    }
+
+    private static String hud(String key, Object... args) {
+        return StringUtils.translatable("litematica-printer.hud." + key, args).getString();
     }
 
     private static double clamp(double value, double min, double max) {

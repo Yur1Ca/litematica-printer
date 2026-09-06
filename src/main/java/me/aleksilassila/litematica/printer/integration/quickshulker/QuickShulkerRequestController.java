@@ -43,6 +43,7 @@ public final class QuickShulkerRequestController {
 
     private final HashSet<Item> lastNeedItemList = new LinkedHashSet<>();
     private boolean isOpenHandler;
+    private boolean externalRequestAllowed;
     private int shulkerInventoryMenuSlot = -1;
 
     public QuickShulkerRequestController(Minecraft client) {
@@ -139,14 +140,14 @@ public final class QuickShulkerRequestController {
     }
 
     public boolean shouldPauseForSwitchRequest() {
-        return Configs.Core.WORK_SWITCH.getBooleanValue()
+        return (Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestAllowed)
                 && Configs.Placement.QUICK_SHULKER.getBooleanValue()
                 && hasPendingSwitchRequest();
     }
 
     public boolean shouldSuppressContainerScreen() {
         LocalPlayer player = client.player;
-        return Configs.Core.WORK_SWITCH.getBooleanValue()
+        return (Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestAllowed)
                 && Configs.Placement.QUICK_SHULKER.getBooleanValue()
                 && player != null
                 && !player.containerMenu.equals(player.inventoryMenu)
@@ -154,8 +155,13 @@ public final class QuickShulkerRequestController {
                 && (this.isOpenHandler || this.orderedStorage.isWaitingForRestoreContainer());
     }
 
+    public void setExternalRequestAllowed(boolean allowed) {
+        this.externalRequestAllowed = allowed;
+    }
+
     public void resetRuntime() {
         clearSwitchRequest();
+        this.externalRequestAllowed = false;
         shulkerCooldown = 0;
         ModLoadUtils.closeScreen = 0;
     }
@@ -273,6 +279,7 @@ public final class QuickShulkerRequestController {
         }
         if (Configs.Placement.STORE_ORDERLY.getBooleanValue()
                 && Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                && !this.externalRequestAllowed
                 && !this.isOpenHandler
                 && !RuntimeAccess.get().inventorySwitchGuard().isWaiting()
                 && !TakeItOutUtils.isAwaitingStack()) {

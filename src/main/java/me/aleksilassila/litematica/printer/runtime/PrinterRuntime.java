@@ -229,6 +229,7 @@ public final class PrinterRuntime {
         this.chestTrackerAdapter.tick();
         if (this.materialRequests != null) {
             this.materialRequests.tick();
+            this.quickShulkerAdapter.clearExternalRequestIfIdle(this.materialRequests.isBusy());
         }
         this.interactionUtils.preprocess();
         this.interactionUtils.onTick();

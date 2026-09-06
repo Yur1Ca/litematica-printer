@@ -23,7 +23,7 @@ public class MixinInventoryUtils {
         if (ChestTrackerBridge.handlePickBlock(mc.player, stack.getItem())) {
             return;
         }
-        QuickShulkerBridge.handlePickBlock(mc.player, stack);
+        QuickShulkerBridge.handleEasyPlacePickBlock(mc.player, stack);
     }
 
 }

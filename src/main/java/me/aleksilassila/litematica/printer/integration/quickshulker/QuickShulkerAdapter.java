@@ -23,6 +23,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
     private final OrderedStorageController orderedStorage;
     private boolean resourcesAcquired;
     private long attemptedToken;
+    private boolean externalRequestActive;
 
     public QuickShulkerAdapter(ActionPort actionBroker) {
         this.actionBroker = actionBroker;
@@ -90,6 +91,9 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         if (!Configs.Placement.QUICK_SHULKER.getBooleanValue() || items == null || items.isEmpty()) {
             return false;
         }
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
+            this.allowExternalRequest();
+        }
         if (!this.acquireResources()) {
             return false;
         }
@@ -111,11 +115,23 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         return this.requests.shouldSuppressContainerScreen();
     }
 
+    public void allowExternalRequest() {
+        this.externalRequestActive = true;
+        this.requests.setExternalRequestAllowed(true);
+    }
+
+    public void clearExternalRequestIfIdle(boolean coordinatorBusy) {
+        if (this.externalRequestActive && !coordinatorBusy && !this.requests.hasPendingSwitchRequest()) {
+            this.externalRequestActive = false;
+            this.requests.setExternalRequestAllowed(false);
+        }
+    }
+
     @Override
     public void tick() {
         // A manual container must never be affected after the printer has been disabled.
         // Clear the automation session before the screen guard can observe stale state.
-        if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue() && !this.externalRequestActive) {
             this.reset();
             return;
         }
@@ -142,6 +158,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         this.orderedStorage.reset();
         this.requests.resetRuntime();
         this.attemptedToken = 0L;
+        this.externalRequestActive = false;
         this.releaseResources();
     }
 

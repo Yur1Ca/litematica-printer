@@ -43,11 +43,15 @@ public final class QuickShulkerBridge {
 
     /** Handles the optional inventory fallback for both vanilla and Litematica pick-block hooks. */
     public static boolean handlePickBlock(LocalPlayer player, Item item) {
+        return handlePickBlock(player, item, false);
+    }
+
+    private static boolean handlePickBlock(LocalPlayer player, Item item, boolean easyPlace) {
         Minecraft client = Minecraft.getInstance();
         if (player == null || item == null || item == Items.AIR
                 || client.gameMode == null
                 || client.gameMode.getPlayerMode() != GameType.SURVIVAL
-                || !Configs.Core.WORK_SWITCH.getBooleanValue()
+                || !easyPlace && !Configs.Core.WORK_SWITCH.getBooleanValue()
                 || (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
                     && !TakeItOutUtils.isAutoTakeoutEnabled()
                     && !Configs.Special.REMOTE_TAKE.getBooleanValue())
@@ -56,6 +60,9 @@ public final class QuickShulkerBridge {
                 // that unrelated PENDING result into a middle-click intercept.
                 || RuntimeAccess.get().materialRequests().isBusy()) {
             return false;
+        }
+        if (easyPlace) {
+            RuntimeAccess.get().quickShulkerAdapter().allowExternalRequest();
         }
         MaterialReservation reservation = requestItem(item, MaterialRequest.Source.PICK_BLOCK);
         if (reservation.state() == MaterialReservation.State.UNAVAILABLE) {
@@ -71,6 +78,14 @@ public final class QuickShulkerBridge {
             return false;
         }
         return handlePickBlock(player, stack.getItem());
+    }
+
+    public static boolean handleEasyPlacePickBlock(LocalPlayer player, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty()
+                || ItemStack.isSameItemSameComponents(player.getMainHandItem(), stack)) {
+            return false;
+        }
+        return handlePickBlock(player, stack.getItem(), true);
     }
 
     public static boolean switchItem() {

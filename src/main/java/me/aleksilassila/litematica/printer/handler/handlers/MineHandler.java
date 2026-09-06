@@ -27,6 +27,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -48,6 +49,8 @@ public class MineHandler extends FeatureModuleBase {
     private final Set<BlockPos> trenchFillTargets = new LinkedHashSet<>();
     private final Set<BlockPos> trenchWaterloggedTargets = new LinkedHashSet<>();
     private final Map<BlockPos, Long> trenchFillInFlight = new HashMap<>();
+    private final Map<BlockPos, Long> trenchFillRetryAt = new HashMap<>();
+    private List<PrinterBox> trenchScopeBoxes = List.of();
     private int trenchFillSentThisTick;
     private long lastTrenchFillTick = Long.MIN_VALUE;
     @Nullable
@@ -65,6 +68,7 @@ public class MineHandler extends FeatureModuleBase {
                         && (this.level == null || !this.isFluid(this.level.getBlockState(pos)))) {
                     this.trenchFillTargets.remove(pos);
                 }
+                this.trenchFillRetryAt.remove(pos);
             }
         });
     }
@@ -78,6 +82,8 @@ public class MineHandler extends FeatureModuleBase {
             this.trenchFillTargets.clear();
             this.trenchWaterloggedTargets.clear();
             this.trenchFillInFlight.clear();
+            this.trenchFillRetryAt.clear();
+            this.trenchScopeBoxes = List.of();
             this.lastTrenchFillTick = Long.MIN_VALUE;
         }
         super.tick(context);
@@ -123,6 +129,7 @@ public class MineHandler extends FeatureModuleBase {
             List<BlockPos> fillPositions = new ArrayList<>();
             for (BlockPos pos : this.trenchFillTargets) {
                 if (!this.trenchFillInFlight.containsKey(pos)
+                        && this.trenchFillRetryAt.getOrDefault(pos, Long.MIN_VALUE) <= this.level.getGameTime()
                         && this.isFluid(this.level.getBlockState(pos))) {
                     fillPositions.add(pos);
                 }
@@ -191,6 +198,8 @@ public class MineHandler extends FeatureModuleBase {
         this.trenchFillTargets.clear();
         this.trenchWaterloggedTargets.clear();
         this.trenchFillInFlight.clear();
+        this.trenchFillRetryAt.clear();
+        this.trenchScopeBoxes = List.of();
         this.lastTrenchFillTick = Long.MIN_VALUE;
         this.analyzer.reset();
         this.toolSession.reset();
@@ -221,6 +230,7 @@ public class MineHandler extends FeatureModuleBase {
         if (this.hasTrenchFillWork() && this.trenchFillTargets.contains(pos)) {
             return this.level != null
                     && !this.trenchFillInFlight.containsKey(pos)
+                    && this.trenchFillRetryAt.getOrDefault(pos, Long.MIN_VALUE) <= this.level.getGameTime()
                     && this.isFluid(this.level.getBlockState(pos));
         }
         if (this.hasTrenchFillWork() && this.trenchWaterloggedTargets.contains(pos)) {
@@ -427,40 +437,37 @@ public class MineHandler extends FeatureModuleBase {
         if (interactionBox == null) return;
         Set<BlockPos> discovered = new LinkedHashSet<>();
         Set<BlockPos> waterlogged = new LinkedHashSet<>();
-        for (PrinterBox box : this.getScanSourceBoxes(interactionBox)) {
-            // A trench is a one-block-wide horizontal line. Keep non-line selections a safe no-op.
-            if (box.minX != box.maxX && box.minZ != box.maxZ) continue;
-            Direction[] sides = {
-                    Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
-            };
-            for (BlockPos pos : box) {
-                BlockState state = this.level.getBlockState(pos);
-                if (this.isFluid(state)) discovered.add(pos.immutable());
-                else if (this.isWaterlogged(state)) waterlogged.add(pos.immutable());
-                for (Direction side : sides) {
-                    BlockPos outside = pos.relative(side);
-                    if (!box.contains(outside)) {
-                        BlockState outsideState = this.level.getBlockState(outside);
-                        if (this.isFluid(outsideState)) discovered.add(outside.immutable());
-                        else if (this.isWaterlogged(outsideState)) waterlogged.add(outside.immutable());
-                    }
-                }
-            }
+        List<PrinterBox> sourceBoxes = this.getScanSourceBoxes(interactionBox);
+        boolean scopeChanged = !sourceBoxes.equals(this.trenchScopeBoxes);
+        if (scopeChanged) {
+            this.trenchScopeBoxes = List.copyOf(sourceBoxes);
+            this.trenchFillTargets.removeIf(pos -> !this.trenchFillInFlight.containsKey(pos));
+            this.trenchWaterloggedTargets.clear();
+            this.trenchFillRetryAt.clear();
         }
+        this.discoverTrenchBoundary(sourceBoxes, discovered, waterlogged);
+        // The trench scope is the selected volume plus exactly one horizontal boundary block.
+        // Do not retain old targets: those could be distant sea grass from the same water body.
         this.trenchWaterloggedTargets.removeIf(pos -> !waterlogged.contains(pos));
         this.trenchWaterloggedTargets.addAll(waterlogged);
         this.trenchFillTargets.removeIf(pos -> !discovered.contains(pos)
                 && !this.trenchFillInFlight.containsKey(pos));
-        this.trenchFillTargets.addAll(discovered);
+        discovered.stream()
+                .sorted(Comparator.comparingInt(BlockPos::getY))
+                .forEach(this.trenchFillTargets::add);
         long now = this.level.getGameTime();
         this.trenchFillInFlight.entrySet().removeIf(entry ->
                 !this.isFluid(this.level.getBlockState(entry.getKey()))
                         || now - entry.getValue() > 40L);
+        this.trenchFillRetryAt.entrySet().removeIf(entry ->
+                !this.trenchFillTargets.contains(entry.getKey())
+                        || entry.getValue() <= now);
     }
 
     private void executeTrenchFill(BlockPos pos, AtomicReference<Boolean> skipIteration) {
         if (this.level == null || this.player == null || !this.isFluid(this.level.getBlockState(pos))) {
             this.trenchFillTargets.remove(pos);
+            this.trenchFillRetryAt.remove(pos);
             return;
         }
         int placementLimit = Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
@@ -480,11 +487,17 @@ public class MineHandler extends FeatureModuleBase {
             return;
         }
         if (!InventoryUtils.switchToItems(this.player, new Item[]{Items.SAND})) {
+            this.deferTrenchFill(pos, now + 20L);
             skipIteration.set(true);
             return;
         }
         Direction supportDirection = this.findTrenchSupport(pos);
-        if (supportDirection == null || !this.actionBroker.queueClick(
+        if (supportDirection == null) {
+            this.deferTrenchFill(pos, now + 10L);
+            skipIteration.set(true);
+            return;
+        }
+        if (!this.actionBroker.queueClick(
                 pos.relative(supportDirection),
                 supportDirection.getOpposite(),
                 net.minecraft.world.phys.Vec3.ZERO,
@@ -492,6 +505,7 @@ public class MineHandler extends FeatureModuleBase {
                 1,
                 new Item[]{Items.SAND},
                 ActionPort.ActionSource.FILL)) {
+            this.deferTrenchFill(pos, now + 2L);
             skipIteration.set(true);
             return;
         }
@@ -508,8 +522,13 @@ public class MineHandler extends FeatureModuleBase {
                 skipIteration.set(true);
             }
         } else {
+            this.deferTrenchFill(pos, now + 2L);
             skipIteration.set(true);
         }
+    }
+
+    private void deferTrenchFill(BlockPos pos, long retryAt) {
+        this.trenchFillRetryAt.put(pos.immutable(), retryAt);
     }
 
     private void executeTrenchWaterloggedBreak(BlockPos pos, AtomicReference<Boolean> skipIteration) {
@@ -532,6 +551,34 @@ public class MineHandler extends FeatureModuleBase {
         skipIteration.set(true);
     }
 
+    private void discoverTrenchBoundary(
+            List<PrinterBox> boxes,
+            Set<BlockPos> discovered,
+            Set<BlockPos> waterlogged
+    ) {
+        for (PrinterBox box : boxes) {
+            for (BlockPos pos : box) {
+                BlockState state = this.level.getBlockState(pos);
+                if (this.isFluid(state)) {
+                    discovered.add(pos.immutable());
+                } else if (this.isWaterlogged(state)) {
+                    waterlogged.add(pos.immutable());
+                }
+                for (Direction side : HORIZONTAL_SIDES) {
+                    BlockPos outside = pos.relative(side);
+                    if (!box.contains(outside)) {
+                        BlockState outsideState = this.level.getBlockState(outside);
+                        if (this.isFluid(outsideState)) {
+                            discovered.add(outside.immutable());
+                        } else if (this.isWaterlogged(outsideState)) {
+                            waterlogged.add(outside.immutable());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private Direction findTrenchSupport(BlockPos pos) {
         Direction[] order = {Direction.DOWN, Direction.NORTH, Direction.SOUTH,
                 Direction.EAST, Direction.WEST, Direction.UP};
@@ -548,6 +595,10 @@ public class MineHandler extends FeatureModuleBase {
     private boolean isFluid(BlockState state) {
         return state != null && state.getBlock() instanceof LiquidBlock;
     }
+
+    private static final Direction[] HORIZONTAL_SIDES = {
+            Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+    };
 
     private boolean isWaterlogged(BlockState state) {
         return state != null

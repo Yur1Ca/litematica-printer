@@ -13,4 +13,8 @@ public final class QuickShulkerInvocationPolicy {
         return pendingTokens > 0 && containerScreen;
     }
 
+    public static int consumeScreenToken(int pendingTokens) {
+        return Math.max(0, pendingTokens - 1);
+    }
+
 }

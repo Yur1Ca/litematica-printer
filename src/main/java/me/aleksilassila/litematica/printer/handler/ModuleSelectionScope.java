@@ -10,13 +10,14 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 
 /** Converts Litematica selections and render layers into a cached scan scope. */
 final class ModuleSelectionScope {
     private final FeatureModuleBase owner;
     @Nullable private final ConfigOptionList selectionConfig;
-    @Nullable private PrinterBox cachedInput;
+    @Nullable private ScopeCacheKey cachedKey;
     private List<PrinterBox> cachedBoxes = List.of();
 
     ModuleSelectionScope(FeatureModuleBase owner, @Nullable ConfigOptionList selectionConfig) {
@@ -25,7 +26,7 @@ final class ModuleSelectionScope {
     }
 
     void clearCache() {
-        this.cachedInput = null;
+        this.cachedKey = null;
         this.cachedBoxes = List.of();
     }
 
@@ -42,7 +43,11 @@ final class ModuleSelectionScope {
 
     List<PrinterBox> boxes(PrinterBox interactionBox) {
         if (interactionBox == null) return List.of();
-        if (interactionBox.equals(this.cachedInput)) return this.cachedBoxes;
+        SelectionType selectionType = this.currentSelectionType();
+        PrinterBox renderLayerBounds = selectionType == SelectionType.LITEMATICA_RENDER_LAYER
+                ? this.owner.litematica.clampToRenderLayer(interactionBox) : null;
+        ScopeCacheKey cacheKey = cacheKey(interactionBox, selectionType, renderLayerBounds);
+        if (cacheKey.equals(this.cachedKey)) return this.cachedBoxes;
 
         List<PrinterBox> baseBoxes;
         if (this.owner.isSchematicBlockHandler()) {
@@ -58,9 +63,17 @@ final class ModuleSelectionScope {
             bounded = this.clampToConfiguredSelection(bounded);
             if (bounded != null) result.add(bounded);
         }
-        this.cachedInput = interactionBox;
+        this.cachedKey = cacheKey;
         this.cachedBoxes = result.isEmpty() ? List.of() : List.copyOf(result);
         return this.cachedBoxes;
+    }
+
+    static ScopeCacheKey cacheKey(
+            PrinterBox interactionBox,
+            @Nullable SelectionType selectionType,
+            @Nullable PrinterBox renderLayerBounds
+    ) {
+        return new ScopeCacheKey(interactionBox, selectionType, renderLayerBounds);
     }
 
     boolean contains(BlockPos pos) {
@@ -137,5 +150,21 @@ final class ModuleSelectionScope {
         int maxY = Math.min(first.maxY, second.maxY), maxZ = Math.min(first.maxZ, second.maxZ);
         return minX > maxX || minY > maxY || minZ > maxZ ? null
                 : new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private @Nullable SelectionType currentSelectionType() {
+        return this.selectionConfig != null
+                && this.selectionConfig.getOptionListValue() instanceof SelectionType selectionType
+                ? selectionType : null;
+    }
+
+    record ScopeCacheKey(
+            PrinterBox interactionBox,
+            @Nullable SelectionType selectionType,
+            @Nullable PrinterBox renderLayerBounds
+    ) {
+        ScopeCacheKey {
+            Objects.requireNonNull(interactionBox, "interactionBox");
+        }
     }
 }

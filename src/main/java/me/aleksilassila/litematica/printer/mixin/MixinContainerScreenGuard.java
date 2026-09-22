@@ -30,11 +30,12 @@ public abstract class MixinContainerScreenGuard {
                 && QuickShulkerBridge.shouldSuppressContainerScreen(
                         ((AbstractContainerScreen<?>) screen).getMenu().containerId
                 )) {
+            ModLoadUtils.closeScreen = QuickShulkerInvocationPolicy.consumeScreenToken(ModLoadUtils.closeScreen);
             ci.cancel();
             return;
         }
         if (QuickShulkerInvocationPolicy.shouldSuppressScreen(ModLoadUtils.closeScreen, containerScreen)) {
-            ModLoadUtils.closeScreen--;
+            ModLoadUtils.closeScreen = QuickShulkerInvocationPolicy.consumeScreenToken(ModLoadUtils.closeScreen);
             ci.cancel();
             return;
         }

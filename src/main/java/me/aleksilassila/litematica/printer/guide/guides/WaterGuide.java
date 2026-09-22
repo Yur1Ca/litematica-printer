@@ -8,12 +8,9 @@ import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockStateUtils;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
-/**
- * 水源/含水方块的无状态兜底规则。
- * 破冰放水这类跨 tick 流程由 PrintWorkflowScheduler 接管。
- */
 public class WaterGuide extends Guide {
     public WaterGuide(SchematicBlockContext context) {
         super(context);
@@ -21,7 +18,7 @@ public class WaterGuide extends Guide {
 
     @Override
     protected boolean canExecute() {
-        return BlockStateUtils.isWaterBlock(requiredState);
+        return isFluidTarget(requiredState);
     }
 
     @Override
@@ -56,5 +53,9 @@ public class WaterGuide extends Guide {
     private boolean isWaterloggedTarget() {
         return requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
                 && requiredState.getValue(BlockStateProperties.WATERLOGGED);
+    }
+
+    static boolean isFluidTarget(BlockState state) {
+        return BlockStateUtils.isWaterBlock(state) || state.getBlock() instanceof LiquidBlock;
     }
 }

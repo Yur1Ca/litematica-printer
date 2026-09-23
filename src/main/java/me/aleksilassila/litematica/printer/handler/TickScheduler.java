@@ -52,20 +52,22 @@ final class TickScheduler implements RuntimeComponent {
             this.executionScopeHash = currentScopeHash;
             return;
         }
-        boolean inventoryBusy = this.pauseForInventoryState("shared_precheck");
-        // Advance a pending look transaction, but do not turn it into a global scheduler
-        // barrier.  The coordinator owns LOOK/INTERACTION per action owner; unrelated features
-        // must still be able to scan and submit their own resources in this tick.
-        this.advancePendingLookQueue(mc);
-        this.pauseForLagCheck();
+        boolean lagPaused = this.pauseForLagCheck();
+        boolean inventoryBusy = !lagPaused && this.pauseForInventoryState("shared_precheck");
+        if (!lagPaused) {
+            this.advancePendingLookQueue(mc);
+        }
         TickContext context = TickContext.capture();
-        if (!inventoryBusy) {
+        if (!inventoryBusy && !lagPaused) {
             this.resume();
         }
         for (FeatureModuleBase handler : this.modules) {
             if (handler instanceof GuiHandler) {
                 handler.tick(context);
             }
+        }
+        if (lagPaused) {
+            return;
         }
         int actionableCount = Math.max(0, this.modules.size() - 1);
         if (actionableCount == 0) {

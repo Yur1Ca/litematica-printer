@@ -1,12 +1,9 @@
 package me.aleksilassila.litematica.printer.printer.action;
 
 import me.aleksilassila.litematica.printer.core.action.ActionCoordinator;
-import me.aleksilassila.litematica.printer.core.action.ActionResult;
 import me.aleksilassila.litematica.printer.core.action.ActionRequest;
-import me.aleksilassila.litematica.printer.core.action.ActionTransaction;
-import me.aleksilassila.litematica.printer.core.action.ConfirmationPolicy;
+import me.aleksilassila.litematica.printer.core.action.ActionTicket;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
-import me.aleksilassila.litematica.printer.core.action.RetryPolicy;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
@@ -40,7 +37,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
     private final PrinterRuntime runtime;
     private final ActionManager delegate;
     private final ActionCoordinator coordinator = new ActionCoordinator();
-    private ActionTransaction activeTransaction;
+    private ActionTicket activeTicket;
 
     private static SendResult from(ActionManager.SendResult result) {
         return SendResult.valueOf(result.name());
@@ -60,7 +57,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
             @Nullable Item[] expectedItems,
             @NotNull ActionPort.ActionSource source
     ) {
-        if (this.activeTransaction != null) {
+        if (this.activeTicket != null) {
             return false;
         }
         long now = System.nanoTime();
@@ -68,15 +65,13 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
                 source.name().toLowerCase(),
                 this.runtime.epoch(),
                 EnumSet.of(ResourceLease.LOOK, ResourceLease.MAIN_HAND, ResourceLease.INTERACTION),
-                now + ACTION_LEASE_TIMEOUT_NANOS,
-                ConfirmationPolicy.CLIENT_STATE,
-                RetryPolicy.NONE
+                now + ACTION_LEASE_TIMEOUT_NANOS
         );
-        Optional<ActionTransaction> admitted = this.coordinator.tryBegin(request, now);
+        Optional<ActionTicket> admitted = this.coordinator.tryAdmit(request, now);
         if (admitted.isEmpty()) {
             return false;
         }
-        ActionTransaction transaction = admitted.get();
+        ActionTicket ticket = admitted.get();
         if (!this.delegate.queueClick(
                 target,
                 side,
@@ -86,10 +81,10 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
                 expectedItems,
                 ActionManager.ActionSource.valueOf(source.name())
         )) {
-            this.coordinator.release(transaction.ticket());
+            this.coordinator.release(ticket);
             return false;
         }
-        this.activeTransaction = transaction;
+        this.activeTicket = ticket;
         return true;
     }
 
@@ -108,13 +103,8 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
     }
 
     public SendResult sendQueue(@Nullable LocalPlayer player) {
-        if (this.activeTransaction != null) {
-            ActionResult state = this.activeTransaction.poll(
-                    this.runtime.epoch(),
-                    this.runtime.currentTick(),
-                    System.nanoTime()
-            );
-            if (state == ActionResult.FAILED || state == ActionResult.STALE) {
+        if (this.activeTicket != null) {
+            if (!this.activeTicket.canSend(this.runtime.epoch(), System.nanoTime())) {
                 this.delegate.cancelQueue();
                 this.releaseActiveTicket();
                 return SendResult.NO_QUEUED_ACTION;
@@ -123,7 +113,6 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         ActionManager.SendResult delegateResult = this.delegate.sendQueue(player);
         SendResult result = from(delegateResult);
         if (!result.isWaiting()) {
-            this.completeActiveTransaction(delegateResult);
             this.releaseActiveTicket();
         }
         return result;
@@ -197,10 +186,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
 
     public void resetRuntime(String reason) {
         this.delegate.resetRuntime();
-        if (this.activeTransaction != null) {
-            this.activeTransaction.stale();
-        }
-        this.activeTransaction = null;
+        this.activeTicket = null;
         this.coordinator.reset();
     }
 
@@ -219,9 +205,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
                 owner,
                 this.runtime.epoch(),
                 resources,
-                timeoutNanos <= 0L ? 0L : now + timeoutNanos,
-                ConfirmationPolicy.NONE,
-                RetryPolicy.NONE
+                timeoutNanos <= 0L ? 0L : now + timeoutNanos
         );
         return this.coordinator.tryAdmit(request, now).isPresent();
     }
@@ -235,24 +219,9 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
     }
 
     private void releaseActiveTicket() {
-        if (this.activeTransaction != null) {
-            this.coordinator.release(this.activeTransaction.ticket());
-            this.activeTransaction = null;
-        }
-    }
-
-    private void completeActiveTransaction(ActionManager.SendResult result) {
-        if (this.activeTransaction == null) {
-            return;
-        }
-        if (result.isSent()) {
-            this.activeTransaction.markSent(this.runtime.epoch());
-            this.activeTransaction.confirm(this.runtime.epoch());
-        } else {
-            this.activeTransaction.reject(
-                    this.runtime.epoch(),
-                    this.runtime.currentTick()
-            );
+        if (this.activeTicket != null) {
+            this.coordinator.release(this.activeTicket);
+            this.activeTicket = null;
         }
     }
 }

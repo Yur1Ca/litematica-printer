@@ -11,10 +11,6 @@ public final class ActionCoordinator {
     private long nextTicketId;
 
     public synchronized Optional<ActionTicket> tryAdmit(ActionRequest request, long nowNanos) {
-        return this.tryBegin(request, nowNanos).map(ActionTransaction::ticket);
-    }
-
-    public synchronized Optional<ActionTransaction> tryBegin(ActionRequest request, long nowNanos) {
         this.expire(nowNanos);
         for (ResourceLease resource : request.resources()) {
             ActionTicket holder = this.leases.get(resource);
@@ -27,7 +23,7 @@ public final class ActionCoordinator {
         for (ResourceLease resource : request.resources()) {
             this.leases.put(resource, ticket);
         }
-        return Optional.of(new ActionTransaction(ticket));
+        return Optional.of(ticket);
     }
 
     public synchronized void release(ActionTicket ticket) {

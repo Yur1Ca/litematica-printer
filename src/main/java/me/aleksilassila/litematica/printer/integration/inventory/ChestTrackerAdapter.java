@@ -83,14 +83,9 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private long requestDeadline;
     private long lastFailedTick = Long.MIN_VALUE;
     private Item lastFailedItem;
-    private BlockPos nestedSourcePos;
-    private int nestedSourceSlot = -1;
-    private ItemStack nestedShulkerSnapshot = ItemStack.EMPTY;
-    private boolean restoringNestedShulker;
+    private final NestedShulkerReturn nestedReturn = new NestedShulkerReturn();
     private boolean suppressContainerScreen;
-    private long restoreSyncDeadline;
     private int expectedContainerId = -1;
-    private int nestedPlayerInventorySlot = -1;
 
     public ChestTrackerAdapter(ActionPort actionBroker) {
         this.client = Minecraft.getInstance();
@@ -168,13 +163,13 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return unavailable(request);
         }
         if (this.phase == Phase.WAITING_RESTORE_SYNC) {
-            if (gameTick() < this.restoreSyncDeadline) return pending(request);
+            if (this.nestedReturn.waitingForSync(gameTick())) return pending(request);
             finishAvailable();
             return MaterialReservation.available(request, request.preferredItem());
         }
         for (Item item : request.acceptedItems()) {
             if (InventoryUtils.playerHasItemInInventory(this.client.player, item)) {
-                if (this.nestedSourcePos != null && !this.restoringNestedShulker) {
+                if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
                     beginNestedRestore();
                     if (this.activeRequest != null) return pending(request);
                 }
@@ -195,14 +190,14 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (this.activeRequest == null) return;
         long now = gameTick();
         if (this.phase == Phase.WAITING_INVENTORY && hasRequestedItem()) {
-            if (this.nestedSourcePos != null && !this.restoringNestedShulker) {
+            if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
                 beginNestedRestore();
             } else {
                 finishAvailable();
             }
             return;
         }
-        if (this.phase == Phase.WAITING_RESTORE_SYNC && now >= this.restoreSyncDeadline) {
+        if (this.phase == Phase.WAITING_RESTORE_SYNC && !this.nestedReturn.waitingForSync(now)) {
             finishAvailable();
             return;
         }
@@ -232,7 +227,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (this.expectedContainerId >= 0 && this.expectedContainerId != containerId) {
             boolean ownsCurrentMenu = this.client.player != null
                     && this.client.player.containerMenu.containerId == this.expectedContainerId;
-            if (this.restoringNestedShulker) {
+            if (this.nestedReturn.isRestoring()) {
                 failNestedRestore("容器包不匹配", ownsCurrentMenu);
             } else {
                 abortRequest("容器包不匹配", ownsCurrentMenu);
@@ -252,7 +247,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return;
         }
         int containerSize = Math.min(menu.slots.size(), menu.slots.get(0).container.getContainerSize());
-        if (this.restoringNestedShulker) {
+        if (this.nestedReturn.isRestoring()) {
             restoreNestedShulker(menu, containerSize, player);
             return;
         }
@@ -287,15 +282,13 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return;
         }
         ItemStack nestedSnapshot = nested ? menu.slots.get(sourceSlot).getItem().copy() : ItemStack.EMPTY;
-        List<ItemStack> inventoryBefore = nested ? inventorySnapshot(player) : List.of();
+        List<ItemStack> inventoryBefore = nested ? NestedShulkerReturn.inventorySnapshot(player) : List.of();
         quickMove(menu, sourceSlot, player);
         this.actionBroker.releaseOwner(LEASE_OWNER + "_take");
         closeContainer();
         if (nested) {
-            this.nestedSourcePos = this.targetPos.immutable();
-            this.nestedSourceSlot = sourceSlot;
-            this.nestedShulkerSnapshot = nestedSnapshot;
-            this.nestedPlayerInventorySlot = locateMovedShulker(player, nestedSnapshot, inventoryBefore);
+            this.nestedReturn.recordTransfer(this.targetPos, sourceSlot, nestedSnapshot,
+                    NestedShulkerReturn.locateMovedShulker(player, nestedSnapshot, inventoryBefore));
             this.phase = Phase.WAITING_INVENTORY;
             if (!TakeItOutUtils.tryRequestItem(this.requestedItem)) {
                 RuntimeAccess.get().quickShulkerAdapter().requestItemsDirect(List.of(this.requestedItem));
@@ -413,15 +406,9 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.requestedItem = null;
         this.requestedItems = List.of();
         this.requestedStack = ItemStack.EMPTY;
-        this.nestedSourcePos = null;
-        this.nestedSourceSlot = -1;
-        this.nestedShulkerSnapshot = ItemStack.EMPTY;
-        this.restoringNestedShulker = false;
-        this.nestedPlayerInventorySlot = -1;
+        this.nestedReturn.clear();
         this.suppressContainerScreen = false;
-        this.restoreSyncDeadline = 0L;
         this.expectedContainerId = -1;
-        this.nestedPlayerInventorySlot = -1;
         this.exactMatch = false;
         this.phase = Phase.IDLE;
         this.invalidCandidates.clear();
@@ -476,7 +463,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void failAndContinue() {
-        if (this.restoringNestedShulker) {
+        if (this.nestedReturn.isRestoring()) {
             failNestedRestore("归还阶段中止");
             return;
         }
@@ -497,11 +484,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.phase = Phase.IDLE;
         this.suppressContainerScreen = false;
         this.expectedContainerId = -1;
-        this.nestedSourcePos = null;
-        this.nestedSourceSlot = -1;
-        this.nestedShulkerSnapshot = ItemStack.EMPTY;
-        this.restoringNestedShulker = false;
-        this.nestedPlayerInventorySlot = -1;
+        this.nestedReturn.clear();
     }
 
     private void selectCompletedPickBlockItem() {
@@ -528,11 +511,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         releaseResources();
         this.activeRequest = null;
         this.phase = Phase.IDLE;
-        this.nestedSourcePos = null;
-        this.nestedSourceSlot = -1;
-        this.nestedShulkerSnapshot = ItemStack.EMPTY;
-        this.restoringNestedShulker = false;
-        this.nestedPlayerInventorySlot = -1;
+        this.nestedReturn.clear();
     }
 
     private void closeContainer() {
@@ -623,36 +602,36 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void beginNestedRestore() {
-        if (this.restoringNestedShulker || this.nestedSourcePos == null
-                || RuntimeAccess.get().quickShulkerAdapter().hasPendingRequest()
-                || this.client.player == null || this.client.player.containerMenu != this.client.player.inventoryMenu) {
+        if (!this.nestedReturn.beginRestore(
+                RuntimeAccess.get().quickShulkerAdapter().hasPendingRequest(),
+                this.client.player != null && this.client.player.containerMenu == this.client.player.inventoryMenu)) {
             return;
         }
-        this.restoringNestedShulker = true;
-        if (!open(this.nestedSourcePos)) {
-            this.restoringNestedShulker = false;
+        if (!open(this.nestedReturn.sourcePos())) {
             MessageUtils.setOverlayMessage("Chest Tracker: 潜影盒未能归还，已保留在背包");
             finishAvailable();
             return;
         }
-        this.targetPos = this.nestedSourcePos;
+        this.targetPos = this.nestedReturn.sourcePos();
         this.phase = Phase.RESTORE_WAIT_CONTENT;
         this.openDeadline = gameTick() + openTimeoutTicks();
     }
 
     private void restoreNestedShulker(AbstractContainerMenu menu, int containerSize, LocalPlayer player) {
-        if (this.nestedSourceSlot < 0 || this.nestedSourceSlot >= containerSize) {
+        int sourceSlot = this.nestedReturn.sourceSlot();
+        if (sourceSlot < 0 || sourceSlot >= containerSize) {
             failNestedRestore("源槽位无效");
             return;
         }
-        ItemStack source = menu.slots.get(this.nestedSourceSlot).getItem();
-        if (!source.isEmpty()) {
+        ItemStack source = menu.slots.get(sourceSlot).getItem();
+        if (!this.nestedReturn.acceptsSourceSlot(containerSize, source)) {
             failNestedRestore("源槽位已被占用");
             return;
         }
-        int inventorySlot = this.nestedPlayerInventorySlot;
+        int inventorySlot = this.nestedReturn.inventorySlot();
         if (inventorySlot < 0 || inventorySlot >= Math.min(36, player.getInventory().getContainerSize())
-                || !isSameShulkerType(player.getInventory().getItem(inventorySlot), this.nestedShulkerSnapshot)) {
+                || !this.nestedReturn.acceptsInventorySlot(player.getInventory().getContainerSize(),
+                player.getInventory().getItem(inventorySlot))) {
             failNestedRestore("背包中的潜影盒位置已变化");
             return;
         }
@@ -662,7 +641,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             return;
         }
         pickup(menu, playerSlot, player);
-        pickup(menu, this.nestedSourceSlot, player);
+        pickup(menu, sourceSlot, player);
         if (!menu.getCarried().isEmpty()) {
             pickup(menu, playerSlot, player);
             failNestedRestore("服务器拒绝归还");
@@ -670,7 +649,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         }
         closeContainer();
         this.phase = Phase.WAITING_RESTORE_SYNC;
-        this.restoreSyncDeadline = gameTick() + 5L;
+        this.nestedReturn.markWaitingForSync(gameTick());
     }
 
     private void failNestedRestore(String reason) {
@@ -679,8 +658,8 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     private void failNestedRestore(String reason, boolean closeOwnedMenu) {
         MessageUtils.setOverlayMessage("Chest Tracker: 潜影盒未能归还（" + reason + "），已保留在背包");
-        this.invalidCandidates.add(this.nestedSourcePos == null ? this.targetPos.immutable() : this.nestedSourcePos.immutable());
-        this.restoringNestedShulker = false;
+        this.invalidCandidates.add(this.nestedReturn.hasSource()
+                ? this.nestedReturn.sourcePos() : this.targetPos.immutable());
         finishAvailable(closeOwnedMenu);
     }
 
@@ -692,11 +671,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.phase = Phase.IDLE;
         this.suppressContainerScreen = false;
         this.expectedContainerId = -1;
-        this.nestedSourcePos = null;
-        this.nestedSourceSlot = -1;
-        this.nestedShulkerSnapshot = ItemStack.EMPTY;
-        this.nestedPlayerInventorySlot = -1;
-        this.restoringNestedShulker = false;
+        this.nestedReturn.clear();
     }
 
     private static int findPlayerMenuSlot(AbstractContainerMenu menu, int playerInventorySlot) {
@@ -710,37 +685,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             }
         }
         return -1;
-    }
-
-    private static int locateMovedShulker(LocalPlayer player, ItemStack snapshot, List<ItemStack> before) {
-        int found = -1;
-        int size = Math.min(36, player.getInventory().getContainerSize());
-        for (int slot = 0; slot < size; slot++) {
-            ItemStack candidate = player.getInventory().getItem(slot);
-            boolean wasPresent = slot < before.size()
-                    && ItemStack.isSameItemSameComponents(before.get(slot), candidate);
-            if (!wasPresent && ItemStack.isSameItemSameComponents(candidate, snapshot)) {
-                if (found >= 0) return -1;
-                found = slot;
-            }
-        }
-        return found;
-    }
-
-    private static List<ItemStack> inventorySnapshot(LocalPlayer player) {
-        List<ItemStack> snapshot = new ArrayList<>();
-        int size = Math.min(36, player.getInventory().getContainerSize());
-        for (int slot = 0; slot < size; slot++) {
-            snapshot.add(player.getInventory().getItem(slot).copy());
-        }
-        return snapshot;
-    }
-
-    private static boolean isSameShulkerType(ItemStack candidate, ItemStack snapshot) {
-        return candidate != null && !candidate.isEmpty()
-                && candidate.getCount() == 1
-                && snapshot != null && !snapshot.isEmpty()
-                && candidate.getItem() == snapshot.getItem();
     }
 
     private void rebuildIndex() {

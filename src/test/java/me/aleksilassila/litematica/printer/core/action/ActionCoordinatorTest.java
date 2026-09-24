@@ -63,14 +63,21 @@ class ActionCoordinatorTest {
         assertFalse(coordinator.isHeldByOther(ResourceLease.MAIN_HAND, "mine"));
     }
 
+    @Test
+    void queuedTicketCannotBeSentAfterEpochChangeOrDeadline() {
+        ActionTicket ticket = new ActionCoordinator().tryAdmit(request("print", 50L), 10L).orElseThrow();
+
+        assertTrue(ticket.canSend(RuntimeEpoch.INITIAL, 49L));
+        assertFalse(ticket.canSend(RuntimeEpoch.INITIAL, 50L));
+        assertFalse(ticket.canSend(RuntimeEpoch.INITIAL.next(), 49L));
+    }
+
     private static ActionRequest request(String owner, long deadline) {
         return new ActionRequest(
                 owner,
                 RuntimeEpoch.INITIAL,
                 EnumSet.of(ResourceLease.LOOK, ResourceLease.MAIN_HAND, ResourceLease.INTERACTION),
-                deadline,
-                ConfirmationPolicy.CLIENT_STATE,
-                RetryPolicy.NONE
+                deadline
         );
     }
 }

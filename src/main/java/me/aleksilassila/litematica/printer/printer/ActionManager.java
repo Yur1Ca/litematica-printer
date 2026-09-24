@@ -61,6 +61,7 @@ public class ActionManager {
     }
 
     public enum SendResult {
+        /** Local useItemOn was accepted for dispatch; server placement is confirmed elsewhere. */
         SENT,
         WAITING_FOR_LOOK,
         NO_QUEUED_ACTION,

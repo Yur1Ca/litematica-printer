@@ -10,16 +10,12 @@ public record ActionRequest(
         String owner,
         RuntimeEpoch epoch,
         Set<ResourceLease> resources,
-        long deadlineNanos,
-        ConfirmationPolicy confirmation,
-        RetryPolicy retry
+        long deadlineNanos
 ) {
     public ActionRequest {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(epoch, "epoch");
         Objects.requireNonNull(resources, "resources");
-        Objects.requireNonNull(confirmation, "confirmation");
-        Objects.requireNonNull(retry, "retry");
         if (owner.isBlank()) {
             throw new IllegalArgumentException("owner must not be blank");
         }

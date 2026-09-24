@@ -13,6 +13,7 @@ import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacement
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskAction;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskBuildResult;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintWorkflowScheduler;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTargetScheduler;
 import me.aleksilassila.litematica.printer.handler.handlers.print.FallingPlacementTracker;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.handlers.print.SortedSchematicTargetQueue;
@@ -24,10 +25,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 
@@ -41,10 +40,9 @@ public class PrintHandler extends FeatureModuleBase {
 
     private SchematicBlockContext ctx;
     private final PrintWorkflowScheduler printTasks;
-    private final SortedSchematicTargetQueue sortedTargets;
+    private final PrintTargetScheduler targets;
     private final PrintPlacementExecutor placementExecutor;
     private final FallingPlacementTracker fallingPlacements = new FallingPlacementTracker();
-    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
 
     private List<String> printSkipListCache = List.of();
     private String[] printSkipFilters = new String[0];
@@ -58,7 +56,10 @@ public class PrintHandler extends FeatureModuleBase {
                 this.printTasks.wake(new BlockPos(update.x(), update.y(), update.z()));
             }
         });
-        this.sortedTargets = new SortedSchematicTargetQueue(this.scanEngine);
+        this.targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(this.scanEngine), () -> {
+            this.scanEngine.resetOwner(NAME);
+            this.scanEngine.resetOwner("print_sorted");
+        });
         this.placementExecutor = new PrintPlacementExecutor(
                 this.actionBroker,
                 this.cooldownUtils,
@@ -90,12 +91,12 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     protected boolean hasPendingIterationWork() {
-        return this.printTasks.hasReadyWorkflow() || this.sortedTargets.hasPendingWork();
+        return this.printTasks.hasReadyWorkflow() || this.targets.hasPendingWork();
     }
 
     @Override
     protected boolean hasRunnableIterationWork() {
-        return this.hasPendingIterationWork() || !this.retryTargets.isEmpty();
+        return this.printTasks.hasReadyWorkflow() || this.targets.hasRunnableWork();
     }
 
     @Override
@@ -109,10 +110,7 @@ public class PrintHandler extends FeatureModuleBase {
         // positions. Rebuild the candidate source so targets skipped for missing material become
         // eligible again when the player receives any item.
         this.printTasks.onInventoryAvailabilityChanged();
-        this.retryTargets.clear();
-        this.sortedTargets.clear();
-        this.scanEngine.resetOwner(NAME);
-        this.scanEngine.resetOwner("print_sorted");
+        this.targets.invalidateCandidates();
         this.requestFullScan();
     }
 
@@ -125,12 +123,13 @@ public class PrintHandler extends FeatureModuleBase {
     protected void preprocess() {
         this.printTasks.tick(this.level, this.litematica.schematicWorld());
         this.updatePrintSkipCache();
+        if (this.targets.setSortedMode(Configs.Print.PRINT_SORT_TARGETS.getBooleanValue())) {
+            this.requestFullScan();
+        }
         int actionConfigHash = this.getActionConfigHash();
         if (this.observedActionConfigHash != Integer.MIN_VALUE
                 && this.observedActionConfigHash != actionConfigHash) {
-            this.sortedTargets.clear();
-            this.scanEngine.resetOwner(NAME);
-            this.scanEngine.resetOwner("print_sorted");
+            this.targets.invalidateCandidates();
             this.requestFullScan();
         }
         this.observedActionConfigHash = actionConfigHash;
@@ -143,17 +142,16 @@ public class PrintHandler extends FeatureModuleBase {
         this.ctx = null;
         this.printTasks.clear();
         this.fallingPlacements.clear();
-        this.retryTargets.clear();
-        this.sortedTargets.clear();
+        this.targets.clear();
         this.observedActionConfigHash = Integer.MIN_VALUE;
     }
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         WorldSchematic schematic = this.litematica.schematicWorld();
+        this.targets.retainWithin(this.getScanSourceBoxes(playerInteractionBox));
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
-        List<BlockPos> retainedTargets = Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()
-                ? List.of() : new ArrayList<>(this.retryTargets);
+        List<BlockPos> retainedTargets = this.targets.retainedTargets();
         Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
         if (runnableTasks.isEmpty() && retainedTargets.isEmpty()) return normalPositions;
         return Iterables.concat(runnableTasks, retainedTargets, normalPositions);
@@ -164,20 +162,20 @@ public class PrintHandler extends FeatureModuleBase {
             @Nullable WorldSchematic schematic
     ) {
         if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
-            this.sortedTargets.clear();
+            this.targets.clearSorted();
             return this.getCachedFilteredIterationPositions(
-                    playerInteractionBox, ScanIntent.PRINT, pos -> !this.retryTargets.contains(pos));
+                    playerInteractionBox, ScanIntent.PRINT, this.targets::acceptScanCandidate);
         }
         if (schematic == null || player == null) {
-            this.sortedTargets.clear();
+            this.targets.clearSorted();
             return playerInteractionBox;
         }
         List<PrinterBox> scanSourceBoxes = this.getScanSourceBoxes(playerInteractionBox);
         if (scanSourceBoxes.isEmpty()) {
-            this.sortedTargets.clear();
+            this.targets.clearSorted();
             return List.of();
         }
-        return this.sortedTargets.iterable(scanSourceBoxes, level, schematic, player, getScanGuardLimit());
+        return this.targets.sortedPositions(scanSourceBoxes, level, schematic, player, getScanGuardLimit());
     }
 
     @Override
@@ -270,16 +268,7 @@ public class PrintHandler extends FeatureModuleBase {
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         PrintTaskAction taskAction = this.printTaskAction;
         PrintPlacementResult result = this.placementExecutor.execute(this.ctx, this.action, taskAction);
-        if (taskAction == null && result.taskEvent() == PrintPlacementResult.TaskEvent.SUCCESS) {
-            this.retryTargets.remove(blockPos);
-            this.sortedTargets.remove(blockPos);
-        } else if (taskAction == null && result.shouldRetryTarget()) {
-            if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
-                this.retryTargets.add(blockPos.immutable());
-            } else {
-                this.sortedTargets.requeue(blockPos);
-            }
-        }
+        this.targets.onResult(blockPos, result, taskAction != null);
         if (!result.consumedEffectiveExecution()) {
             setIterationConsumedEffectiveExecution(false);
         }

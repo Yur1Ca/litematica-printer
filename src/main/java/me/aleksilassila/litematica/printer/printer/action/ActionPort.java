@@ -20,6 +20,7 @@ public interface ActionPort {
     enum ActionSource { GENERIC, PRINT, FILL, COVER, FLUID }
 
     enum SendResult {
+        /** The local interaction did not return FAIL; this does not confirm a server world update. */
         SENT,
         WAITING_FOR_LOOK,
         NO_QUEUED_ACTION,

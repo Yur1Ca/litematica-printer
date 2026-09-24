@@ -157,10 +157,6 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         return item != null && this.availableItemsSnapshot.contains(item);
     }
 
-    public Set<Item> availableItemsView() {
-        return this.availableItemsSnapshot;
-    }
-
     public void reset() {
         this.previousCounts.clear();
         this.currentCounts.clear();

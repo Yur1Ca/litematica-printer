@@ -13,21 +13,13 @@ import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.mods.TakeItOutUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -56,41 +48,6 @@ public final class QuickShulkerRequestController {
 
     OrderedStorageController orderedStorage() {
         return this.orderedStorage;
-    }
-
-    public static boolean isInventory(Level world, BlockPos pos) {
-        return fi.dy.masa.malilib.util.InventoryUtils.getInventory(world, pos) != null;
-    }
-
-    public boolean canOpenInv(BlockPos pos) {
-        if (client.level != null) {
-            BlockState blockState = client.level.getBlockState(pos);
-            BlockEntity blockEntity = client.level.getBlockEntity(pos);
-            boolean isInventory = QuickShulkerRequestController.isInventory(client.level, pos);
-            try {
-                if ((isInventory && blockState.getMenuProvider(client.level, pos) == null) ||
-                        (blockEntity instanceof ShulkerBoxBlockEntity entity &&
-                                //#if MC > 260100
-                                //$$ !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F, Vec3.atBottomCenterOf(pos)).move(pos).deflate(1.0E-6)) &&
-                                //#elseif MC > 12103
-                                !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F, pos.getBottomCenter()).move(pos).deflate(1.0E-6)) &&
-                                //#elseif MC <= 12103 && MC > 12004
-                                //$$ !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F).move(pos).deflate(1.0E-6)) &&
-                                //#elseif MC <= 12004
-                                //$$ !client.level.noCollision(Shulker.getProgressDeltaAabb(blockState.getValue(BlockStateProperties.FACING), 0.0f, 0.5f).move(pos).deflate(1.0E-6)) &&
-                                //#endif
-                                entity.getAnimationStatus() == ShulkerBoxBlockEntity.AnimationStatus.CLOSED)) {
-                    return false;
-                } else if (!isInventory) {
-                    return false;
-                }
-            } catch (Exception e) {
-                return false;
-            }
-            return true;
-        } else {
-            return false;
-        }
     }
 
     public void requestItem(Item item) {

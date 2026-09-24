@@ -35,7 +35,7 @@ import java.util.List;
 
 /**
  * Owns the active client runtime and is the only platform tick entry point.
- * Existing handlers remain behind the legacy facade while they are migrated.
+ * Platform callbacks and feature modules share this runtime's lifecycle.
  */
 public final class PrinterRuntime {
     private final RuntimeEventBus events = new RuntimeEventBus();
@@ -235,10 +235,6 @@ public final class PrinterRuntime {
         }
         this.interactionUtils.preprocess();
         this.interactionUtils.onTick();
-        this.modules.tick();
-    }
-
-    public void tickModules() {
         this.modules.tick();
     }
 

@@ -13,13 +13,9 @@ import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import static me.aleksilassila.litematica.printer.config.Configs.*;
 
 public class InitHandler implements IInitializationHandler {
-    private static void initModConfig() {
-    }
-
     @Override
     public void registerModHandlers() {
         Configs.init();
-        initModConfig();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
     }

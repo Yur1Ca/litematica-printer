@@ -37,11 +37,6 @@ public final class PlacementRateController implements RuntimeComponent {
         return this.lastSentTick;
     }
 
-    public boolean isAdaptiveActive() {
-        return Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue()
-                && this.rttReplayController.getEstimatedRttMillis() > 0;
-    }
-
     public void reset() {
         this.lastSentTick = Long.MIN_VALUE;
     }

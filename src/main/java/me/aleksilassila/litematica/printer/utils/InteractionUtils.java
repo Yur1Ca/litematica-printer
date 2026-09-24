@@ -101,10 +101,6 @@ public final class InteractionUtils implements RuntimeComponent {
 
     @Override public void onEpochChanged(RuntimeEvent.EpochChanged event) { this.resetRuntime(); }
 
-    public boolean isNeedHandle() {
-        return this.breakState.hasWork();
-    }
-
     public void onTick() {
         LocalPlayer player = client.player;
         ClientLevel level = client.level;

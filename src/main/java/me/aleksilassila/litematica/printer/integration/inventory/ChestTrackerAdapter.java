@@ -28,7 +28,6 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -97,29 +96,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return "chest_tracker";
     }
 
-    /** Handles a standalone survival pick-block request when the printer switch is off. */
-    public boolean handlePickBlock(LocalPlayer player, Item item) {
-        if (!enabled() || player == null || item == null || item == Items.AIR
-                || player.containerMenu != player.inventoryMenu
-                || player.inventoryMenu.slots.stream().anyMatch(slot -> slot.getItem().is(item))) {
-            return false;
-        }
-        if (this.activeRequest != null) {
-            return this.activeRequest.source() == MaterialRequest.Source.PICK_BLOCK;
-        }
-        if (RuntimeAccess.get().materialRequests().isBusy()) {
-            return false;
-        }
-        MaterialReservation reservation = this.request(new MaterialRequest(
-                Long.MAX_VALUE,
-                List.of(item),
-                item,
-                1,
-                MaterialRequest.Source.PICK_BLOCK
-        ));
-        return reservation.state() != MaterialReservation.State.UNAVAILABLE;
-    }
-
     @Override
     public MaterialReservation request(MaterialRequest request) {
         if (!enabled()) return unavailable(request);
@@ -167,6 +143,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             finishAvailable();
             return MaterialReservation.available(request, request.preferredItem());
         }
+        if (waitForRestoreContent(this.phase)) return pending(request);
         for (Item item : request.acceptedItems()) {
             if (InventoryUtils.playerHasItemInInventory(this.client.player, item)) {
                 if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
@@ -386,13 +363,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (removed > 0) this.selectedContainers.save();
         this.index.clear();
         return removed;
-    }
-
-    public int selectedCacheSize() {
-        return this.client.level == null ? 0 : this.selectedContainers.count(
-                SelectedContainerCache.worldId(this.client),
-                SelectedContainerCache.dimensionId(this.client)
-        );
     }
 
     @Override
@@ -752,7 +722,11 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return false;
     }
 
-    private enum Phase {
+    static boolean waitForRestoreContent(Phase phase) {
+        return phase == Phase.RESTORE_WAIT_CONTENT;
+    }
+
+    enum Phase {
         IDLE,
         SCANNING,
         WAITING_CONTENT,

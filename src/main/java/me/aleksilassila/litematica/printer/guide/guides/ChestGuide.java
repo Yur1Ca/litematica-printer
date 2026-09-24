@@ -5,10 +5,12 @@ import me.aleksilassila.litematica.printer.guide.Guide;
 import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
-import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
@@ -44,25 +46,52 @@ public class ChestGuide extends Guide {
             boolean hasChestNeighbor = Direction.Plane.HORIZONTAL.stream()
                     .anyMatch(s -> !noChestSides.containsKey(s));
             if (hasChestNeighbor) {
-                return Result.success(new Action().setLookDirection(facingOpposite).setShift());
+                return Result.success(new Action().setSides(noChestSides).setLookDirection(facingOpposite).setShift());
             }
             return Result.success(new Action().setSides(noChestSides).setLookDirection(facingOpposite));
         }
 
-        // 双箱子：不潜行放置，让 Minecraft 自动合并
-        // 无论另一半是否已放，都不能潜行，否则会阻止合并
         Direction partnerDir = chestType == ChestType.LEFT
                 ? facing.getClockWise()
                 : facing.getCounterClockWise();
-
-        Map<Direction, Vec3> clickSides = new HashMap<>(noChestSides);
-        clickSides.put(partnerDir, Vec3.ZERO);  // 也允许从另一半方向点击
-
-        return Result.success(new Action()
-                .setSides(clickSides)
-                .setLookDirection(facingOpposite)
-                .setShift(false));
+        BlockPos partnerPos = blockPos.relative(partnerDir);
+        BlockState expectedPartner = schematic.getBlockState(partnerPos);
+        BlockState actualPartner = level.getBlockState(partnerPos);
+        DoubleChestStep step = chooseDoubleChestStep(requiredState, expectedPartner, actualPartner,
+                blockPos, partnerPos);
+        if (step == DoubleChestStep.WAIT) return Result.SKIP;
+        if (step == DoubleChestStep.JOIN_PARTNER) {
+            // Sneak-click the matching single chest: vanilla then selects that exact partner.
+            return Result.success(new Action().setSides(partnerDir).setRequiresSupport()
+                    .setLookDirection(facingOpposite).setShift());
+        }
+        // A missing partner must not make this half merge with an unrelated adjacent chest.
+        return Result.success(new Action().setSides(noChestSides)
+                .setLookDirection(facingOpposite).setShift());
     }
+
+    static DoubleChestStep chooseDoubleChestStep(BlockState required, BlockState expectedPartner,
+                                                 BlockState actualPartner,
+                                                 BlockPos targetPos,
+                                                 BlockPos partnerPos) {
+        if (!(expectedPartner.getBlock() instanceof ChestBlock)
+                || expectedPartner.getBlock() != required.getBlock()
+                || expectedPartner.getValue(ChestBlock.FACING) != required.getValue(ChestBlock.FACING)
+                || expectedPartner.getValue(BlockStateProperties.CHEST_TYPE)
+                != (required.getValue(BlockStateProperties.CHEST_TYPE) == ChestType.LEFT
+                        ? ChestType.RIGHT : ChestType.LEFT)) {
+            return DoubleChestStep.WAIT;
+        }
+        if (actualPartner.getBlock() != required.getBlock()) {
+            return targetPos.getX() < partnerPos.getX() || targetPos.getZ() < partnerPos.getZ()
+                    ? DoubleChestStep.FIRST_HALF : DoubleChestStep.WAIT;
+        }
+        return actualPartner.getValue(ChestBlock.FACING) == required.getValue(ChestBlock.FACING)
+                && actualPartner.getValue(BlockStateProperties.CHEST_TYPE) == ChestType.SINGLE
+                ? DoubleChestStep.JOIN_PARTNER : DoubleChestStep.WAIT;
+    }
+
+    enum DoubleChestStep { FIRST_HALF, JOIN_PARTNER, WAIT }
 
     @Override
     protected Result onBuildActionWrongState(BlockMatchResult state) {

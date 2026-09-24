@@ -320,10 +320,6 @@ public class ActionManager {
         return this.printerInteractionActive;
     }
 
-    public boolean isPrintInteractionActive() {
-        return this.printerInteractionActive && this.activeSource == ActionSource.PRINT;
-    }
-
     public boolean isEasyPlaceProtocolActive() {
         return this.printerInteractionActive
                 && this.activeSource == ActionSource.PRINT

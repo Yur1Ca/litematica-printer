@@ -66,7 +66,7 @@ final class TickScheduler implements RuntimeComponent {
                 handler.tick(context);
             }
         }
-        if (lagPaused) {
+        if (lagPaused || inventoryBusy) {
             return;
         }
         int actionableCount = Math.max(0, this.modules.size() - 1);
@@ -129,13 +129,19 @@ final class TickScheduler implements RuntimeComponent {
 
     private boolean pauseForInventoryState(String reasonPrefix) {
         boolean inventoryLease = this.runtime.actionBroker().isResourceHeld(ResourceLease.INVENTORY);
+        boolean containerLease = this.runtime.actionBroker().isResourceHeld(ResourceLease.CONTAINER);
         boolean inventorySwitchPending = this.runtime.inventorySwitchGuard().isWaiting();
-        if (inventoryLease || inventorySwitchPending) {
+        if (shouldPauseActions(inventoryLease || inventorySwitchPending, containerLease)) {
             this.pause(reasonPrefix + " inventoryLease=" + inventoryLease
+                    + " containerLease=" + containerLease
                     + " inventorySwitchPending=" + inventorySwitchPending);
             return true;
         }
         return false;
+    }
+
+    static boolean shouldPauseActions(boolean inventoryBusy, boolean containerLease) {
+        return inventoryBusy || containerLease;
     }
 
     private void advancePendingLookQueue(Minecraft mc) {

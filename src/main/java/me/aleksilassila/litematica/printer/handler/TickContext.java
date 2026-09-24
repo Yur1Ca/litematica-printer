@@ -46,11 +46,6 @@ public final class TickContext {
         return new TickContext(Minecraft.getInstance());
     }
 
-    public static long currentGameTime() {
-        ClientLevel level = Minecraft.getInstance().level;
-        return level == null ? 0L : level.getGameTime();
-    }
-
     public boolean isReady() {
         return this.level != null
                 && this.player != null

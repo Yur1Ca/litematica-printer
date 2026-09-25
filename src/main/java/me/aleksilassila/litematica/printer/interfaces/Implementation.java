@@ -15,7 +15,11 @@ public class Implementation {
             DoorBlock.class,                // 门
             TrapDoorBlock.class,            // 活板门
             BedBlock.class,                 // 床
+            //#if MC >= 260300
+            //$$ RedstoneWireBlock.class,   // 红石线
+            //#else
             RedStoneWireBlock.class,        // 红石线
+            //#endif
             ScaffoldingBlock.class,         // 脚手架
             HopperBlock.class,              // 漏斗
             EnchantingTableBlock.class,     // 附魔台

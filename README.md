@@ -25,7 +25,7 @@ This repository is an independently maintained continuation of earlier Litematic
 - 1.19.4
 - 1.20.1, 1.20.2, 1.20.4, and 1.20.6
 - 1.21 through 1.21.11
-- 26.1.x and 26.2
+- 26.1.x, 26.2 and 26.3
 
 Versions older than 1.18.2 are not supported. Intermediate Minecraft versions may work when they are covered by the same compatibility range, but are not always built as separate JARs.
 

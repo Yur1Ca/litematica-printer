@@ -121,6 +121,14 @@ dependencies {
         }
     }
 
+    val chestTrackerCompileOnlyUrl = propStrOrNull("chesttracker_compile_only")
+    if (chestTrackerCompileOnlyUrl?.startsWith("http") == true) {
+        val chestTrackerFile = downloadDependencyMod(chestTrackerCompileOnlyUrl)
+        if (chestTrackerFile != null && chestTrackerFile.exists()) {
+            compileOnly(files(chestTrackerFile))
+        }
+    }
+
     implementation("me.fallenbreath:conditional-mixin-fabric:0.6.4")
 }
 
@@ -136,7 +144,7 @@ loom {
             ideConfigGenerated(true)
             vmArgs(commonVmArgs)
             programArgs(programArgs)
-            runDir = "../../run/client"
+            runDir = if (project.name == "26.3") "../../run/client-26.3" else "../../run/client"
         }
     }
 }

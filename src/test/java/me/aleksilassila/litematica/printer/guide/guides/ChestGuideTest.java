@@ -44,6 +44,13 @@ class ChestGuideTest {
     }
 
     @Test
+    void secondHalfAcceptsPartnerAlreadyTypedByPlacementProtocol() {
+        assertEquals(ChestGuide.DoubleChestStep.JOIN_PARTNER,
+                ChestGuide.chooseDoubleChestStep(right, left, left,
+                        new BlockPos(1, 0, 0), new BlockPos(0, 0, 0)));
+    }
+
+    @Test
     void firstHalfCanBePlacedWithoutPartner() {
         assertEquals(ChestGuide.DoubleChestStep.FIRST_HALF,
                 ChestGuide.chooseDoubleChestStep(left, right, Blocks.AIR.defaultBlockState(),

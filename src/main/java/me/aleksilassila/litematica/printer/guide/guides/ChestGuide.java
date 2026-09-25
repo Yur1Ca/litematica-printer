@@ -32,10 +32,10 @@ public class ChestGuide extends Guide {
         Direction facingOpposite = facing.getOpposite();
         ChestType chestType = getProperty(requiredState, BlockStateProperties.CHEST_TYPE).orElse(ChestType.SINGLE);
 
-        // 收集所有不与其他箱子相邻的面
         Map<Direction, Vec3> noChestSides = new HashMap<>();
         for (Direction side : Direction.values()) {
-            if (level.getBlockState(blockPos.relative(side)).getBlock() instanceof ChestBlock) {
+            if (side.getAxis().isHorizontal()
+                    && level.getBlockState(blockPos.relative(side)).getBlock() instanceof ChestBlock) {
                 continue;
             }
             noChestSides.put(side, Vec3.ZERO);
@@ -61,7 +61,7 @@ public class ChestGuide extends Guide {
                 blockPos, partnerPos);
         if (step == DoubleChestStep.WAIT) return Result.SKIP;
         if (step == DoubleChestStep.JOIN_PARTNER) {
-            // Sneak-click the matching single chest: vanilla then selects that exact partner.
+            // Click the matching partner, which may already have its half set by the placement protocol.
             return Result.success(new Action().setSides(partnerDir).setRequiresSupport()
                     .setLookDirection(facingOpposite).setShift());
         }
@@ -86,8 +86,10 @@ public class ChestGuide extends Guide {
             return targetPos.getX() < partnerPos.getX() || targetPos.getZ() < partnerPos.getZ()
                     ? DoubleChestStep.FIRST_HALF : DoubleChestStep.WAIT;
         }
+        ChestType actualPartnerType = actualPartner.getValue(BlockStateProperties.CHEST_TYPE);
         return actualPartner.getValue(ChestBlock.FACING) == required.getValue(ChestBlock.FACING)
-                && actualPartner.getValue(BlockStateProperties.CHEST_TYPE) == ChestType.SINGLE
+                && (actualPartnerType == ChestType.SINGLE
+                    || actualPartnerType == expectedPartner.getValue(BlockStateProperties.CHEST_TYPE))
                 ? DoubleChestStep.JOIN_PARTNER : DoubleChestStep.WAIT;
     }
 

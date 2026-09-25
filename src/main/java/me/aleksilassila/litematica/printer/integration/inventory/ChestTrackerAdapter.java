@@ -383,6 +383,8 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         this.phase = Phase.IDLE;
         this.invalidCandidates.clear();
         this.index.clear();
+        this.lastFailedItem = null;
+        this.lastFailedTick = Long.MIN_VALUE;
     }
 
     @Override

@@ -242,6 +242,18 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(ModLoadUtils::isChestTrackerLoaded)
                 .build();
 
+        //#if MC >= 12111
+        // 虚空仓库补货：缺料时向服务端的 carpet-Neko-Addition 要一组材料
+        public static final ConfigBoolean VOID_WAREHOUSE_RESTOCK = bool("voidWarehouseRestock")
+                .defaultValue(true)
+                .build();
+
+        // 虚空仓库库存：材料列表里的「已有数量」把仓库库存也算进去
+        public static final ConfigBoolean VOID_WAREHOUSE_MATERIAL_LIST = bool("voidWarehouseMaterialList")
+                .defaultValue(true)
+                .build();
+        //#endif
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 //#if MC < 260200
                 UNLOCK_BEACON_EFFECTS,
@@ -251,6 +263,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Placement.QUICK_SHULKER_MODE,
                 Placement.QUICK_SHULKER_COOLDOWN,
                 Placement.STORE_ORDERLY,
+                //#if MC >= 12111
+                VOID_WAREHOUSE_RESTOCK,
+                VOID_WAREHOUSE_MATERIAL_LIST,
+                //#endif
                 REMOTE_TAKE
         );
     }

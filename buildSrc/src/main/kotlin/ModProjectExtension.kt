@@ -103,6 +103,20 @@ val Project.placeholderProps: Map<String, Any?>
         } else {
             ""
         },
+        // 虚空仓库的库存查询只在 1.21.11+ 存在（服务端 carpet-Neko-Addition 也只支持这几个版本）。
+        // 老版本上这些混入类整个被 //#if 剔掉，这里必须同步留空 ——
+        // mixins.json 不做预处理，写死一个不存在的类名会让 Mixin 在启动阶段直接报错。
+        //
+        // 保留 missing 的施工需求语义，只在 GUI/HUD 显示收集缺口。
+        "void_warehouse_litematica_mixins" to if (mcVersionInt >= 12111) {
+            "\"printer.litematica.MixinMaterialListEntry\",\n" +
+                    "    \"printer.malilib.GuiListBaseAccessor\",\n" +
+                    "    \"printer.litematica.MixinMaterialListSorter\",\n" +
+                    "    \"printer.litematica.MixinMaterialListHudRenderer\",\n" +
+                    "    \"printer.litematica.MixinWidgetMaterialListEntry\","
+        } else {
+            ""
+        },
         "malilib" to malilib,
         "litematica" to litematica
     ).filterValues { it != null }.mapValues { it.value!! }

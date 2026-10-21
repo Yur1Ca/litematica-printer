@@ -136,9 +136,6 @@ final class BedrockTargetExecutor {
         } else if ("out_of_range".equals(reason)) {
             this.networkSync.discarded(target.getBedrockPos(), false);
         }
-        if (target.isHorizontalLayout()) {
-            this.placer.clearHorizontalLookState();
-        }
         this.placer.cancelPistonRetry(target.getPistonPos());
         iterator.remove();
         for (BlockPos tempPos : target.getCleanupPositions()) {

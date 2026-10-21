@@ -271,6 +271,7 @@ final class BedrockAdmissionController {
 
     void purgeTargetsOutsideSelection() {
         this.targets.removeOutsideSelection(this::isWithinActiveSelection, target -> {
+            this.placer.cancelPistonRetry(target.getPistonPos());
             for (BlockPos tempPos : target.getCleanupPositions()) {
                 this.cleanup.cleanupBlockOrQueue(tempPos, false, this.targets::isReserved);
             }

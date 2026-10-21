@@ -15,6 +15,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -55,6 +56,13 @@ public final class BedrockPlacer {
     void cancelPistonRetry(BlockPos pistonPos) {
         if (pistonPos != null) {
             this.pendingPistonRetries.remove(pistonPos.immutable());
+            this.clearPendingPistonLook(pistonPos);
+        }
+    }
+
+    private void clearPendingPistonLook(BlockPos pistonPos) {
+        if (this.pendingHorizontalPistonPlacements.remove(pistonPos) != null) {
+            NetworkUtils.clearScopedLookOverride();
         }
     }
 
@@ -68,13 +76,19 @@ public final class BedrockPlacer {
         while (iterator.hasNext()) {
             var entry = iterator.next();
             PendingPistonRetry retry = entry.getValue();
+            var pistonState = this.client.level.getBlockState(entry.getKey());
+            // The priming piston can remain in the client snapshot until the break
+            // updates arrive. Only the requested facing confirms its replacement.
             if (!BedrockTargetBlocks.isTargetBlock(this.client.level.getBlockState(retry.bedrockPos()))
-                    || this.client.level.getBlockState(entry.getKey()).is(Blocks.PISTON)) {
+                    || (pistonState.is(Blocks.PISTON)
+                    && pistonState.getValue(PistonBaseBlock.FACING) == retry.facing())) {
                 iterator.remove();
+                this.clearPendingPistonLook(entry.getKey());
                 continue;
             }
             if (retry.attempts() >= 4) {
                 iterator.remove();
+                this.clearPendingPistonLook(entry.getKey());
                 continue;
             }
             if (now < retry.nextTick()) {
@@ -148,10 +162,12 @@ public final class BedrockPlacer {
                     : new BlockPos[]{clickedPos};
             BedrockEnvironment.PlacementInteraction placementInteraction =
                     BedrockEnvironment.findPlacementInteraction(client.level, pistonPos, anchors);
-            if (placementInteraction != null) {
-                clickedPos = placementInteraction.anchorPos();
-                clickedFace = placementInteraction.clickedFace();
+            if (placementInteraction == null) {
+                NetworkUtils.clearScopedLookOverride();
+                return false;
             }
+            clickedPos = placementInteraction.anchorPos();
+            clickedFace = placementInteraction.clickedFace();
         }
 
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);

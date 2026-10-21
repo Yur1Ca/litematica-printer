@@ -277,6 +277,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     private void clearPostExecuteAttemptState() {
+        this.placer.cancelPistonRetry(this.pistonPos);
         this.state.resetAttempt();
         this.machine.resetAttempt();
         this.residue.resetAttempt();

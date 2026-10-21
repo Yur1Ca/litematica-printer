@@ -103,8 +103,8 @@ public final class BedrockEngine implements RuntimeComponent {
         this.stats.beginTick();
         this.cleanup.beginTick();
         this.criticalExecutor.beginTick(now);
-        this.placer.tickPistonRetries();
         this.admission.purgeTargetsOutsideSelection();
+        this.placer.tickPistonRetries();
         this.admission.beginTick(level);
 
         BedrockThroughputScheduler.Allocation allocation = this.throughputScheduler.allocate(

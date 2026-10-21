@@ -108,7 +108,9 @@ final class BedrockPlacementQuery {
             return false;
         }
         BlockState anchorState = level.getBlockState(anchorPos);
-        if (anchorState.isAir() || BlockUtils.isReplaceable(anchorState)) {
+        // The critical bundle breaks the base before placing its replacement. Its
+        // head may still be visible here but will no longer be a server-side anchor.
+        if (anchorState.isAir() || anchorState.is(Blocks.PISTON_HEAD) || BlockUtils.isReplaceable(anchorState)) {
             return false;
         }
         return anchorState.isFaceSturdy(level, anchorPos, clickedFace)

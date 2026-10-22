@@ -3,6 +3,8 @@ package me.aleksilassila.litematica.printer.handler.scan;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -14,7 +16,8 @@ import java.util.function.Predicate;
 
 public final class ScanCache {
     private final SchematicBlockIndex schematicIndex = new SchematicBlockIndex();
-    private final ScanSessionStore sessions = new ScanSessionStore(this.schematicIndex);
+    private final ScanSessionStore sessions;
+    private final RuntimeTiming timing;
     private final DirtyRegionTracker dirtyRegions;
     private final ScanBudget budget = new ScanBudget();
     private final SectionSnapshotStore snapshots = new SectionSnapshotStore();
@@ -31,8 +34,20 @@ public final class ScanCache {
     }
 
     public ScanCache(DirtyRegionTracker dirtyRegions) {
-        this.dirtyRegions = dirtyRegions;
+        this(dirtyRegions, RuntimeTiming.disabled());
     }
+
+    public ScanCache(RuntimeTiming timing) {
+        this(new DirtyRegionTracker(), timing);
+    }
+
+    private ScanCache(DirtyRegionTracker dirtyRegions, RuntimeTiming timing) {
+        this.dirtyRegions = dirtyRegions;
+        this.timing = timing;
+        this.sessions = new ScanSessionStore(this.schematicIndex, timing);
+    }
+
+    public RuntimeTiming timing() { return this.timing; }
 
     public void clear() {
         this.sessions.close();
@@ -236,7 +251,7 @@ public final class ScanCache {
             return List.of();
         }
         if (intent == ScanIntent.PRINT && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()) {
-            if (this.schematicIndex.ensureBuilt(schematic)) {
+            if (this.schematicIndex.ensureBuilt(schematic, this.timing, normalizeMetricsOwnerKey(ownerKey))) {
                 // Existing PRINT sessions may still hold a cursor built from the previous set of
                 // loaded schematic chunks. Recreate only this owner so newly loaded chunks cannot
                 // be omitted while unrelated scan intents keep their progress.
@@ -261,27 +276,32 @@ public final class ScanCache {
     ) {
         String cacheOwnerKey = this.cacheOwnerKey(ownerKey, intent);
         String metricsOwnerKey = normalizeMetricsOwnerKey(ownerKey);
-        return new ScanCandidateSourceFactory(
-                this.sessions,
-                this.budget,
-                this.snapshots,
-                this.runtimeEpoch,
-                () -> this.snapshotRevision,
-                () -> ++this.generationSequence,
-                this.tickTime
-        ).create(
-                cacheOwnerKey,
-                metricsOwnerKey,
-                sourceBoxes,
-                level,
-                schematic,
-                player,
-                scanGuardLimit,
-                intent,
-                exactPredicate,
-                preFilter,
-                unbounded
-        );
+        long setupStart = this.timing.start();
+        try {
+            return new ScanCandidateSourceFactory(
+                    this.sessions,
+                    this.budget,
+                    this.snapshots,
+                    this.runtimeEpoch,
+                    () -> this.snapshotRevision,
+                    () -> ++this.generationSequence,
+                    this.tickTime
+            ).create(
+                    cacheOwnerKey,
+                    metricsOwnerKey,
+                    sourceBoxes,
+                    level,
+                    schematic,
+                    player,
+                    scanGuardLimit,
+                    intent,
+                    exactPredicate,
+                    preFilter,
+                    unbounded
+            );
+        } finally {
+            this.timing.finish(metricsOwnerKey, Stage.CANDIDATE_SETUP, setupStart);
+        }
     }
 
     private String cacheOwnerKey(String ownerKey, ScanIntent intent) {

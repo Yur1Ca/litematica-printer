@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.handler.scan.ScanAvailability;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import net.minecraft.core.BlockPos;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -86,6 +87,7 @@ final class ModuleIterationRunner {
                     break;
                 }
                 module.beginEffectiveExecution();
+                long diagnosticActionStart = module.timing.start();
                 long actionStart = System.nanoTime();
                 try {
                     module.executeIteration(pos, skip);
@@ -93,6 +95,7 @@ final class ModuleIterationRunner {
                     if (module.consumedEffectiveExecution()) {
                         actionExecutionNanos += Math.max(0L, System.nanoTime() - actionStart);
                     }
+                    module.timing.finish(module.getId(), Stage.ACTION_EXECUTION, diagnosticActionStart);
                 }
                 if (gui != null) gui.execute = true;
                 boolean consumed = module.consumedEffectiveExecution();

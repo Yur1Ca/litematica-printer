@@ -4,6 +4,7 @@ import fi.dy.masa.litematica.world.WorldSchematic;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanAvailability;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
@@ -122,30 +123,37 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         Vec3 view = player.getLookAngle().normalize();
         List<TargetScore> targets = new ArrayList<>();
         this.hasMoreSource = false;
-        Iterable<BlockPos> candidates = this.scanEngine.iterable(
-                "print_sorted",
-                sourceBoxes,
-                level,
-                schematic,
-                player,
-                scanGuardLimit,
-                ScanIntent.PRINT,
-                pos -> true
-        );
-        for (BlockPos candidate : candidates) {
-            if (targets.size() >= collectLimit) {
+        long collectionStart = this.scanEngine.timing().start();
+        try {
+            Iterable<BlockPos> candidates = this.scanEngine.iterable(
+                    "print_sorted",
+                    sourceBoxes,
+                    level,
+                    schematic,
+                    player,
+                    scanGuardLimit,
+                    ScanIntent.PRINT,
+                    pos -> true
+            );
+            for (BlockPos candidate : candidates) {
+                if (targets.size() >= collectLimit) {
+                    this.hasMoreSource = true;
+                    break;
+                }
+                if (this.queuedKeys.add(ScanEngine.key(candidate))) {
+                    targets.add(scoreTarget(schematic, heldItem, eye, view, candidate));
+                }
+            }
+            if (candidates instanceof ScanCandidateIterable scanSource
+                    && scanSource.availability() == ScanAvailability.PAUSED) {
                 this.hasMoreSource = true;
-                break;
             }
-            if (this.queuedKeys.add(ScanEngine.key(candidate))) {
-                targets.add(scoreTarget(schematic, heldItem, eye, view, candidate));
-            }
+        } finally {
+            this.scanEngine.timing().finish("print", Stage.PRINT_COLLECTION, collectionStart);
         }
-        if (candidates instanceof ScanCandidateIterable scanSource
-                && scanSource.availability() == ScanAvailability.PAUSED) {
-            this.hasMoreSource = true;
-        }
-        targets.sort(TargetScore.COMPARATOR);
+        long sortStart = this.scanEngine.timing().start();
+        try { targets.sort(TargetScore.COMPARATOR); }
+        finally { this.scanEngine.timing().finish("print", Stage.PRINT_SORT, sortStart); }
         for (TargetScore target : targets) {
             this.queue.addLast(target.pos());
         }

@@ -6,8 +6,31 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class SchematicBlockIndexTest {
+    @Test
+    void unavailableSchematicClearsAllSpatialQueryData() throws Exception {
+        var index = SparseScanLifecycleTest.readyIndex(List.of(net.minecraft.core.BlockPos.ZERO));
+        //#if MC < 12111
+        //$$ var field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        //$$ field.setAccessible(true);
+        //$$ var unsafe = (sun.misc.Unsafe) field.get(null);
+        //$$ var schematic = (fi.dy.masa.litematica.world.WorldSchematic) unsafe.allocateInstance(
+        //$$         fi.dy.masa.litematica.world.WorldSchematic.class);
+        //$$ assertTrue(index.ensureBuilt(schematic));
+        //$$ assertFalse(index.ensureBuilt(schematic));
+        //#else
+        assertTrue(index.ensureBuilt(null));
+        assertFalse(index.ensureBuilt(null));
+        //#endif
+        assertFalse(index.isReady());
+        assertEquals(0, index.forEachInRange(List.of(new me.aleksilassila.litematica.printer.printer.PrinterBox(
+                -1, -1, -1, 1, 1, 1)), IndexedPositionQueryParityTest.region(0, 0, 0, 2),
+                pos -> fail("Unavailable index retained a position")));
+    }
+
     @Test
     void sameCountWithDifferentChunkCoordinatesInvalidatesTheSnapshot() {
         Object firstChunk = new Object();

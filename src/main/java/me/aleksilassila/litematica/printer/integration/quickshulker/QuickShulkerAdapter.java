@@ -44,7 +44,9 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public MaterialReservation request(MaterialRequest request) {
-        if (this.requests.isCancelling()) return new MaterialReservation(request.token(), MaterialReservation.State.PENDING);
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
+            return new MaterialReservation(request.token(), MaterialReservation.State.PENDING);
+        }
         if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
             return new MaterialReservation(request.token(), MaterialReservation.State.UNAVAILABLE);
         }
@@ -103,7 +105,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     /** Starts a nested-container extraction requested by another material provider. */
     public boolean requestItemsDirect(Collection<Item> items) {
-        if (!Configs.Placement.QUICK_SHULKER.getBooleanValue() || items == null || items.isEmpty()) {
+        if (this.orderedStorage.isDraining() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                || items == null || items.isEmpty()) {
             return false;
         }
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
@@ -149,9 +152,12 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void tick() {
-        if (this.requests.isCancelling()) {
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
             if (!this.acquireResources()) return;
+            if (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                    || !Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.cancelDrain();
             this.requests.tickCancellation();
+            this.orderedStorage.tick();
             this.synchronizeResources();
             return;
         }
@@ -175,6 +181,10 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     public void onInventoryContent(int containerId, java.util.List<net.minecraft.world.item.ItemStack> items,
                                    net.minecraft.world.item.ItemStack carried) {
+        if (this.orderedStorage.onInventoryContent(containerId, items, carried)) {
+            this.synchronizeResources();
+            return;
+        }
         if (this.requests.isCancelling()) {
             this.requests.finishCancellation(containerId, items.size());
             this.synchronizeResources();
@@ -200,7 +210,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         this.requests.resetRuntime();
         this.attemptedToken = 0L;
         this.externalRequestActive = false;
-        if (this.requests.isCancelling()) this.acquireResources();
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) this.acquireResources();
         else this.releaseResources();
     }
 
@@ -208,7 +218,10 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
     public void onEpochChanged(RuntimeEvent.EpochChanged event) {
         // The action broker has discarded its leases at this epoch boundary.
         this.resourcesAcquired = false;
-        if ("client_scope_changed".equals(event.reason())) this.requests.discardForClientScopeChange();
+        if ("client_scope_changed".equals(event.reason())) {
+            this.orderedStorage.discardForClientScopeChange();
+            this.requests.discardForClientScopeChange();
+        }
         me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.onRuntimeReset(event.reason());
         this.reset();
     }

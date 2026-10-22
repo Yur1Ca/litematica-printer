@@ -1,6 +1,8 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -16,13 +18,19 @@ final class ScanSessionStore implements AutoCloseable {
     private final Map<String, SectionScanSession> sessions = new HashMap<>();
     private final Map<String, ScanMetricsAccumulator> metrics = new HashMap<>();
     private final SchematicBlockIndex schematicIndex;
+    private final RuntimeTiming timing;
 
     ScanSessionStore(SchematicBlockIndex schematicIndex) {
+        this(schematicIndex, RuntimeTiming.disabled());
+    }
+
+    ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing) {
         this.schematicIndex = schematicIndex;
+        this.timing = timing;
     }
 
     ScanMetricsAccumulator metrics(String ownerKey) {
-        return this.metrics.computeIfAbsent(ownerKey, ignored -> new ScanMetricsAccumulator());
+        return this.metrics.computeIfAbsent(ownerKey, key -> new ScanMetricsAccumulator(this.timing, key));
     }
 
     ScanCache.ScanMetrics metricsFor(String ownerKey) {
@@ -47,6 +55,7 @@ final class ScanSessionStore implements AutoCloseable {
         while (iterator.hasNext()) {
             SectionScanSession session = iterator.next();
             if (session.intersectsChunkAndNeighbors(chunkX, chunkZ)) {
+                session.recordReason(Reason.CHUNK_REPLACED);
                 session.close();
                 iterator.remove();
             }
@@ -60,6 +69,7 @@ final class ScanSessionStore implements AutoCloseable {
         while (iterator.hasNext()) {
             Map.Entry<String, SectionScanSession> entry = iterator.next();
             if (entry.getKey().startsWith(prefix)) {
+                entry.getValue().recordReason(Reason.OWNER_RESET);
                 entry.getValue().close();
                 iterator.remove();
             }
@@ -81,6 +91,7 @@ final class ScanSessionStore implements AutoCloseable {
         String key = ownerKey + ":" + intent.name();
         SectionScanSession session = this.sessions.get(key);
         if (session == null || !session.canReuse(region)) {
+            metrics.timing.count(metrics.owner, session == null ? Reason.NEW_SESSION : Reason.REGION_REPLACED, 1);
             if (session != null) session.close();
             session = new SectionScanSession(
                     region,

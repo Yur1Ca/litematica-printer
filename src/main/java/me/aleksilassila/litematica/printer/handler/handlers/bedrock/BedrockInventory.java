@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
@@ -52,7 +53,7 @@ public final class BedrockInventory {
 
     public static boolean switchToItem(Item item) {
         LocalPlayer player = CLIENT.player;
-        return player != null && InventoryUtils.switchToItems(player, new Item[]{item});
+        return player != null && InventoryUtils.switchToItems(player, new Item[]{item}, MaterialRequest.Source.BEDROCK);
     }
 
     public static boolean switchToOffhand(Item item) {

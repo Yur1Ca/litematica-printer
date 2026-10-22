@@ -1,10 +1,12 @@
 package me.aleksilassila.litematica.printer.printer;
 
+import java.util.function.Function;
+import me.aleksilassila.litematica.printer.feature.FeatureActionPolicies;
 //#if MC > 12100
 import fi.dy.masa.litematica.util.EasyPlaceUtils;
 //#endif
 import me.aleksilassila.litematica.printer.Reference;
-import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.printer.action.PlacementPolicy;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
@@ -50,14 +52,16 @@ public class ActionManager {
     private float lastQueuedLookPitch;
     private boolean printerInteractionActive;
     private boolean easyPlaceProtocolActive;
-    private ActionSource activeSource = ActionSource.GENERIC;
+    private boolean activeEasyPlacePolicy;
+    private final Function<ActionSource, PlacementPolicy> policies;
 
     public enum ActionSource {
         GENERIC,
         PRINT,
         FILL,
         COVER,
-        FLUID
+        FLUID,
+        MINE
     }
 
     public enum SendResult {
@@ -82,6 +86,11 @@ public class ActionManager {
     }
 
     public ActionManager() {
+        this(FeatureActionPolicies::forSource);
+    }
+
+    public ActionManager(Function<ActionSource, PlacementPolicy> policies) {
+        this.policies = policies;
     }
 
     public boolean isWaitingForLook() {
@@ -121,7 +130,7 @@ public class ActionManager {
         if (this.queuedClick != null) {
             return false;
         }
-        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, source);
+        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, this.policies.apply(source));
         this.queuedClick.expectItems(expectedItems);
         return true;
     }
@@ -207,7 +216,7 @@ public class ActionManager {
         boolean accepted = false;
         this.printerInteractionActive = true;
         this.easyPlaceProtocolActive = click.useProtocol;
-        this.activeSource = click.source;
+        this.activeEasyPlacePolicy = click.policy.easyPlaceProtocol();
         boolean litematicaEasyPlaceWasHandling = false;
         //#if MC > 12100
         litematicaEasyPlaceWasHandling = EasyPlaceUtils.isHandling();
@@ -244,7 +253,7 @@ public class ActionManager {
             //#endif
             this.printerInteractionActive = false;
             this.easyPlaceProtocolActive = false;
-            this.activeSource = ActionSource.GENERIC;
+            this.activeEasyPlacePolicy = false;
             restoreShift(player, click, wasSneak);
         }
         return this.finish(click, accepted ? SendResult.SENT : SendResult.INTERACTION_REJECTED);
@@ -252,7 +261,7 @@ public class ActionManager {
 
     private void armTaskAnvilScreenSuppression(QueuedClick click) {
         if (!this.screenSessions.hasManualAnvilScreenAllowance(System.nanoTime())
-                && (click.source == ActionSource.PRINT || click.source == ActionSource.FILL || click.source == ActionSource.COVER)
+                && click.policy.suppressAnvilScreen()
                 && Reference.MINECRAFT.level != null
                 && Reference.MINECRAFT.level.getBlockState(click.target).getBlock() instanceof AnvilBlock) {
             this.screenSessions.armTaskAnvilScreen(System.nanoTime());
@@ -272,16 +281,10 @@ public class ActionManager {
     }
 
     private static int getReserveAllowance(LocalPlayer player, QueuedClick click) {
-        if (click.source != ActionSource.PRINT
-                || !Configs.Print.PRINT_RESERVE_ITEMS.getBooleanValue()) {
-            return Integer.MAX_VALUE;
-        }
+        int reserveCount = click.policy.reserveCount().getAsInt();
+        if (reserveCount < 0) return Integer.MAX_VALUE;
         return InventoryUtils.getConsumableSurplus(
-                player,
-                player.getMainHandItem(),
-                click.expectedStackPredicate,
-                Configs.Print.PRINT_RESERVE_ITEM_COUNT.getIntegerValue()
-        );
+                player, player.getMainHandItem(), click.expectedStackPredicate, reserveCount);
     }
 
     private void restoreShift(LocalPlayer player, QueuedClick click, boolean wasSneak) {
@@ -324,7 +327,7 @@ public class ActionManager {
 
     public boolean isEasyPlaceProtocolActive() {
         return this.printerInteractionActive
-                && this.activeSource == ActionSource.PRINT
+                && this.activeEasyPlacePolicy
                 && this.easyPlaceProtocolActive;
     }
 
@@ -432,7 +435,7 @@ public class ActionManager {
         this.look = null;
         this.printerInteractionActive = false;
         this.easyPlaceProtocolActive = false;
-        this.activeSource = ActionSource.GENERIC;
+        this.activeEasyPlacePolicy = false;
     }
 
     public void resetRuntime() {

@@ -1,6 +1,10 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.config.ConfiguredPlacementSettings;
+import me.aleksilassila.litematica.printer.feature.SharedPlacementSettings;
+import me.aleksilassila.litematica.printer.feature.fluid.FluidPlanner;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
@@ -35,16 +39,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class FluidHandler extends FeatureModuleBase {
+    private final SharedPlacementSettings placementSettings;
     public final static String NAME = "fluid";
-    private static final Direction[] PLACEMENT_SIDE_ORDER = {
-            Direction.DOWN,
-            Direction.NORTH,
-            Direction.SOUTH,
-            Direction.EAST,
-            Direction.WEST,
-            Direction.UP
-    };
-
     private List<String> fillBlocks = new ArrayList<>();
     private List<Item> fillItems = new ArrayList<>();
     private Item[] fillItemArray = new Item[0];
@@ -57,7 +53,12 @@ public class FluidHandler extends FeatureModuleBase {
     private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
     public FluidHandler(PrinterRuntime runtime) {
+        this(runtime, new ConfiguredPlacementSettings());
+    }
+
+    public FluidHandler(PrinterRuntime runtime, SharedPlacementSettings placementSettings) {
         super(runtime, NAME, PrintModeType.FLUID, Configs.Core.FLUID, Configs.Fluid.FLUID_SELECTION_TYPE, true);
+        this.placementSettings = placementSettings;
         runtime.events().subscribe(event -> {
             if (event instanceof RuntimeEvent.BlockUpdated update) {
                 BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
@@ -223,7 +224,7 @@ public class FluidHandler extends FeatureModuleBase {
             setIterationConsumedEffectiveExecution(false);
             return;
         }
-        if (!InventoryUtils.switchToItems(player, fillItemArray)) {
+        if (!InventoryUtils.switchToItems(player, fillItemArray, MaterialRequest.Source.FLUID)) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.MISSING_FLUID_FILL_BLOCK);
             this.missingMaterials.recordMissing(
                     fillItemArray,
@@ -241,7 +242,7 @@ public class FluidHandler extends FeatureModuleBase {
         this.missingMaterials.resolve(fillItemArray, null);
         BlockPos clickTarget = blockPos;
         Direction clickSide = Direction.DOWN;
-        if (!Configs.Print.PLACE_IN_AIR.getBooleanValue()) {
+        if (!this.placementSettings.placeInAir()) {
             Direction placementSide = this.findPlacementSide(blockPos);
             if (placementSide == null) {
                 this.hudStats.recordDeferred(HudStatsManager.Mode.FLUID, HudStatus.NO_VALID_FACE);
@@ -293,14 +294,11 @@ public class FluidHandler extends FeatureModuleBase {
     }
 
     private Direction findPlacementSide(BlockPos blockPos) {
-        for (Direction side : PLACEMENT_SIDE_ORDER) {
+        return FluidPlanner.placementSide(side -> {
             BlockPos neighborPos = blockPos.relative(side);
-            if (PrinterUtils.canBeClicked(this.level, neighborPos)
-                    && !BlockUtils.isReplaceable(this.level.getBlockState(neighborPos))) {
-                return side;
-            }
-        }
-        return null;
+            return PrinterUtils.canBeClicked(this.level, neighborPos)
+                    && !BlockUtils.isReplaceable(this.level.getBlockState(neighborPos));
+        });
     }
 
     private boolean isTargetFluid(BlockPos blockPos) {
@@ -320,20 +318,21 @@ public class FluidHandler extends FeatureModuleBase {
         if (!BlockUtils.isReplaceable(this.level.getBlockState(blockPos))) {
             return false;
         }
-        return this.isTargetFluid(blockPos)
-                && (Configs.Print.PLACE_IN_AIR.getBooleanValue() || this.findPlacementSide(blockPos) != null);
+        if (!this.isTargetFluid(blockPos)) return false;
+        boolean placeInAir = this.placementSettings.placeInAir();
+        return FluidPlanner.isReady(true, true, placeInAir,
+                placeInAir || this.findPlacementSide(blockPos) != null);
     }
 
     private boolean isTargetFluid(FluidState fluidState) {
-        return fluids.contains(fluidState.getType())
-                && (Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() || fluidState.isSource());
+        return FluidPlanner.isTarget(fluidState, this.fluids, Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue());
     }
 
     private int getScanConfigHash() {
         int result = this.fillBlocks.hashCode();
         result = 31 * result + this.fluidBlocks.hashCode();
         result = 31 * result + Boolean.hashCode(Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue());
-        result = 31 * result + Boolean.hashCode(Configs.Print.PLACE_IN_AIR.getBooleanValue());
+        result = 31 * result + Boolean.hashCode(this.placementSettings.placeInAir());
         return result;
     }
 }

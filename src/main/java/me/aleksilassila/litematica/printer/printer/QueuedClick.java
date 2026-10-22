@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.printer;
 
+import me.aleksilassila.litematica.printer.printer.action.PlacementPolicy;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,7 +20,7 @@ final class QueuedClick {
     final boolean useShift;
     boolean useProtocol;
     final int repeatCount;
-    final ActionManager.ActionSource source;
+    final PlacementPolicy policy;
     @Nullable
     final Vec3 queuedPlayerPosition;
     final long queuedTick;
@@ -36,14 +37,14 @@ final class QueuedClick {
             @NotNull Vec3 hitModifier,
             boolean useShift,
             int repeatCount,
-            @NotNull ActionManager.ActionSource source
+            @NotNull PlacementPolicy policy
     ) {
         this.target = target;
         this.side = side;
         this.hitModifier = hitModifier;
         this.useShift = useShift;
         this.repeatCount = Math.max(1, repeatCount);
-        this.source = source;
+        this.policy = policy;
         Minecraft client = Minecraft.getInstance();
         this.queuedPlayerPosition = client.player == null ? null : client.player.position();
         this.queuedTick = client.level == null ? Long.MIN_VALUE : client.level.getGameTime();

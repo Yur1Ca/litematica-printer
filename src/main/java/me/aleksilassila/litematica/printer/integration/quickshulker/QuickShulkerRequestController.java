@@ -79,7 +79,7 @@ public final class QuickShulkerRequestController {
     }
 
     public boolean switchItem() {
-        if (this.cancellation.active()) return true;
+        if (this.cancellation.active() || this.orderedStorage.isDraining()) return true;
         if (!this.lastNeedItemList.isEmpty() && !this.isOpenHandler) {
             LocalPlayer player = client.player;
             if (player == null) {
@@ -178,7 +178,7 @@ public final class QuickShulkerRequestController {
         if (this.transfer.active() && client != null && client.player != null) {
             this.cancellation.begin(this.transferMenu, this.transferConnection);
         }
-        if (!this.cancellation.active()) closeAutomatedContainer();
+        if (!this.cancellation.active() && !this.orderedStorage.isDraining()) closeAutomatedContainer();
         ShulkerUtils.recoverFailedOpen();
         clearSwitchRequest();
         this.externalRequestAllowed = false;

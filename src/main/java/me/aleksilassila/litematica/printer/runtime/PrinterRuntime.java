@@ -1,6 +1,10 @@
 package me.aleksilassila.litematica.printer.runtime;
 
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
+import me.aleksilassila.litematica.printer.feature.FeatureActionPolicies;
+import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEventBus;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
@@ -46,6 +50,9 @@ import java.util.List;
  * Platform callbacks and feature modules share this runtime's lifecycle.
  */
 public final class PrinterRuntime {
+    private final RuntimeTiming timing = new RuntimeTiming(Boolean.getBoolean("litematica.printer.profile"), System::nanoTime);
+    private final RuntimeDiagnostics diagnostics = new RuntimeDiagnostics(this.timing,
+            message -> Reference.LOGGER.info(message), 100);
     private final RuntimeEventBus events = new RuntimeEventBus();
     private final RuntimeScope scope = new RuntimeScope();
     private RuntimeEpoch epoch = RuntimeEpoch.INITIAL;
@@ -78,6 +85,7 @@ public final class PrinterRuntime {
 
     public PrinterRuntime() {
         Minecraft client = Minecraft.getInstance();
+        this.scope.register(this.diagnostics);
         this.cooldownUtils = new CooldownUtils();
         this.scope.register(this.cooldownUtils);
         this.litematica = new LitematicaAdapter();
@@ -85,7 +93,7 @@ public final class PrinterRuntime {
         this.events.subscribe(this.bedrockEngine::onRuntimeEvent);
         this.scope.register(new MinecraftInteractionRuntime(client));
         this.scope.register(this.bedrockEngine);
-        this.actionBroker = new ActionBroker(this, new ActionManager());
+        this.actionBroker = new ActionBroker(this, new ActionManager(FeatureActionPolicies::forSource));
         this.scope.register(this.actionBroker);
         this.inventorySwitchGuard = new InventorySwitchGuard(client, this::currentTick);
         this.scope.register(new InventorySwitchRuntime(this.inventorySwitchGuard));
@@ -120,6 +128,8 @@ public final class PrinterRuntime {
     public RuntimeEpoch epoch() {
         return this.epoch;
     }
+
+    public RuntimeTiming timing() { return this.timing; }
 
     public me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncController containerSync() {
         return this.containerSync;
@@ -236,26 +246,42 @@ public final class PrinterRuntime {
     }
 
     public void tick(Minecraft client) {
-        Object currentLevel = client.level;
-        Object currentConnection = client.getConnection();
-        this.currentTick = currentLevel == null ? Long.MIN_VALUE : client.level.getGameTime();
-        if (currentLevel != this.levelIdentity || currentConnection != this.connectionIdentity) {
-            this.levelIdentity = currentLevel;
-            this.connectionIdentity = currentConnection;
-            this.reset("client_scope_changed");
-        }
+        long tickStart = this.diagnostics.tickStarted();
+        try {
+            Object currentLevel = client.level;
+            Object currentConnection = client.getConnection();
+            this.currentTick = currentLevel == null ? Long.MIN_VALUE : client.level.getGameTime();
+            if (currentLevel != this.levelIdentity || currentConnection != this.connectionIdentity) {
+                this.levelIdentity = currentLevel;
+                this.connectionIdentity = currentConnection;
+                this.reset("client_scope_changed");
+            }
 
-        this.cooldownUtils.tick();
-        this.containerSync.tick();
-        QuickShulkerBridge.onTick();
-        this.chestTrackerAdapter.tick();
-        if (this.materialRequests != null) {
-            this.materialRequests.tick();
-            this.quickShulkerAdapter.clearExternalRequestIfIdle(this.materialRequests.isBusy());
+            this.modules.synchronizeActivation();
+            this.cooldownUtils.tick();
+            long materialStart = this.timing.start();
+            try {
+                this.containerSync.tick();
+                QuickShulkerBridge.onTick();
+                this.chestTrackerAdapter.tick();
+                if (this.materialRequests != null) {
+                    this.materialRequests.tick();
+                    this.quickShulkerAdapter.clearExternalRequestIfIdle(this.materialRequests.isBusy());
+                }
+            } finally {
+                this.timing.finish("runtime", Stage.MATERIAL_TICK, materialStart);
+            }
+            long miningStart = this.timing.start();
+            try {
+                this.interactionUtils.preprocess();
+                this.interactionUtils.onTick();
+            } finally {
+                this.timing.finish("runtime", Stage.MINING_TICK, miningStart);
+            }
+            this.modules.tick();
+        } finally {
+            this.diagnostics.tickCompleted(this.epoch, tickStart);
         }
-        this.interactionUtils.preprocess();
-        this.interactionUtils.onTick();
-        this.modules.tick();
     }
 
     /** Connection mixins also run for LAN peers and on Netty threads. Resolve ownership on the client thread. */
@@ -274,6 +300,10 @@ public final class PrinterRuntime {
                 Configs.Core.WORK_SWITCH.setBooleanValue(false);
             }
         });
+    }
+
+    public void cancelMaterialsFor(String owner) {
+        if (this.materialRequests != null) this.materialRequests.cancelOwner(owner);
     }
 
     public void reset(String reason) {

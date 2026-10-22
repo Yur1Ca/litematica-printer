@@ -6,6 +6,8 @@ import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.enums.*;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
@@ -42,7 +44,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     private final ModuleSelectionScope selectionScope;
     private final ModuleRuntimeLoop runtimeLoop;
     private final String id;
-    protected final PrinterRuntime runtime;
+    protected final RuntimeTiming timing;
     protected final ScanEngine scanEngine;
     protected final ActionPort actionBroker;
     protected final CooldownUtils cooldownUtils;
@@ -89,7 +91,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
             @Nullable ConfigOptionList selectionType,
             boolean useBox
     ) {
-        this.runtime = runtime;
+        this.timing = runtime.timing();
         this.scanEngine = runtime.scanEngine();
         this.actionBroker = runtime.actionBroker();
         this.cooldownUtils = runtime.cooldownUtils();
@@ -130,7 +132,9 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     public void tick(TickContext context) {
-        this.runtimeLoop.tick(context);
+        long start = this.timing.start();
+        try { this.runtimeLoop.tick(context); }
+        finally { this.timing.finish(this.id, Stage.MODULE_TICK, start); }
     }
 
     protected void updateVariables(TickContext context) {
@@ -182,7 +186,9 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     public final IterationOutcome runIteration(PrinterBox playerInteractionBox) {
-        return ModuleIterationRunner.run(this, playerInteractionBox);
+        long start = this.timing.start();
+        try { return ModuleIterationRunner.run(this, playerInteractionBox); }
+        finally { this.timing.finish(this.id, Stage.MODULE_ITERATION, start); }
     }
 
     public record IterationOutcome(

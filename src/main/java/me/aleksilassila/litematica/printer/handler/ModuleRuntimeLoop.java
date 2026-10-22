@@ -4,6 +4,7 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import org.jetbrains.annotations.Nullable;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 
 /** Client-thread lifecycle for one feature module. */
 final class ModuleRuntimeLoop {
@@ -36,13 +37,15 @@ final class ModuleRuntimeLoop {
         this.owner.scanEngine.beginTick(this.owner.level, schematic, context.gameTime);
         this.wakeForSchematicChange(schematic);
         this.owner.updatePlayerInteractionBox();
-        this.owner.preprocess();
-        this.wakeForInventoryChange();
         if (!this.owner.isConfigAllowExecute()) {
             this.owner.resetScanRuntime();
             this.owner.resetPlayerTracking();
             return;
         }
+        long preprocessStart = this.owner.timing.start();
+        try { this.owner.preprocess(); }
+        finally { this.owner.timing.finish(this.owner.getId(), Stage.MODULE_PREPROCESS, preprocessStart); }
+        this.wakeForInventoryChange();
         if (!this.owner.runIterationIfNeeded()) {
             this.owner.resetPlayerTracking();
         }

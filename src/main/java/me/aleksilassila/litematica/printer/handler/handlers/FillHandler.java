@@ -1,7 +1,11 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.config.ConfiguredPlacementSettings;
+import me.aleksilassila.litematica.printer.feature.SharedPlacementSettings;
+import me.aleksilassila.litematica.printer.feature.fill.FillPlanner;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.FillBlockModeType;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
@@ -17,7 +21,6 @@ import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
-import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.RegistryFilterResolver;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
@@ -29,7 +32,6 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.FallingBlock;
-import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -44,16 +46,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public class FillHandler extends FeatureModuleBase {
+    private final SharedPlacementSettings placementSettings;
     public final static String NAME = "fill";
-    private static final Direction[] FILL_SIDE_ORDER = {
-            Direction.DOWN,
-            Direction.NORTH,
-            Direction.SOUTH,
-            Direction.EAST,
-            Direction.WEST,
-            Direction.UP
-    };
-
     private List<String> fillCacheBlocklist = new ArrayList<>();
     private List<String> replaceableListCache = List.of();
     private String[] replaceableFilters = new String[0];
@@ -68,7 +62,12 @@ public class FillHandler extends FeatureModuleBase {
     private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
     public FillHandler(PrinterRuntime runtime) {
+        this(runtime, new ConfiguredPlacementSettings());
+    }
+
+    public FillHandler(PrinterRuntime runtime, SharedPlacementSettings placementSettings) {
         super(runtime, NAME, PrintModeType.FILL, Configs.Core.FILL, Configs.Fill.FILL_SELECTION_TYPE, true);
+        this.placementSettings = placementSettings;
         runtime.events().subscribe(event -> {
             if (event instanceof RuntimeEvent.BlockUpdated update) {
                 BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
@@ -181,7 +180,7 @@ public class FillHandler extends FeatureModuleBase {
     }
 
     private void updateReplaceableFilterCache() {
-        List<String> replaceableList = Configs.Print.REPLACEABLE_LIST.getStrings();
+        List<String> replaceableList = this.placementSettings.replaceableList();
         if (replaceableList.equals(this.replaceableListCache)) {
             return;
         }
@@ -250,7 +249,7 @@ public class FillHandler extends FeatureModuleBase {
             Predicate<BlockPos> reachPredicate,
             Predicate<BlockPos> selectionPredicate
     ) {
-        ScanIntent scanIntent = Configs.Print.PLACE_IN_AIR.getBooleanValue()
+        ScanIntent scanIntent = this.placementSettings.placeInAir()
                 ? ScanIntent.CUSTOM
                 : ScanIntent.FILL;
         return this.scanEngine.iterable(
@@ -301,7 +300,7 @@ public class FillHandler extends FeatureModuleBase {
         result = 31 * result + Arrays.hashCode(this.replaceableFilters);
         result = 31 * result + Configs.Fill.FILL_BLOCK_MODE.getOptionListValue().hashCode();
         result = 31 * result + Configs.Fill.FILL_SELECTION_TYPE.getOptionListValue().hashCode();
-        result = 31 * result + Boolean.hashCode(Configs.Print.PLACE_IN_AIR.getBooleanValue());
+        result = 31 * result + Boolean.hashCode(this.placementSettings.placeInAir());
         result = 31 * result + Configs.Fill.FILL_BLOCK_FACING.getOptionListValue().hashCode();
         result = 31 * result + Boolean.hashCode(Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue());
         return result;
@@ -339,7 +338,7 @@ public class FillHandler extends FeatureModuleBase {
             setIterationConsumedEffectiveExecution(false);
             return;
         }
-        if (!handheld && !InventoryUtils.switchToItems(player, this.fillModeItemList)) {
+        if (!handheld && !InventoryUtils.switchToItems(player, this.fillModeItemList, MaterialRequest.Source.FILL)) {
             boolean retrievalPending =
                     this.actionBroker.isResourceHeld(ResourceLease.INVENTORY);
             if (retrievalPending) {
@@ -371,7 +370,7 @@ public class FillHandler extends FeatureModuleBase {
             this.retryTargets.add(blockPos.immutable());
             return;
         }
-        BlockPos clickTarget = Configs.Print.PLACE_IN_AIR.getBooleanValue() ? blockPos : blockPos.relative(side);
+        BlockPos clickTarget = this.placementSettings.placeInAir() ? blockPos : blockPos.relative(side);
         Direction clickSide = side.getOpposite();
         Item[] expectedItems = handheld
                 ? new Item[]{player.getMainHandItem().getItem()}
@@ -420,19 +419,9 @@ public class FillHandler extends FeatureModuleBase {
         if (this.level == null || this.player == null || blockPos == null) {
             return null;
         }
-        Direction configuredFacing = ConfigUtils.getFillModeFacing();
-        if (Configs.Print.PLACE_IN_AIR.getBooleanValue()) {
-            return configuredFacing != null ? configuredFacing : getPlayerPlacementDirection();
-        }
-        if (configuredFacing != null) {
-            return this.isValidFillPlacementSide(blockPos, configuredFacing) ? configuredFacing : null;
-        }
-        for (Direction side : FILL_SIDE_ORDER) {
-            if (this.isValidFillPlacementSide(blockPos, side)) {
-                return side;
-            }
-        }
-        return null;
+        return FillPlanner.placementSide(this.placementSettings.placeInAir(),
+                ConfigUtils.getFillModeFacing(), getPlayerPlacementDirection(),
+                side -> this.isValidFillPlacementSide(blockPos, side));
     }
 
     private boolean isValidFillPlacementSide(BlockPos blockPos, Direction side) {
@@ -446,15 +435,7 @@ public class FillHandler extends FeatureModuleBase {
     }
 
     private boolean isFillTarget(BlockState currentState) {
-        if (currentState.isAir() || currentState.getBlock() instanceof LiquidBlock) {
-            return true;
-        }
-        for (String filter : this.replaceableFilters) {
-            if (FilterUtils.matchName(filter, currentState)) {
-                return true;
-            }
-        }
-        return false;
+        return FillPlanner.isTarget(currentState, this.replaceableFilters);
     }
 
 }

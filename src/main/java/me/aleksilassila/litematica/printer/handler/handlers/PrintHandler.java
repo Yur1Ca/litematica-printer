@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 import com.google.common.collect.Iterables;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.feature.print.PrintPlanner;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
 import me.aleksilassila.litematica.printer.guide.Guides;
@@ -196,10 +197,8 @@ public class PrintHandler extends FeatureModuleBase {
         this.printTaskAction = null;
         WorldSchematic schematic = this.litematica.schematicWorld();
         if (schematic == null) return false;
-        if (this.hudStats.isPrintPlacementPending(blockPos)) {
-            return false;
-        }
-        if (InteractionUtils.getRuntime().isRecentlyBroken(blockPos) && !this.printTasks.isActiveTaskPos(blockPos)) {
+        if (!PrintPlanner.canInspect(this.hudStats.isPrintPlacementPending(blockPos),
+                InteractionUtils.getRuntime().isRecentlyBroken(blockPos), this.printTasks.isActiveTaskPos(blockPos))) {
             return false;
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
@@ -265,15 +264,8 @@ public class PrintHandler extends FeatureModuleBase {
     }
 
     private boolean shouldSkipRequiredState(BlockState requiredState) {
-        if (!Configs.Print.PRINT_SKIP.getBooleanValue() || this.printSkipFilters.length == 0) {
-            return false;
-        }
-        for (String filter : this.printSkipFilters) {
-            if (FilterUtils.matchName(filter, requiredState)) {
-                return true;
-            }
-        }
-        return false;
+        return PrintPlanner.skipRequiredState(requiredState,
+                Configs.Print.PRINT_SKIP.getBooleanValue(), this.printSkipFilters);
     }
 
     @Override

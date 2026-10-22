@@ -4,6 +4,7 @@ import fi.dy.masa.litematica.world.WorldSchematic;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.handler.scan.SectionScanSession.Candidate;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -113,6 +114,7 @@ final class ScanCandidateSourceFactory {
                         this.prepared = true;
                         state[0] = ScanAvailability.READY;
 
+                        long lookupStart = metrics.timing.start();
                         long budgetStart = System.nanoTime();
                         boolean budgetHit = false;
                         try {
@@ -150,7 +152,12 @@ final class ScanCandidateSourceFactory {
                                 }
                                 boolean target = candidate.acceptedByFlags(intent);
                                 if (!target && intent.shouldRunExactPredicate(candidate.flags())) {
-                                    target = exactPredicate.test(pos);
+                                    long exactStart = metrics.timing.start();
+                                    try {
+                                        target = exactPredicate.test(pos);
+                                    } finally {
+                                        metrics.timing.finish(metricsOwnerKey, Stage.EXACT_FILTER, exactStart);
+                                    }
                                 }
                                 if (!target) {
                                     continue;
@@ -165,6 +172,7 @@ final class ScanCandidateSourceFactory {
                             if (!unbounded) {
                                 ScanCandidateSourceFactory.this.budget.record(metricsOwnerKey, metrics, budgetStart);
                             }
+                            metrics.timing.finish(metricsOwnerKey, Stage.CANDIDATE_LOOKUP, lookupStart);
                         }
 
                         if (budgetHit) {

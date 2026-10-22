@@ -131,6 +131,35 @@ class MaterialRequestCoordinatorTest {
         assertTrue(coordinator.isBusy());
     }
 
+    @Test
+    void cancellingOneFeatureDoesNotCancelAnotherOrManualPickBlock() {
+        for (MaterialRequest.Source source : List.of(MaterialRequest.Source.PRINT, MaterialRequest.Source.PICK_BLOCK)) {
+            FakeProvider provider = new FakeProvider("external", MaterialReservation.State.PENDING);
+            var coordinator = new MaterialRequestCoordinator(List.of(provider));
+            coordinator.request(Items.STONE, source);
+            long token = coordinator.activeToken();
+            coordinator.cancelOwner("fill");
+            assertEquals(token, coordinator.activeToken());
+            assertEquals(0, provider.resetCount);
+            coordinator.cancelOwner(source.name().toLowerCase(java.util.Locale.ROOT));
+            assertFalse(coordinator.isBusy());
+            assertEquals(1, provider.resetCount);
+        }
+    }
+
+    @Test
+    void cancelledSourceCannotAdvanceToFallbackOnLaterTicks() {
+        FakeProvider active = new FakeProvider("active", MaterialReservation.State.PENDING);
+        FakeProvider fallback = new FakeProvider("fallback", MaterialReservation.State.AVAILABLE);
+        var coordinator = new MaterialRequestCoordinator(List.of(active, fallback));
+        coordinator.request(Items.COBBLESTONE, MaterialRequest.Source.MINE);
+        coordinator.cancelOwner("mine");
+        for (int tick = 0; tick < 300; tick++) coordinator.tick();
+        assertEquals(0, fallback.requestCount);
+        assertEquals(1, active.resetCount);
+        assertFalse(coordinator.isBusy());
+    }
+
     private static final class FakeProvider implements InventoryProvider {
         private final String id;
         private final MaterialReservation.State state;

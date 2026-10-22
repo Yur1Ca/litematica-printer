@@ -1,6 +1,8 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.feature.mine.MinePlanner;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
@@ -316,26 +318,24 @@ public class MineHandler extends FeatureModuleBase {
             return false;
         }
 
-        if (InteractionUtils.getRuntime().isRecentlyBroken(pos)
-                || InteractionUtils.getRuntime().isPendingDelayedDestroy(pos)) {
+        if (!MinePlanner.canInspect(InteractionUtils.getRuntime().isRecentlyBroken(pos),
+                InteractionUtils.getRuntime().isPendingDelayedDestroy(pos))) {
             return false;
         }
 
         BlockState state = this.level.getBlockState(pos);
-        if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
+        if (!MinePlanner.isSolidTarget(state)) {
             return false;
         }
 
-        if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue()
-                && state.getDestroySpeed(this.level, pos) < 0.0F) {
+        boolean checkHardness = Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue();
+        if (!MinePlanner.hardnessAllowed(checkHardness, checkHardness ? state.getDestroySpeed(this.level, pos) : 0.0F)) {
             return false;
         }
 
-        if (checkReach && !this.canReachIterationPosition(pos)) {
-            return false;
-        }
-        if (this.player.blockActionRestricted(this.level, pos, this.gameMode.getPlayerMode())
-                || !mineRestriction(state)) {
+        if (!MinePlanner.allowed(!checkReach || this.canReachIterationPosition(pos),
+                () -> !this.player.blockActionRestricted(this.level, pos, this.gameMode.getPlayerMode()),
+                () -> mineRestriction(state))) {
             return false;
         }
         this.candidateStates.put(pos.immutable(), state);
@@ -467,7 +467,7 @@ public class MineHandler extends FeatureModuleBase {
             skipIteration.set(true);
             return;
         }
-        if (!InventoryUtils.switchToItems(this.player, this.trenchFillItems)) {
+        if (!InventoryUtils.switchToItems(this.player, this.trenchFillItems, MaterialRequest.Source.MINE)) {
             this.hudStats.recordStatus(HudStatsManager.Mode.MINE, HudStatus.MISSING_FILL_MATERIAL);
             this.missingMaterials.recordMissing(this.trenchFillItems, null, null, now);
             this.deferTrenchFill(pos, now + 20L);
@@ -488,7 +488,7 @@ public class MineHandler extends FeatureModuleBase {
                 false,
                 1,
                 this.trenchFillItems,
-                ActionPort.ActionSource.FILL)) {
+                ActionPort.ActionSource.MINE)) {
             this.deferTrenchFill(pos, now + 2L);
             skipIteration.set(true);
             return;
@@ -542,26 +542,32 @@ public class MineHandler extends FeatureModuleBase {
             Set<BlockPos> discovered,
             Set<BlockPos> waterlogged
     ) {
-        for (PrinterBox box : boxes) {
-            for (BlockPos pos : box) {
-                BlockState state = this.level.getBlockState(pos);
-                if (this.isFluid(state)) {
-                    discovered.add(pos.immutable());
-                } else if (this.isWaterlogged(state)) {
-                    waterlogged.add(pos.immutable());
-                }
-                for (Direction side : HORIZONTAL_SIDES) {
-                    BlockPos outside = pos.relative(side);
-                    if (!box.contains(outside)) {
-                        BlockState outsideState = this.level.getBlockState(outside);
-                        if (this.isFluid(outsideState)) {
-                            discovered.add(outside.immutable());
-                        } else if (this.isWaterlogged(outsideState)) {
-                            waterlogged.add(outside.immutable());
+        long discoveryStart = this.timing.start();
+        try {
+            for (PrinterBox box : boxes) {
+                for (BlockPos pos : box) {
+                    BlockState state = this.level.getBlockState(pos);
+                    if (this.isFluid(state)) {
+                        discovered.add(pos.immutable());
+                    } else if (this.isWaterlogged(state)) {
+                        waterlogged.add(pos.immutable());
+                    }
+                    for (Direction side : HORIZONTAL_SIDES) {
+                        BlockPos outside = pos.relative(side);
+                        if (!box.contains(outside)) {
+                            BlockState outsideState = this.level.getBlockState(outside);
+                            if (this.isFluid(outsideState)) {
+                                discovered.add(outside.immutable());
+                            } else if (this.isWaterlogged(outsideState)) {
+                                waterlogged.add(outside.immutable());
+                            }
                         }
                     }
                 }
             }
+        } finally {
+            this.timing.finish(NAME,
+                    me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage.TRENCH_DISCOVERY, discoveryStart);
         }
     }
 

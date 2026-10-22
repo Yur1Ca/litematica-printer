@@ -22,6 +22,10 @@ public final class MaterialSelector {
     }
 
     public static boolean switchToItems(LocalPlayer player, Item[] items, int reserveCount) {
+        return switchToItems(player, items, reserveCount, MaterialRequest.Source.PRINT);
+    }
+
+    public static boolean switchToItems(LocalPlayer player, Item[] items, int reserveCount, MaterialRequest.Source source) {
         if (player == null || RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
             return false;
         }
@@ -54,7 +58,7 @@ public final class MaterialSelector {
                 }
             }
         }
-        QuickShulkerBridge.requestItems(items, MaterialRequest.Source.PRINT);
+        QuickShulkerBridge.requestItems(items, source);
         return false;
     }
 

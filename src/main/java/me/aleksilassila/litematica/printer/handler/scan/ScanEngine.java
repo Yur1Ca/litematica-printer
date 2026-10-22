@@ -10,6 +10,9 @@ import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
@@ -22,17 +25,25 @@ import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
  * depend on cache ownership, invalidation storage, or cursor internals.</p>
  */
 public final class ScanEngine implements RuntimeComponent {
-    private final PrinterRuntime runtime;
+    private final Supplier<RuntimeEpoch> epoch;
+    private final Supplier<ClientLevel> currentLevel;
     private final ScanCache cache;
 
     public ScanEngine(PrinterRuntime runtime, ScanCache cache) {
-        this.runtime = runtime;
+        this(runtime::epoch, () -> runtime.client().level, cache);
+    }
+
+    public ScanEngine(Supplier<RuntimeEpoch> epoch, Supplier<ClientLevel> currentLevel, ScanCache cache) {
+        this.epoch = epoch;
+        this.currentLevel = currentLevel;
         this.cache = cache;
     }
 
     public ScanEngine(PrinterRuntime runtime) {
-        this(runtime, new ScanCache());
+        this(runtime, new ScanCache(runtime.timing()));
     }
+
+    public RuntimeTiming timing() { return this.cache.timing(); }
 
     public void clear() {
         this.cache.clear();
@@ -44,7 +55,7 @@ public final class ScanEngine implements RuntimeComponent {
     }
 
     public void beginTick(ClientLevel level, WorldSchematic schematic, long tickTime) {
-        this.cache.beginTick(level, schematic, tickTime, this.runtime.epoch());
+        this.cache.beginTick(level, schematic, tickTime, this.epoch.get());
     }
 
     public void invalidate(BlockPos pos) {
@@ -52,7 +63,7 @@ public final class ScanEngine implements RuntimeComponent {
     }
 
     public void invalidateChunk(ClientLevel level, LevelChunk chunk) {
-        if (level == null || chunk == null || this.runtime.client().level != level) {
+        if (level == null || chunk == null || this.currentLevel.get() != level) {
             return;
         }
         ChunkPos pos = chunk.getPos();

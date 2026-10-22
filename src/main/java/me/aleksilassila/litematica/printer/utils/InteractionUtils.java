@@ -96,6 +96,8 @@ public final class InteractionUtils implements RuntimeComponent {
         this.breakState.clearIfDisabled(ConfigUtils.isEnable());
     }
 
+    public void cancelPlannedWork() { this.breakState.cancelPlannedWork(); }
+
     public void resetRuntime() {
         this.breakState.reset();
     }

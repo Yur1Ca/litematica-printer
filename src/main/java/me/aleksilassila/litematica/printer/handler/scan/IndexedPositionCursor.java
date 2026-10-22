@@ -1,7 +1,9 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
-import it.unimi.dsi.fastutil.longs.LongIterator;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
@@ -17,30 +19,52 @@ final class IndexedPositionCursor implements PositionCursor {
     private int index;
 
     IndexedPositionCursor(
-            SchematicBlockIndex schematicIndex,
+            SchematicPositionQuery schematicIndex,
             List<PrinterBox> sourceBoxes,
             ScanRegion region
     ) {
+        this(schematicIndex, sourceBoxes, region, RuntimeTiming.disabled(), "print");
+    }
+
+    IndexedPositionCursor(SchematicPositionQuery schematicIndex, List<PrinterBox> sourceBoxes,
+                          ScanRegion region, RuntimeTiming timing, String owner) {
         this.centerX = region.centerX();
         this.centerY = region.centerY();
         this.centerZ = region.centerZ();
         List<BlockPos> candidates = new ArrayList<>();
-        LongIterator iterator = schematicIndex.positions().iterator();
-        while (iterator.hasNext()) {
-            BlockPos pos = BlockPos.of(iterator.nextLong());
-            if (ScanGeometry.containsAny(sourceBoxes, pos)
-                    && ScanGeometry.distanceSqr(pos, region.centerX(), region.centerY(), region.centerZ())
-                    <= (long) region.maxDistanceBand() * region.maxDistanceBand()) {
-                candidates.add(pos);
-            }
+        long filterStart = timing.start();
+        long visited;
+        try {
+            visited = schematicIndex.forEachInRange(sourceBoxes, region, packed -> {
+                BlockPos pos = BlockPos.of(packed);
+                if (ScanGeometry.containsAny(sourceBoxes, pos)
+                        && ScanGeometry.distanceSqr(pos, region.centerX(), region.centerY(), region.centerZ())
+                        <= (long) region.maxDistanceBand() * region.maxDistanceBand()) {
+                    candidates.add(pos);
+                }
+            });
+        } finally {
+            timing.finish(owner, Stage.INDEX_FILTER, filterStart);
         }
-        candidates.sort(Comparator
-                .comparingLong((BlockPos pos) -> ScanGeometry.distanceSqr(
-                        pos, region.centerX(), region.centerY(), region.centerZ()))
-                .thenComparingInt(BlockPos::getY)
-                .thenComparingInt(BlockPos::getX)
-                .thenComparingInt(BlockPos::getZ));
-        this.positions = List.copyOf(candidates);
+        timing.count(owner, Reason.INDEX_POSITIONS_VISITED, visited);
+        timing.count(owner, Reason.INDEX_CANDIDATES, candidates.size());
+        long sortStart = timing.start();
+        try {
+            candidates.sort(Comparator
+                    .comparingLong((BlockPos pos) -> ScanGeometry.distanceSqr(
+                            pos, region.centerX(), region.centerY(), region.centerZ()))
+                    .thenComparingInt(BlockPos::getY)
+                    .thenComparingInt(BlockPos::getX)
+                    .thenComparingInt(BlockPos::getZ));
+        } finally {
+            timing.finish(owner, Stage.INDEX_SORT, sortStart);
+        }
+        long copyStart = timing.start();
+        try {
+            this.positions = List.copyOf(candidates);
+        } finally {
+            timing.finish(owner, Stage.INDEX_COPY, copyStart);
+        }
     }
 
     @Override

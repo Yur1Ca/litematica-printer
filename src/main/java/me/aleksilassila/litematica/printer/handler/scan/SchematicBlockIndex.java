@@ -6,7 +6,6 @@ import fi.dy.masa.litematica.world.ChunkSchematic;
 import fi.dy.masa.litematica.world.ChunkSchematicState;
 //#endif
 import fi.dy.masa.litematica.world.WorldSchematic;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -14,6 +13,11 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.LongConsumer;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 
 /**
  * Sparse index of non-air positions in one schematic world.
@@ -22,10 +26,10 @@ import java.util.List;
  * buckets avoids walking the air volume of a large, sparse placement. The index is deliberately
  * isolated from world intents: MINE, FILL and FLUID must continue to inspect live world state.</p>
  */
-final class SchematicBlockIndex {
+final class SchematicBlockIndex implements SchematicPositionQuery {
     private static final int SECTION_SIZE = 16;
 
-    private final LongOpenHashSet nonAirPositions = new LongOpenHashSet();
+    private final SectionPositionIndex nonAirPositions = new SectionPositionIndex();
     private WorldSchematic indexedSchematic;
     private List<ChunkStamp> indexedChunks = List.of();
     private State state = State.STALE;
@@ -38,22 +42,32 @@ final class SchematicBlockIndex {
     }
 
     boolean ensureBuilt(WorldSchematic schematic) {
-        if (schematic == null) {
-            boolean changed = this.state != State.STALE || this.indexedSchematic != null;
-            this.clear();
-            return changed;
-        }
-        //#if MC >= 12111
-        return this.ensureBuiltWithStableChunkStates(schematic);
-        //#else
-        // Litematica versions before 1.21.11 do not expose the LOADED -> FILLED transition.
-        // Their chunk identity and non-empty flag can become stable before population completes,
-        // so sparse indexing cannot prove that its snapshot is complete. Keep the dense cursor.
-        //$$ return this.waitForDenseFallback(schematic);
-        //#endif
+        return this.ensureBuilt(schematic, RuntimeTiming.disabled(), "print");
     }
 
-    private boolean ensureBuiltWithStableChunkStates(WorldSchematic schematic) {
+    boolean ensureBuilt(WorldSchematic schematic, RuntimeTiming timing, String owner) {
+        long checkStart = timing.start();
+        try {
+            if (schematic == null) {
+                boolean changed = this.state != State.STALE || this.indexedSchematic != null;
+                this.clear();
+                return changed;
+            }
+            //#if MC >= 12111
+            return this.ensureBuiltWithStableChunkStates(schematic, timing, owner);
+            //#else
+            // Litematica versions before 1.21.11 do not expose the LOADED -> FILLED transition.
+            // Their chunk identity and non-empty flag can become stable before population completes,
+            // so sparse indexing cannot prove that its snapshot is complete. Keep the dense cursor.
+            //$$ return this.waitForDenseFallback(schematic);
+            //#endif
+        } finally {
+            timing.finish(owner, Stage.INDEX_CHECK, checkStart);
+            if (this.state == State.WAITING) timing.count(owner, Reason.INDEX_WAITING, 1);
+        }
+    }
+
+    private boolean ensureBuiltWithStableChunkStates(WorldSchematic schematic, RuntimeTiming timing, String owner) {
         LoadedChunks loadedChunks = captureLoadedChunks(schematic);
         if (!loadedChunks.allFilled()) {
             boolean changed = this.indexedSchematic != schematic
@@ -73,7 +87,13 @@ final class SchematicBlockIndex {
         if (this.state == State.BUILDING) {
             return false;
         }
-        this.build(schematic, loadedChunks);
+        long buildStart = timing.start();
+        timing.count(owner, Reason.INDEX_REBUILT, 1);
+        try {
+            this.build(schematic, loadedChunks);
+        } finally {
+            timing.finish(owner, Stage.INDEX_BUILD, buildStart);
+        }
         return true;
     }
 
@@ -90,8 +110,9 @@ final class SchematicBlockIndex {
         return this.state == State.READY;
     }
 
-    LongOpenHashSet positions() {
-        return this.nonAirPositions;
+    @Override
+    public long forEachInRange(List<PrinterBox> boxes, ScanRegion region, LongConsumer consumer) {
+        return this.nonAirPositions.forEachInRange(boxes, region, consumer);
     }
 
     void clear() {

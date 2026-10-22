@@ -118,6 +118,12 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
         this.reset();
     }
 
+    /** Cancel production only; providers retain their existing in-flight recovery leases. */
+    public void cancelOwner(String owner) {
+        if (this.active == null || !this.active.request.source().name().equalsIgnoreCase(owner)) return;
+        this.reset();
+    }
+
     public void reset() {
         for (InventoryProvider provider : this.providers) {
             provider.reset();

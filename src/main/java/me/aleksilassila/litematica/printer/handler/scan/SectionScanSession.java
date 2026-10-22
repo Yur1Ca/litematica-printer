@@ -4,6 +4,8 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 import me.aleksilassila.litematica.printer.core.scan.ScanGeneration;
 import me.aleksilassila.litematica.printer.core.scan.ScanHandle;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -122,6 +124,7 @@ final class SectionScanSession {
     }
 
     private void resetProgress() {
+        this.recordReason(Reason.PASS_RESTART);
         this.rebuildDistanceCursor();
         this.dirtyPositions.clear();
         this.dirtyPositionKeys.clear();
@@ -140,20 +143,29 @@ final class SectionScanSession {
     }
 
     private PositionCursor createDistanceCursor() {
-        if (this.intent == ScanIntent.PRINT
-                && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
-                && this.schematicIndex != null
-                && this.schematicIndex.isReady()) {
-            return new IndexedPositionCursor(this.schematicIndex, this.sourceBoxes, this.region);
+        this.recordReason(Reason.CURSOR_CREATED);
+        long cursorStart = this.metrics.timing.start();
+        try {
+            if (this.intent == ScanIntent.PRINT
+                    && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
+                    && this.schematicIndex != null
+                    && this.schematicIndex.isReady()) {
+                return new IndexedPositionCursor(this.schematicIndex, this.sourceBoxes, this.region,
+                        this.metrics.timing, this.metrics.owner);
+            }
+            return new SynchronousPositionCursor(
+                    this.sourceBoxes,
+                    this.region.centerX(),
+                    this.region.centerY(),
+                    this.region.centerZ(),
+                    this.region.maxDistanceBand()
+            );
+        } finally {
+            this.metrics.timing.finish(this.metrics.owner, Stage.CURSOR_BUILD, cursorStart);
         }
-        return new SynchronousPositionCursor(
-                this.sourceBoxes,
-                this.region.centerX(),
-                this.region.centerY(),
-                this.region.centerZ(),
-                this.region.maxDistanceBand()
-        );
     }
+
+    void recordReason(Reason reason) { this.metrics.timing.count(this.metrics.owner, reason, 1); }
 
     boolean hasPendingSource(long tickTime) {
         return this.canScan(tickTime)
@@ -315,11 +327,17 @@ final class SectionScanSession {
             if (this.intent == ScanIntent.CUSTOM) {
                 return new Candidate(new BlockPos(x, y, z), (byte) 0);
             }
-            byte flags = observation.classify(
-                    this.intent,
-                    this.liveMutable,
-                    Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
-            );
+            byte flags;
+            long classifyStart = this.metrics.timing.start();
+            try {
+                flags = observation.classify(
+                        this.intent,
+                        this.liveMutable,
+                        Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
+                );
+            } finally {
+                this.metrics.timing.finish(this.metrics.owner, Stage.CLASSIFICATION, classifyStart);
+            }
             if (flags != 0) {
                 return new Candidate(new BlockPos(x, y, z), flags);
             }
@@ -344,6 +362,7 @@ final class SectionScanSession {
 
     private boolean finishPass(long tickTime) {
         if (this.cursorRevision != this.sourceRevision) {
+            this.recordReason(Reason.SOURCE_CHANGED);
             this.rebuildDistanceCursor();
             return false;
         }

@@ -30,6 +30,7 @@ final class OrderedStorageController {
     private final Supplier<Set<Item>> neededItems;
     private final List<OrderedStorageEntry> trackedItems = new ArrayList<>();
     private final RestoreSession<OrderedStorageEntry> restoreSession = new RestoreSession<>();
+    private final OrderedStorageDrain drain = new OrderedStorageDrain();
 
     OrderedStorageController(Minecraft client, Supplier<Set<Item>> neededItems, QuickShulkerContainerSession containerSession) {
         this.client = client;
@@ -181,8 +182,20 @@ final class OrderedStorageController {
     }
 
     public boolean hasPendingRestore() {
-        return this.restoreSession.hasPending();
+        return this.drain.active() || this.restoreSession.hasPending();
     }
+
+    boolean isDraining() { return this.drain.active(); }
+    void cancelDrain() { this.drain.cancel(); }
+
+    boolean onInventoryContent(int id, java.util.List<ItemStack> items, ItemStack cursor) {
+        if (client.player == null || !this.drain.observe(client, id,
+                client.player.containerMenu.getStateId(), items, cursor)) return false;
+        if (!this.drain.active()) finishPendingRestore(this.drain.restored());
+        return true;
+    }
+
+    void discardForClientScopeChange() { this.drain.discard(); }
 
     public boolean isWaitingForRestoreContainer() {
         return this.restoreSession.isWaitingForContainer();
@@ -215,7 +228,7 @@ final class OrderedStorageController {
         }
 
         Slot playerSlot = menu.slots.get(playerMenuSlot);
-        ItemStack returningStack = playerSlot.getItem();
+        ItemStack returningStack = playerSlot.getItem().copy();
         List<Integer> destinations = OrderedStorageStacks.buildRestoreDestinations(menu, statistics, returningStack);
         int totalCapacity = 0;
         for (int destination : destinations) {
@@ -235,26 +248,17 @@ final class OrderedStorageController {
             return;
         }
 
-        client.gameMode.handleContainerInput(menu.containerId, playerMenuSlot, 0, ContainerInput.PICKUP, player);
-        for (int destination : destinations) {
-            if (menu.getCarried().isEmpty()) {
-                break;
-            }
-            client.gameMode.handleContainerInput(menu.containerId, destination, 0, ContainerInput.PICKUP, player);
-        }
-        boolean restored = menu.getCarried().isEmpty();
-        if (!restored) {
-            client.gameMode.handleContainerInput(menu.containerId, playerMenuSlot, 0, ContainerInput.PICKUP, player);
-        }
-        if (restored) {
-            finishPendingRestore(true);
-        } else {
-            retryPendingRestore();
-        }
-        player.closeContainer();
+        // Keep one click in flight. Prediction plus an early close lets delayed cursor corrections
+        // land on inventoryMenu and permanently pause the scheduler.
+        this.drain.begin(client, menu, playerMenuSlot, destinations);
     }
 
     public void tick() {
+        if (this.drain.active()) {
+            this.drain.tick(client);
+            if (!this.drain.active()) finishPendingRestore(this.drain.restored());
+            return;
+        }
         if (!this.restoreSession.tickContainerTimeout()) {
             return;
         }
@@ -269,6 +273,7 @@ final class OrderedStorageController {
     }
 
     public void reset() {
+        this.drain.cancel();
         this.automatedContainerId = -1;
         this.trackedItems.clear();
         this.restoreSession.reset();

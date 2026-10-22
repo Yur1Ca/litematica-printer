@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import com.google.common.collect.Iterables;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -217,7 +218,7 @@ public final class CoverHandler extends FeatureModuleBase {
             return;
         }
 
-        if (!handheld && !InventoryUtils.switchToItems(this.player, this.coverItems)) {
+        if (!handheld && !InventoryUtils.switchToItems(this.player, this.coverItems, MaterialRequest.Source.COVER)) {
             if (this.hasAnyCoverMaterial()) {
                 this.missingMaterials.resolve(this.coverItems, null);
             } else if (this.actionBroker.isResourceHeld(ResourceLease.INVENTORY)) {

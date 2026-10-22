@@ -1,5 +1,9 @@
 package me.aleksilassila.litematica.printer.printer.action;
 
+import java.util.function.Supplier;
+import java.util.Locale;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.runtime.FeatureLifecycle;
 import me.aleksilassila.litematica.printer.core.action.ActionCoordinator;
 import me.aleksilassila.litematica.printer.core.action.ActionRequest;
 import me.aleksilassila.litematica.printer.core.action.ActionTicket;
@@ -34,17 +38,26 @@ import java.util.Optional;
 public final class ActionBroker implements RuntimeComponent, ActionPort {
     private static final long ACTION_LEASE_TIMEOUT_NANOS = 10_000_000_000L;
 
-    private final PrinterRuntime runtime;
+    private final Supplier<RuntimeEpoch> epoch;
+    private final Supplier<FeatureLifecycle> lifecycle;
     private final ActionManager delegate;
     private final ActionCoordinator coordinator = new ActionCoordinator();
     private ActionTicket activeTicket;
+    private FeatureLifecycle.Work activeWork;
 
     private static SendResult from(ActionManager.SendResult result) {
         return SendResult.valueOf(result.name());
     }
 
     public ActionBroker(PrinterRuntime runtime, ActionManager delegate) {
-        this.runtime = runtime;
+        this(runtime::epoch, () -> runtime.modules().lifecycle(), delegate);
+    }
+
+    public ActionBroker(Supplier<RuntimeEpoch> epoch,
+                        Supplier<FeatureLifecycle> lifecycle,
+                        ActionManager delegate) {
+        this.epoch = epoch;
+        this.lifecycle = lifecycle;
         this.delegate = delegate;
     }
 
@@ -60,10 +73,13 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         if (this.activeTicket != null) {
             return false;
         }
+        String owner = source.name().toLowerCase(Locale.ROOT);
+        var work = this.lifecycle.get().capture(owner, this.epoch.get());
+        if (!this.lifecycle.get().canSend(work, this.epoch.get())) return false;
         long now = System.nanoTime();
         ActionRequest request = new ActionRequest(
-                source.name().toLowerCase(),
-                this.runtime.epoch(),
+                owner,
+                this.epoch.get(),
                 EnumSet.of(ResourceLease.LOOK, ResourceLease.MAIN_HAND, ResourceLease.INTERACTION),
                 now + ACTION_LEASE_TIMEOUT_NANOS
         );
@@ -85,6 +101,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
             return false;
         }
         this.activeTicket = ticket;
+        this.activeWork = work;
         return true;
     }
 
@@ -104,7 +121,8 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
 
     public SendResult sendQueue(@Nullable LocalPlayer player) {
         if (this.activeTicket != null) {
-            if (!this.activeTicket.canSend(this.runtime.epoch(), System.nanoTime())) {
+            if (!this.activeTicket.canSend(this.epoch.get(), System.nanoTime())
+                    || !this.lifecycle.get().canSend(this.activeWork, this.epoch.get())) {
                 this.delegate.cancelQueue();
                 this.releaseActiveTicket();
                 return SendResult.NO_QUEUED_ACTION;
@@ -116,6 +134,10 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
             this.releaseActiveTicket();
         }
         return result;
+    }
+
+    public void cancelOwnerQueue(String owner) {
+        if (this.activeTicket != null && this.activeTicket.request().owner().equals(owner)) this.cancelQueue();
     }
 
     public void cancelQueue() {
@@ -187,6 +209,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
     public void resetRuntime(String reason) {
         this.delegate.resetRuntime();
         this.activeTicket = null;
+        this.activeWork = null;
         this.coordinator.reset();
     }
 
@@ -203,7 +226,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         long now = System.nanoTime();
         ActionRequest request = new ActionRequest(
                 owner,
-                this.runtime.epoch(),
+                this.epoch.get(),
                 resources,
                 timeoutNanos <= 0L ? 0L : now + timeoutNanos
         );
@@ -222,6 +245,7 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         if (this.activeTicket != null) {
             this.coordinator.release(this.activeTicket);
             this.activeTicket = null;
+            this.activeWork = null;
         }
     }
 }

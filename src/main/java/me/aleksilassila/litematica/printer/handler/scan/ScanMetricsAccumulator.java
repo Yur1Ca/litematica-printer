@@ -2,9 +2,19 @@ package me.aleksilassila.litematica.printer.handler.scan;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 
 /** Mutable, client-thread-owned counters for one scan owner. */
 final class ScanMetricsAccumulator {
+    final RuntimeTiming timing;
+    final String owner;
+
+    ScanMetricsAccumulator() { this(RuntimeTiming.disabled(), "scan"); }
+    ScanMetricsAccumulator(RuntimeTiming timing, String owner) {
+        this.timing = timing;
+        this.owner = owner;
+    }
+
     long scanNanos;
     int scannedBlocks;
     int scannedSections;

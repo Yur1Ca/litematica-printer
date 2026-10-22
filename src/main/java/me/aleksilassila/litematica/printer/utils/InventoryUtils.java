@@ -308,6 +308,10 @@ public class InventoryUtils {
         return switchToItems(player, items, -1);
     }
 
+    public static boolean switchToItems(LocalPlayer player, Item[] items, MaterialRequest.Source source) {
+        return MaterialSelector.switchToItems(player, items, -1, source);
+    }
+
     public static boolean switchToItemsWithReserve(LocalPlayer player, Item[] items, int reserveCount) {
         return switchToItems(player, items, Math.max(0, reserveCount));
     }

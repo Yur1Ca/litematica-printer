@@ -44,8 +44,9 @@ public class ConfigUi extends GuiConfigsBase {
 
     @Override
     public void initGui() {
-        super.initGui();
+        // Clear old listeners before MaLiLib creates the new hotkey controls.
         this.clearOptions();
+        super.initGui();
         int x = 10;
         int y = 26;
         for (Tab tab : Tab.values()) {

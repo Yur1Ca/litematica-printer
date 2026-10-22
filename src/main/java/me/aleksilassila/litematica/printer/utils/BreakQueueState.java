@@ -70,15 +70,14 @@ final class BreakQueueState {
     }
 
     void clearIfDisabled(boolean enabled) {
-        if (!enabled) {
-            this.breakQueue.clear();
-            this.queuedBreaks.clear();
-            this.recentlyBroken.clear();
-            this.pendingBroken.clear();
-            this.activePos = null;
-            this.forceDelayedDestroy = false;
-            this.externalDestroyLockTicks = 0;
-        }
+        if (!enabled) this.cancelPlannedWork();
+    }
+
+    void cancelPlannedWork() {
+        this.breakQueue.clear();
+        this.queuedBreaks.clear();
+        this.clearActive();
+        this.externalDestroyLockTicks = 0;
     }
 
     void reset() {

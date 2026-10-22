@@ -60,6 +60,7 @@ fabric.properties
 **/build/
 **/run/
 **/libs/
+**/docs/
 
 # 跨平台系统临时文件
 # macOS

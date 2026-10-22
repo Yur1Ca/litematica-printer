@@ -57,7 +57,7 @@ public record MaterialRequest(
     }
 
     public enum Source {
-        PRINT,
+        PRINT, FILL, FLUID, MINE, COVER, BEDROCK,
         PICK_BLOCK,
         CHEST_TRACKER_SCREEN,
         OTHER

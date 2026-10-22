@@ -202,6 +202,34 @@ abstract class ModPlugin : Plugin<Project> {
                                     }
                                 }
 
+                                if (relative.contains("/feature/") && relative.endsWith("Planner.java")) {
+                                    val forbidden = listOf(
+                                        ".handler.", ".runtime.", ".config.", ".integration.",
+                                        "net.minecraft.client.", ".network.", "ActionPort", "ActionManager",
+                                        "InventoryUtils", "MaterialSelector", "InteractionUtils", "sendPacket(",
+                                        "queueClick(", "setBlock(", "destroyBlock(", "RuntimeAccess"
+                                    )
+                                    forbidden.filter(text::contains).forEach { dependency ->
+                                        violations += "$relative: planner must only consume observations, forbidden '$dependency'"
+                                    }
+                                }
+                                if (relative.endsWith("/printer/ActionManager.java") && text.contains("Configs.Print")) {
+                                    violations += "$relative: feature reserve policy belongs at the composition boundary"
+                                }
+                                if (listOf("/handler/handlers/FillHandler.java", "/handler/handlers/FluidHandler.java")
+                                        .any(relative::endsWith) && text.contains("Configs.Print")) {
+                                    violations += "$relative: shared placement settings must use SharedPlacementSettings"
+                                }
+                                if (listOf("/handler/FeatureModuleBase.java", "/handler/scan/ScanEngine.java")
+                                        .any(relative::endsWith)
+                                    && Regex("(?:private|protected|public)\\s+(?:final\\s+)?PrinterRuntime\\s+\\w+\\s*;")
+                                        .containsMatchIn(text)) {
+                                    violations += "$relative: retain only the runtime capabilities this service consumes"
+                                }
+                                if (relative.endsWith("/handler/TickScheduler.java") && text.contains("runtime.reset(")) {
+                                    violations += "$relative: feature toggles must not reset session transports"
+                                }
+
                                 if (relative.contains("/handler/handlers/")
                                     && listOf(".mixin.", ".printer.zxy.", ".utils.mods.")
                                         .any(text::contains)) {

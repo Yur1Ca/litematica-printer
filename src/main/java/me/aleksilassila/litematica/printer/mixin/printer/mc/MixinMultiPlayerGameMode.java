@@ -64,7 +64,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     //$$ @Inject(method = "handleInventoryMouseClick", at = @At("HEAD"), cancellable = true)
     //#endif
     private void printer$guardContainerSyncInput(CallbackInfo ci) {
-        if (RuntimeAccess.get().containerSync().guardManualInput()) ci.cancel();
+        if (RuntimeAccess.get().containerSync().guardManualInput()
+                || RuntimeAccess.get().chestTrackerAdapter().guardManualInput()) ci.cancel();
     }
 
     @Inject(method = "tick", at = @At("HEAD"))

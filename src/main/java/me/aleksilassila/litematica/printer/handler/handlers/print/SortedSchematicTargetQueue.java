@@ -34,6 +34,7 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     private boolean hasMoreSource;
     private long lastFillTick = Long.MIN_VALUE;
     private long lastDirtyVersion = Long.MIN_VALUE;
+    private long lastPrintSourceRevision = Long.MIN_VALUE;
 
     public SortedSchematicTargetQueue(ScanEngine scanEngine) {
         this.scanEngine = scanEngine;
@@ -46,6 +47,7 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         this.hasMoreSource = false;
         this.lastFillTick = Long.MIN_VALUE;
         this.lastDirtyVersion = Long.MIN_VALUE;
+        this.lastPrintSourceRevision = Long.MIN_VALUE;
     }
 
     public Iterable<BlockPos> iterable(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
@@ -93,6 +95,20 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     }
 
     private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+        // Observe schematic replacement even after a clean queue has exhausted its old source.
+        // Creating the iterable does not consume a candidate or advance its cursor.
+        Iterable<BlockPos> candidates = this.scanEngine.iterable(
+                "print_sorted", sourceBoxes, level, schematic, player, scanGuardLimit,
+                ScanIntent.PRINT, pos -> true
+        );
+        long printSourceRevision = this.scanEngine.printSourceRevision();
+        if (printSourceRevision != this.lastPrintSourceRevision) {
+            this.queue.clear();
+            this.queuedKeys.clear();
+            this.hasMoreSource = true;
+            this.lastFillTick = Long.MIN_VALUE;
+            this.lastPrintSourceRevision = printSourceRevision;
+        }
         long currentTick = level.getGameTime();
         long dirtyVersion = this.scanEngine.dirtyVersion();
         boolean dirtyChanged = dirtyVersion != this.lastDirtyVersion;
@@ -125,25 +141,16 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         this.hasMoreSource = false;
         long collectionStart = this.scanEngine.timing().start();
         try {
-            Iterable<BlockPos> candidates = this.scanEngine.iterable(
-                    "print_sorted",
-                    sourceBoxes,
-                    level,
-                    schematic,
-                    player,
-                    scanGuardLimit,
-                    ScanIntent.PRINT,
-                    pos -> true
-            );
-            for (BlockPos candidate : candidates) {
-                if (targets.size() >= collectLimit) {
-                    this.hasMoreSource = true;
-                    break;
-                }
+            Iterator<BlockPos> iterator = candidates.iterator();
+            // hasNext() can advance the scan session. Check capacity before even probing it,
+            // so the first candidate of the next batch remains in the source cursor.
+            while (targets.size() < collectLimit && iterator.hasNext()) {
+                BlockPos candidate = iterator.next();
                 if (this.queuedKeys.add(ScanEngine.key(candidate))) {
                     targets.add(scoreTarget(schematic, heldItem, eye, view, candidate));
                 }
             }
+            this.hasMoreSource = targets.size() >= collectLimit;
             if (candidates instanceof ScanCandidateIterable scanSource
                     && scanSource.availability() == ScanAvailability.PAUSED) {
                 this.hasMoreSource = true;

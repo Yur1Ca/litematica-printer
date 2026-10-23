@@ -54,6 +54,7 @@ public abstract class MixinClientPacketListener {
 
     @Inject(at = @At("TAIL"), method = "handleOpenScreen")
     private void printer$trackContainerOpen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
         ChestTrackerBridge.onContainerOpen(packet.getContainerId());
     }
 
@@ -72,8 +73,12 @@ public abstract class MixinClientPacketListener {
         //$$ var items = packet.getItems();
         //$$ var carried = packet.getCarriedItem();
         //#endif
-        ChestTrackerBridge.onContainerContent(containerId);
         if ((Object) this != client.getConnection()) return;
+        //#if MC >= 12105
+        ChestTrackerBridge.onContainerContent(containerId, packet.stateId(), items, carried);
+        //#else
+        //$$ ChestTrackerBridge.onContainerContent(containerId, packet.getStateId(), items, carried);
+        //#endif
         boolean currentContainer = client.player != null && containerId == client.player.containerMenu.containerId;
         QuickShulkerBridge.onInventoryContent(containerId, items, carried);
         if (!currentContainer) return;

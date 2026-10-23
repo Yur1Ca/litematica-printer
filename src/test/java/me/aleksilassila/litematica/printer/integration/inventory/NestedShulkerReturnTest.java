@@ -21,15 +21,12 @@ class NestedShulkerReturnTest {
     }
 
     @Test
-    void restoreSyncAndResetCannotLeakIntoNextRequest() {
+    void restoreAndResetCannotLeakIntoNextRequest() {
         NestedShulkerReturn restore = new NestedShulkerReturn();
         restore.recordTransfer(new BlockPos(1, 2, 3), 4, ItemStack.EMPTY, 8);
         assertFalse(restore.beginRestore(true, true));
         assertFalse(restore.beginRestore(false, false));
         assertTrue(restore.beginRestore(false, true));
-        restore.markWaitingForSync(10L);
-        assertTrue(restore.waitingForSync(14L));
-        assertFalse(restore.waitingForSync(15L));
 
         restore.clear();
         assertFalse(restore.hasSource());

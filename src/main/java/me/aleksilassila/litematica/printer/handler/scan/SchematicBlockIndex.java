@@ -46,6 +46,10 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     }
 
     boolean ensureBuilt(WorldSchematic schematic, RuntimeTiming timing, String owner) {
+        return this.ensureBuilt(schematic, timing, owner, true);
+    }
+
+    boolean ensureBuilt(WorldSchematic schematic, RuntimeTiming timing, String owner, boolean buildSparseIndex) {
         long checkStart = timing.start();
         try {
             if (schematic == null) {
@@ -54,7 +58,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
                 return changed;
             }
             //#if MC >= 12111
-            return this.ensureBuiltWithStableChunkStates(schematic, timing, owner);
+            return buildSparseIndex ? this.ensureBuiltWithStableChunkStates(schematic, timing, owner)
+                    : this.waitForDenseFallback(schematic);
             //#else
             // Litematica versions before 1.21.11 do not expose the LOADED -> FILLED transition.
             // Their chunk identity and non-empty flag can become stable before population completes,
@@ -98,10 +103,12 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     }
 
     private boolean waitForDenseFallback(WorldSchematic schematic) {
-        boolean changed = this.indexedSchematic != schematic || this.state != State.WAITING;
+        LoadedChunks loadedChunks = captureLoadedChunks(schematic);
+        boolean changed = this.indexedSchematic != schematic || this.state != State.WAITING
+                || !sameChunkSnapshot(this.indexedChunks, loadedChunks.stamps());
         this.nonAirPositions.clear();
         this.indexedSchematic = schematic;
-        this.indexedChunks = List.of();
+        this.indexedChunks = loadedChunks.stamps();
         this.state = State.WAITING;
         return changed;
     }

@@ -39,6 +39,7 @@ class ChestTrackerOwnershipTest {
         final ChestTrackerAdapter chest = new ChestTrackerAdapter(broker);
 
         Fixture() throws Exception {
+            set(client, net.minecraft.client.Minecraft.class, "gameThread", Thread.currentThread());
             set(runtime, PrinterRuntime.class, "epoch", RuntimeEpoch.INITIAL);
             set(runtime, PrinterRuntime.class, "actionBroker", broker);
             set(adapter, QuickShulkerAdapter.class, "actionBroker", broker);
@@ -70,12 +71,16 @@ class ChestTrackerOwnershipTest {
         }
     }
 
-    @Test void resetStillClosesTheMenuOpenedForItsOwnRequest() throws Exception {
+    @Test void resetWaitsForTheFirstSnapshotBeforeClosingItsOwnMenu() throws Exception {
         try (var f = new Fixture()) {
             f.receiveChestOpen();
 
             f.chest.reset();
 
+            assertFalse(f.player.closed);
+            var items = f.menu.slots.stream().map(slot -> slot.getItem().copy()).toList();
+            f.menu.initializeContents(1, items, ItemStack.EMPTY);
+            f.chest.onContainerContent(f.menu.containerId, 1, items, ItemStack.EMPTY);
             assertTrue(f.player.closed);
             assertSame(f.player.inventoryMenu, f.player.containerMenu);
             assertFalse(f.chest.shouldSuppressContainerScreen());

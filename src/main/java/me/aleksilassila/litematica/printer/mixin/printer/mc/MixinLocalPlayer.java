@@ -60,7 +60,8 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
 
     @Inject(method = "closeContainer", at = @At("HEAD"), cancellable = true)
     private void printer$drainContainerSync(CallbackInfo ci) {
-        if (RuntimeAccess.get().containerSync().guardClose()) ci.cancel();
+        if (RuntimeAccess.get().containerSync().guardClose()
+                || RuntimeAccess.get().chestTrackerAdapter().guardClose()) ci.cancel();
     }
 
     @Inject(method = "openTextEdit", at = @At("HEAD"), cancellable = true)

@@ -14,7 +14,6 @@ final class NestedShulkerReturn {
     private ItemStack snapshot = ItemStack.EMPTY;
     private int inventorySlot = -1;
     private boolean restoring;
-    private long syncDeadline;
 
     void recordTransfer(BlockPos pos, int sourceSlot, ItemStack snapshot, int inventorySlot) {
         this.sourcePos = pos.immutable();
@@ -59,21 +58,12 @@ final class NestedShulkerReturn {
                 && !this.snapshot.isEmpty() && candidate.getItem() == this.snapshot.getItem();
     }
 
-    void markWaitingForSync(long now) {
-        this.syncDeadline = now + 5L;
-    }
-
-    boolean waitingForSync(long now) {
-        return now < this.syncDeadline;
-    }
-
     void clear() {
         this.sourcePos = null;
         this.sourceSlot = -1;
         this.snapshot = ItemStack.EMPTY;
         this.inventorySlot = -1;
         this.restoring = false;
-        this.syncDeadline = 0L;
     }
 
     static int locateMovedShulker(LocalPlayer player, ItemStack snapshot, List<ItemStack> before) {

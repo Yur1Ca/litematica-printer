@@ -8,8 +8,8 @@ public final class ChestTrackerBridge {
     private ChestTrackerBridge() {
     }
 
-    public static void onContainerContent(int containerId) {
-        RuntimeAccess.get().chestTrackerAdapter().onContainerContent(containerId);
+    public static void onContainerContent(int containerId, int revision, java.util.List<ItemStack> items, ItemStack cursor) {
+        RuntimeAccess.get().chestTrackerAdapter().onContainerContent(containerId, revision, items, cursor);
     }
 
     public static void onContainerOpen(int containerId) {
@@ -18,6 +18,10 @@ public final class ChestTrackerBridge {
 
     public static boolean shouldSuppressContainerScreen() {
         return RuntimeAccess.get().chestTrackerAdapter().shouldSuppressContainerScreen();
+    }
+
+    public static void rememberSuppressedScreen(net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen) {
+        RuntimeAccess.get().chestTrackerAdapter().rememberSuppressedScreen(screen);
     }
 
     public static boolean takeFromScreen(ItemStack stack) {

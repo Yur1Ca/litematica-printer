@@ -35,6 +35,7 @@ public abstract class MixinContainerScreenGuard {
             return;
         }
         if (containerScreen && ChestTrackerBridge.shouldSuppressContainerScreen()) {
+            ChestTrackerBridge.rememberSuppressedScreen((AbstractContainerScreen<?>) screen);
             ci.cancel();
         }
     }

@@ -12,7 +12,8 @@ public final class RuntimeTiming {
         RUNTIME_TICK, MATERIAL_TICK, MINING_TICK, MODULE_TICK, MODULE_PREPROCESS,
         MODULE_ITERATION, ACTION_EXECUTION, CANDIDATE_SETUP, CANDIDATE_LOOKUP,
         INDEX_CHECK, INDEX_BUILD, CURSOR_BUILD, INDEX_FILTER, INDEX_SORT, INDEX_COPY,
-        CLASSIFICATION, EXACT_FILTER, PRINT_COLLECTION, PRINT_SORT, TRENCH_DISCOVERY
+        CLASSIFICATION, EXACT_FILTER, PRINT_COLLECTION, PRINT_SORT, TRENCH_DISCOVERY,
+        SHADOW_SNAPSHOT, SHADOW_QUEUE, SHADOW_COMPUTE, SHADOW_READY
     }
 
     public enum Reason {
@@ -21,7 +22,9 @@ public final class RuntimeTiming {
         INDEX_POSITIONS_VISITED, INDEX_CANDIDATES,
         BEDROCK_ATTEMPTS, BEDROCK_RETRIES, BEDROCK_CONFIRMED_ATTEMPTS, BEDROCK_DISCARDED_ATTEMPTS,
         BEDROCK_ATTEMPT_TIMEOUTS, BEDROCK_FIRST_UPDATES, BEDROCK_FIRST_UPDATE_TICKS,
-        BEDROCK_FINISHED_ATTEMPTS, BEDROCK_ATTEMPT_TICKS
+        BEDROCK_FINISHED_ATTEMPTS, BEDROCK_ATTEMPT_TICKS,
+        SHADOW_MATCHED, SHADOW_MISMATCHED, SHADOW_STALE, SHADOW_FAILED,
+        SHADOW_SUPERSEDED, SHADOW_OVERWRITTEN
     }
 
     public record Sample(String owner, Stage stage, long calls, long totalNanos, long maxNanos) { }
@@ -46,7 +49,13 @@ public final class RuntimeTiming {
 
     public void finish(String owner, Stage stage, long start) {
         if (!this.enabled) return;
-        long elapsed = Math.max(0L, this.clock.getAsLong() - start);
+        this.recordElapsed(owner, stage, this.clock.getAsLong() - start);
+    }
+
+    /** Import a completed worker duration on the client thread; never call this from the worker. */
+    public void recordElapsed(String owner, Stage stage, long durationNanos) {
+        if (!this.enabled) return;
+        long elapsed = Math.max(0L, durationNanos);
         Totals totals = this.totals(owner);
         int index = stage.ordinal();
         totals.calls[index]++;

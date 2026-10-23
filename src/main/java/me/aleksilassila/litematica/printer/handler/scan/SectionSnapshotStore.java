@@ -47,6 +47,13 @@ final class SectionSnapshotStore {
         this.sections.clear();
     }
 
+    void invalidatePrint() {
+        for (MutableSection section : this.sections.values()) {
+            section.clearSlot(cacheSlot(ScanIntent.PRINT, false));
+            section.clearSlot(cacheSlot(ScanIntent.PRINT, true));
+        }
+    }
+
     int cachedSectionCount() {
         return this.sections.size();
     }
@@ -101,6 +108,11 @@ final class SectionSnapshotStore {
                 this.flags[slot] = new byte[SECTION_VOLUME];
                 this.observed[slot] = new long[OBSERVED_WORDS];
             }
+        }
+
+        private void clearSlot(int slot) {
+            this.flags[slot] = null;
+            this.observed[slot] = null;
         }
 
         private boolean isObserved(int slot, int index) {

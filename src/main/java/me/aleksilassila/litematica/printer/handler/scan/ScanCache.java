@@ -26,6 +26,7 @@ public final class ScanCache {
     private Object schematicIdentity;
     private RuntimeEpoch runtimeEpoch = RuntimeEpoch.INITIAL;
     private long snapshotRevision;
+    private long printSourceRevision;
     private long generationSequence;
     private long tickTime = Long.MIN_VALUE;
 
@@ -56,6 +57,7 @@ public final class ScanCache {
         this.levelIdentity = null;
         this.schematicIdentity = null;
         this.snapshotRevision = 0L;
+        this.printSourceRevision++;
         this.tickTime = Long.MIN_VALUE;
         this.budget.reset();
         this.snapshots.clear();
@@ -112,10 +114,12 @@ public final class ScanCache {
             this.schematicIdentity = schematic;
             this.runtimeEpoch = epoch;
             this.snapshotRevision++;
+            this.printSourceRevision++;
             this.snapshots.clear();
         }
         if (this.tickTime != tickTime) {
             this.sessions.resetMetrics();
+            this.sessions.collectComparisons();
         }
         this.tickTime = tickTime;
         this.budget.beginTick(tickTime);
@@ -147,6 +151,10 @@ public final class ScanCache {
 
     public long dirtyVersion() {
         return this.dirtyRegions.currentVersion();
+    }
+
+    public long printSourceRevision() {
+        return this.printSourceRevision;
     }
 
     public DirtyRegionTracker.DirtySnapshot dirtySnapshotAfter(long lastSeenVersion, @Nullable PrinterBox bounds) {
@@ -247,17 +255,6 @@ public final class ScanCache {
             Predicate<BlockPos> exactPredicate,
             Predicate<BlockPos> preFilter
     ) {
-        if (sourceBoxes == null || sourceBoxes.isEmpty()) {
-            return List.of();
-        }
-        if (intent == ScanIntent.PRINT && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()) {
-            if (this.schematicIndex.ensureBuilt(schematic, this.timing, normalizeMetricsOwnerKey(ownerKey))) {
-                // Existing PRINT sessions may still hold a cursor built from the previous set of
-                // loaded schematic chunks. Recreate only this owner so newly loaded chunks cannot
-                // be omitted while unrelated scan intents keep their progress.
-                this.sessions.resetOwner(ownerKey);
-            }
-        }
         return this.iterable(ownerKey, sourceBoxes, level, schematic, player, scanGuardLimit,
                 intent, exactPredicate, preFilter, false);
     }
@@ -274,6 +271,19 @@ public final class ScanCache {
             Predicate<BlockPos> preFilter,
             boolean unbounded
     ) {
+        if (sourceBoxes == null || sourceBoxes.isEmpty()) {
+            return List.of();
+        }
+        if (intent == ScanIntent.PRINT && this.schematicIndex.ensureBuilt(
+                schematic, this.timing, normalizeMetricsOwnerKey(ownerKey),
+                !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue())) {
+            // Classification flags and every PRINT cursor belong to the same schematic snapshot.
+            // World-only intents retain their cached observations and scan progress.
+            this.snapshotRevision++;
+            this.printSourceRevision++;
+            this.snapshots.invalidatePrint();
+            this.sessions.resetIntent(ScanIntent.PRINT);
+        }
         String cacheOwnerKey = this.cacheOwnerKey(ownerKey, intent);
         String metricsOwnerKey = normalizeMetricsOwnerKey(ownerKey);
         long setupStart = this.timing.start();

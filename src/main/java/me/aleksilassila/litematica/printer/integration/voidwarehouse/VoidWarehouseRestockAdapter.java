@@ -64,7 +64,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     private MaterialRequest activeRequest;
     private int activeNonce;
 
-    private Item lastFailedItem;
+    private MaterialRequest lastFailedRequest;
     private long lastFailedTick = Long.MIN_VALUE;
 
     public VoidWarehouseRestockAdapter(ActionPort actionBroker) {
@@ -171,7 +171,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     @Override
     public void reset() {
         finish();
-        this.lastFailedItem = null;
+        this.lastFailedRequest = null;
         this.lastFailedTick = Long.MIN_VALUE;
     }
 
@@ -193,15 +193,19 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     }
 
     private boolean failedRecently(MaterialRequest request) {
-        Item item = request.preferredItem();
-        if (item == null || item != this.lastFailedItem) {
+        // Tokens and callers may change while the material requirement stays the same.
+        // A different candidate list or stack constraint must be allowed to query the warehouse.
+        if (this.lastFailedRequest == null
+                || request.preferredItem() != this.lastFailedRequest.preferredItem()
+                || !request.acceptedItems().equals(this.lastFailedRequest.acceptedItems())
+                || request.emptyShulkerOnly() != this.lastFailedRequest.emptyShulkerOnly()) {
             return false;
         }
         return gameTick() - this.lastFailedTick < FAILED_COOLDOWN_TICKS;
     }
 
     private void rememberFailure(MaterialRequest request) {
-        this.lastFailedItem = request.preferredItem();
+        this.lastFailedRequest = request;
         this.lastFailedTick = gameTick();
     }
 

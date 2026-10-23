@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 import me.aleksilassila.litematica.printer.core.scan.ScanGeneration;
 import me.aleksilassila.litematica.printer.core.scan.ScanHandle;
+import me.aleksilassila.litematica.printer.core.scan.ScanOrderShadow;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -38,6 +39,7 @@ final class SectionScanSession {
     private final LongSupplier snapshotRevision;
     private final LongSupplier generationSequence;
     private final SchematicBlockIndex schematicIndex;
+    private final ScanOrderShadow shadow;
     private long sourceRevision;
     private long cursorRevision;
     private long exhaustedUntilTick = Long.MIN_VALUE;
@@ -62,6 +64,12 @@ final class SectionScanSession {
             LongSupplier generationSequence,
             SchematicBlockIndex schematicIndex
     ) {
+        this(region, sourceBoxes, intent, metrics, epoch, snapshotRevision, generationSequence, schematicIndex, null);
+    }
+
+    SectionScanSession(ScanRegion region, List<PrinterBox> sourceBoxes, ScanIntent intent,
+                       ScanMetricsAccumulator metrics, RuntimeEpoch epoch, LongSupplier snapshotRevision,
+                       LongSupplier generationSequence, SchematicBlockIndex schematicIndex, ScanOrderShadow shadow) {
         this.region = region;
         this.sourceBoxes = List.copyOf(sourceBoxes);
         this.intent = intent;
@@ -70,6 +78,7 @@ final class SectionScanSession {
         this.snapshotRevision = snapshotRevision;
         this.generationSequence = generationSequence;
         this.schematicIndex = schematicIndex;
+        this.shadow = shadow;
         this.scanHandle = this.createScanHandle();
         this.distanceCursor = this.createDistanceCursor();
     }
@@ -81,6 +90,10 @@ final class SectionScanSession {
             ScanMetricsAccumulator metrics
     ) {
         this(region, sourceBoxes, intent, metrics, RuntimeEpoch.INITIAL, () -> 0L, () -> 0L, null);
+    }
+
+    boolean isFor(ScanIntent intent) {
+        return this.intent == intent;
     }
 
     boolean canReuse(ScanRegion region) {
@@ -151,7 +164,7 @@ final class SectionScanSession {
                     && this.schematicIndex != null
                     && this.schematicIndex.isReady()) {
                 return new IndexedPositionCursor(this.schematicIndex, this.sourceBoxes, this.region,
-                        this.metrics.timing, this.metrics.owner);
+                        this.metrics.timing, this.metrics.owner, this.shadow, this.scanHandle);
             }
             return new SynchronousPositionCursor(
                     this.sourceBoxes,

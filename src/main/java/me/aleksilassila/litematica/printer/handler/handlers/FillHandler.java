@@ -49,6 +49,7 @@ public class FillHandler extends FeatureModuleBase {
     private final SharedPlacementSettings placementSettings;
     public final static String NAME = "fill";
     private List<String> fillCacheBlocklist = new ArrayList<>();
+    private boolean blocklistMaterialsActive;
     private List<String> replaceableListCache = List.of();
     private String[] replaceableFilters = new String[0];
     @Getter
@@ -98,9 +99,10 @@ public class FillHandler extends FeatureModuleBase {
         FillBlockModeType fillMode = (FillBlockModeType) Configs.Fill.FILL_BLOCK_MODE.getOptionListValue();
         switch (fillMode) {
             case BLOCKLIST:
-                // 每次去MC注册表中获取会造成大量卡顿, 所以仅在玩家修改了填充列表, 再去读取以便注册表
+                // 手持模式会覆盖当前材料；返回列表模式或修改列表时重新解析。
                 List<String> strings = Configs.Fill.FILL_BLOCK_LIST.getStrings();
-                if (!strings.equals(fillCacheBlocklist)) {
+                if (!this.blocklistMaterialsActive || !strings.equals(fillCacheBlocklist)) {
+                    this.blocklistMaterialsActive = true;
                     fillCacheBlocklist = new ArrayList<>(strings);
                     fillModeItemList = new Item[0];
                     if (strings.isEmpty()) {
@@ -112,6 +114,7 @@ public class FillHandler extends FeatureModuleBase {
                 }
                 break;
             case HANDHELD:  // 手持物品
+                this.blocklistMaterialsActive = false;
                 if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
                     ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
                     if (!heldStack.isEmpty() && heldStack.getCount() > 0) {
@@ -321,17 +324,6 @@ public class FillHandler extends FeatureModuleBase {
             setIterationConsumedEffectiveExecution(false);
             return;
         }
-        if (Configs.Placement.FALLING_CHECK.getBooleanValue() &&
-                player.getMainHandItem().getItem() instanceof BlockItem item &&
-                item.getBlock() instanceof FallingBlock block &&
-                FallingBlock.isFree(level.getBlockState(blockPos.below()))
-        ) {
-            this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, HudStatus.FALLING_NO_SUPPORT);
-            MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(block.getName().getString()));
-            this.retryTargets.add(blockPos.immutable());
-            setIterationConsumedEffectiveExecution(false);
-            return;
-        }
         boolean handheld = Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD;
         BlockState currentState = level.getBlockState(blockPos);
         if (!this.isFillTarget(currentState)) {
@@ -362,6 +354,18 @@ public class FillHandler extends FeatureModuleBase {
         }
         if (!handheld) {
             this.missingMaterials.resolve(this.fillModeItemList, null);
+        }
+        // Evaluate the material selected for this placement, after any inventory wait has ended.
+        if (Configs.Placement.FALLING_CHECK.getBooleanValue() &&
+                player.getMainHandItem().getItem() instanceof BlockItem item &&
+                item.getBlock() instanceof FallingBlock block &&
+                FallingBlock.isFree(level.getBlockState(blockPos.below()))
+        ) {
+            this.hudStats.recordDeferred(HudStatsManager.Mode.FILL, HudStatus.FALLING_NO_SUPPORT);
+            MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(block.getName().getString()));
+            this.retryTargets.add(blockPos.immutable());
+            setIterationConsumedEffectiveExecution(false);
+            return;
         }
         Direction side = this.getFillPlacementSide(blockPos);
         if (side == null) {

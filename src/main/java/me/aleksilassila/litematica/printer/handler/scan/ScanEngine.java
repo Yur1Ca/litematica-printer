@@ -82,6 +82,10 @@ public final class ScanEngine implements RuntimeComponent {
         return this.cache.dirtyVersion();
     }
 
+    public long printSourceRevision() {
+        return this.cache.printSourceRevision();
+    }
+
     public DirtyRegionTracker.DirtySnapshot dirtySnapshotAfter(long lastSeenVersion, PrinterBox bounds) {
         return this.cache.dirtySnapshotAfter(lastSeenVersion, bounds);
     }

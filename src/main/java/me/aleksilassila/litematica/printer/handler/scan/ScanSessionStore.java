@@ -3,6 +3,8 @@ package me.aleksilassila.litematica.printer.handler.scan;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
+import me.aleksilassila.litematica.printer.core.scan.ScanOrderShadow;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -19,14 +21,46 @@ final class ScanSessionStore implements AutoCloseable {
     private final Map<String, ScanMetricsAccumulator> metrics = new HashMap<>();
     private final SchematicBlockIndex schematicIndex;
     private final RuntimeTiming timing;
+    private final ScanOrderShadow shadow;
+    private long shadowSuperseded;
+    private long shadowOverwritten;
 
     ScanSessionStore(SchematicBlockIndex schematicIndex) {
         this(schematicIndex, RuntimeTiming.disabled());
     }
 
     ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing) {
+        this(schematicIndex, timing, timing.enabled() && Boolean.getBoolean("litematica.printer.scanShadow")
+                ? new ScanOrderShadow() : null);
+    }
+
+    ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing, ScanOrderShadow shadow) {
         this.schematicIndex = schematicIndex;
         this.timing = timing;
+        this.shadow = shadow;
+    }
+
+    void collectComparisons() {
+        if (this.shadow == null) return;
+        ScanOrderShadow.Result result = this.shadow.poll();
+        if (result != null) {
+            Reason reason = switch (result.status()) {
+                case MATCH -> Reason.SHADOW_MATCHED;
+                case MISMATCH -> Reason.SHADOW_MISMATCHED;
+                case STALE -> Reason.SHADOW_STALE;
+                case FAILED -> Reason.SHADOW_FAILED;
+            };
+            this.timing.count("scan-shadow", reason, 1);
+            this.timing.recordElapsed("scan-shadow", Stage.SHADOW_SNAPSHOT, result.snapshotNanos());
+            this.timing.recordElapsed("scan-shadow", Stage.SHADOW_QUEUE, result.queueNanos());
+            this.timing.recordElapsed("scan-shadow", Stage.SHADOW_COMPUTE, result.computeNanos());
+            this.timing.recordElapsed("scan-shadow", Stage.SHADOW_READY, result.readyNanos());
+        }
+        long superseded = this.shadow.supersededRequests(), overwritten = this.shadow.overwrittenResults();
+        this.timing.count("scan-shadow", Reason.SHADOW_SUPERSEDED, superseded - this.shadowSuperseded);
+        this.timing.count("scan-shadow", Reason.SHADOW_OVERWRITTEN, overwritten - this.shadowOverwritten);
+        this.shadowSuperseded = superseded;
+        this.shadowOverwritten = overwritten;
     }
 
     ScanMetricsAccumulator metrics(String ownerKey) {
@@ -76,6 +110,18 @@ final class ScanSessionStore implements AutoCloseable {
         }
     }
 
+    void resetIntent(ScanIntent intent) {
+        Iterator<SectionScanSession> iterator = this.sessions.values().iterator();
+        while (iterator.hasNext()) {
+            SectionScanSession session = iterator.next();
+            if (session.isFor(intent)) {
+                session.recordReason(Reason.CHUNK_REPLACED);
+                session.close();
+                iterator.remove();
+            }
+        }
+    }
+
     SectionScanSession getOrCreate(
             String ownerKey,
             ScanMetricsAccumulator metrics,
@@ -101,7 +147,8 @@ final class ScanSessionStore implements AutoCloseable {
                     epoch,
                     snapshotRevision,
                     generationSequence,
-                    this.schematicIndex
+                    this.schematicIndex,
+                    this.shadow
             );
             this.sessions.put(key, session);
         } else {
@@ -116,6 +163,7 @@ final class ScanSessionStore implements AutoCloseable {
             session.close();
         }
         this.sessions.clear();
+        if (this.shadow != null) this.shadow.reset();
     }
 
     void clearMetrics() {

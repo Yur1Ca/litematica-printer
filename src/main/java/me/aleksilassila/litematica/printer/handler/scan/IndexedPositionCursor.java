@@ -4,18 +4,17 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
+import me.aleksilassila.litematica.printer.core.scan.OrderedPositions;
+import me.aleksilassila.litematica.printer.core.scan.ScanHandle;
+import me.aleksilassila.litematica.printer.core.scan.ScanOrderShadow;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import net.minecraft.core.BlockPos;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /** Distance-ordered cursor over the sparse non-air schematic index. */
 final class IndexedPositionCursor implements PositionCursor {
-    private final List<BlockPos> positions;
-    private final int centerX;
-    private final int centerY;
-    private final int centerZ;
+    private final OrderedPositions positions;
     private int index;
 
     IndexedPositionCursor(
@@ -28,19 +27,23 @@ final class IndexedPositionCursor implements PositionCursor {
 
     IndexedPositionCursor(SchematicPositionQuery schematicIndex, List<PrinterBox> sourceBoxes,
                           ScanRegion region, RuntimeTiming timing, String owner) {
-        this.centerX = region.centerX();
-        this.centerY = region.centerY();
-        this.centerZ = region.centerZ();
-        List<BlockPos> candidates = new ArrayList<>();
+        this(schematicIndex, sourceBoxes, region, timing, owner, null, null);
+    }
+
+    IndexedPositionCursor(SchematicPositionQuery schematicIndex, List<PrinterBox> sourceBoxes,
+                          ScanRegion region, RuntimeTiming timing, String owner,
+                          ScanOrderShadow shadow, ScanHandle handle) {
+        LongArrayList candidates = new LongArrayList();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         long filterStart = timing.start();
         long visited;
         try {
             visited = schematicIndex.forEachInRange(sourceBoxes, region, packed -> {
-                BlockPos pos = BlockPos.of(packed);
+                pos.set(BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed));
                 if (ScanGeometry.containsAny(sourceBoxes, pos)
                         && ScanGeometry.distanceSqr(pos, region.centerX(), region.centerY(), region.centerZ())
                         <= (long) region.maxDistanceBand() * region.maxDistanceBand()) {
-                    candidates.add(pos);
+                    candidates.add(packed);
                 }
             });
         } finally {
@@ -48,22 +51,21 @@ final class IndexedPositionCursor implements PositionCursor {
         }
         timing.count(owner, Reason.INDEX_POSITIONS_VISITED, visited);
         timing.count(owner, Reason.INDEX_CANDIDATES, candidates.size());
+        long copyStart = timing.start();
+        long[] snapshot;
+        try {
+            snapshot = candidates.toLongArray();
+        } finally {
+            timing.finish(owner, Stage.INDEX_COPY, copyStart);
+        }
         long sortStart = timing.start();
         try {
-            candidates.sort(Comparator
-                    .comparingLong((BlockPos pos) -> ScanGeometry.distanceSqr(
-                            pos, region.centerX(), region.centerY(), region.centerZ()))
-                    .thenComparingInt(BlockPos::getY)
-                    .thenComparingInt(BlockPos::getX)
-                    .thenComparingInt(BlockPos::getZ));
+            this.positions = new OrderedPositions(snapshot, region.centerX(), region.centerY(), region.centerZ());
         } finally {
             timing.finish(owner, Stage.INDEX_SORT, sortStart);
         }
-        long copyStart = timing.start();
-        try {
-            this.positions = List.copyOf(candidates);
-        } finally {
-            timing.finish(owner, Stage.INDEX_COPY, copyStart);
+        if (shadow != null) {
+            shadow.submit(handle, snapshot, this.positions, region.centerX(), region.centerY(), region.centerZ());
         }
     }
 
@@ -72,7 +74,8 @@ final class IndexedPositionCursor implements PositionCursor {
         if (this.index >= this.positions.size()) {
             return PollResult.COMPLETE;
         }
-        target.set(this.positions.get(this.index++));
+        long packed = this.positions.positionAt(this.index++);
+        target.set(BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed));
         return PollResult.AVAILABLE;
     }
 
@@ -81,8 +84,7 @@ final class IndexedPositionCursor implements PositionCursor {
         if (this.index >= this.positions.size()) {
             return Long.MAX_VALUE;
         }
-        BlockPos pos = this.positions.get(this.index);
-        return ScanGeometry.distanceSqr(pos, this.centerX, this.centerY, this.centerZ);
+        return this.positions.distanceAt(this.index);
     }
 
     @Override

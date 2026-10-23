@@ -4,6 +4,8 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
+import me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncTransfer;
+import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerClicks;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
@@ -13,6 +15,8 @@ import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -20,11 +24,6 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
-//#if MC > 260100
-import net.minecraft.world.inventory.ContainerInput;
-//#else
-//$$ import net.minecraft.world.inventory.ClickType;
-//#endif
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -53,7 +52,6 @@ import red.jackf.chesttracker.api.providers.ProviderUtils;
 /** Optional Chest Tracker world-container material provider. */
 public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComponent {
     private static final String LEASE_OWNER = "chest_tracker";
-    private static final String DISPATCH_LEASE_OWNER = "chest_tracker_dispatch";
     private static final int MAX_SCAN_CANDIDATES = 64;
     private static final int OPEN_TIMEOUT_BASE_TICKS = 8;
     private static final int OPEN_TIMEOUT_SAFETY_TICKS = 2;
@@ -66,8 +64,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private final SelectedContainerCache selectedContainers = new SelectedContainerCache();
     private final Map<Item, List<Candidate>> index = new HashMap<>();
     private final Set<BlockPos> invalidCandidates = new HashSet<>();
-    private boolean resourcesAcquired;
-    private boolean dispatchAcquired;
     private MaterialRequest activeRequest;
     private List<Candidate> candidates = List.of();
     private int candidateIndex;
@@ -88,6 +84,16 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private AbstractContainerMenu ownedMenu;
     private Object ownedConnection;
     private Object ownedLevel;
+    private ChestTrackerTransfer transfer;
+    private AbstractContainerMenu openingMenu;
+    private int openingRevision;
+    private boolean cancelling, closing;
+    private ItemStack pendingShulker = ItemStack.EMPTY;
+    private List<ItemStack> inventoryBeforeTake = List.of();
+    private int pendingSourceSlot;
+    private MaterialReservation completedReservation;
+    private AbstractContainerScreen<?> suppressedScreen;
+    private AbstractContainerMenu recoveryShownMenu;
 
     public ChestTrackerAdapter(ActionPort actionBroker) {
         this.client = Minecraft.getInstance();
@@ -138,15 +144,14 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public MaterialReservation status(MaterialRequest request) {
+        if (this.completedReservation != null && this.completedReservation.token() == request.token()) {
+            return this.completedReservation;
+        }
         if (this.activeRequest == null || this.activeRequest.token() != request.token()) {
             return unavailable(request);
         }
-        if (this.phase == Phase.WAITING_RESTORE_SYNC) {
-            if (this.nestedReturn.waitingForSync(gameTick())) return pending(request);
-            finishAvailable();
-            return MaterialReservation.available(request, request.preferredItem());
-        }
-        if (waitForRestoreContent(this.phase)) return pending(request);
+        if (this.transfer != null || this.openingMenu != null || this.phase == Phase.WAITING_CONTENT
+                || waitForRestoreContent(this.phase) || this.cancelling) return pending(request);
         for (Item item : request.acceptedItems()) {
             if (InventoryUtils.playerHasItemInInventory(this.client.player, item, request::acceptsStack)) {
                 if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
@@ -168,7 +173,32 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     @Override
     public void tick() {
         if (this.activeRequest == null) return;
+        if ((this.transfer != null || this.openingMenu != null || this.ownedMenu != null) && !sameWorld()) {
+            discard();
+            return;
+        }
+        if (this.transfer != null) {
+            if (!acquire()) return;
+            this.transfer.tick();
+            finishTransfer();
+            showRecoveryScreen();
+            return;
+        }
+        if (this.ownedMenu != null && this.client.player.containerMenu != this.ownedMenu) {
+            this.cancelling = true;
+            this.transfer = new ChestTrackerTransfer(this.client, this.ownedMenu);
+            this.transfer.cancel();
+            this.transfer.synchronize();
+            acquire();
+            return;
+        }
         long now = gameTick();
+        if (this.openingMenu != null || this.phase == Phase.WAITING_CONTENT || this.phase == Phase.RESTORE_WAIT_CONTENT) {
+            acquire();
+            // Elapsed time cancels intent, but cannot prove that a delayed open has settled.
+            if (now >= this.openDeadline) this.cancelling = true;
+            return;
+        }
         if (this.phase == Phase.WAITING_INVENTORY && hasRequestedItem()) {
             if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
                 beginNestedRestore();
@@ -177,17 +207,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             }
             return;
         }
-        if (this.phase == Phase.WAITING_RESTORE_SYNC && !this.nestedReturn.waitingForSync(now)) {
-            finishAvailable();
-            return;
-        }
-        if (this.phase == Phase.RESTORE_WAIT_CONTENT && now >= this.openDeadline) {
-            failNestedRestore("归还超时");
-            return;
-        }
-        if (this.phase == Phase.WAITING_CONTENT && now >= this.openDeadline) {
-            failAndContinue();
-        } else if (now >= this.requestDeadline) {
+        if (now >= this.requestDeadline) {
             finishUnavailable(this.requestedItem);
         }
     }
@@ -197,6 +217,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (this.activeRequest != null
                 && (this.phase == Phase.WAITING_CONTENT || this.phase == Phase.RESTORE_WAIT_CONTENT)
                 && this.suppressContainerScreen
+                && (this.openingMenu == null || sameWorld())
                 && player != null
                 && player.containerMenu != player.inventoryMenu
                 && player.containerMenu.containerId == containerId) {
@@ -205,26 +226,47 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             this.ownedMenu = player.containerMenu;
             this.ownedConnection = this.client.getConnection();
             this.ownedLevel = this.client.level;
+            this.openingMenu = null;
         }
     }
 
     /** Called after a matching container-content packet has populated the active menu. */
-    public void onContainerContent(int containerId) {
-        if (this.activeRequest == null
-                || (this.phase != Phase.WAITING_CONTENT && this.phase != Phase.RESTORE_WAIT_CONTENT)) return;
-        if (this.expectedContainerId >= 0 && this.expectedContainerId != containerId) {
-            boolean ownsCurrentMenu = this.client.player != null
-                    && this.client.player.containerMenu.containerId == this.expectedContainerId;
-            if (this.nestedReturn.isRestoring()) {
-                failNestedRestore("容器包不匹配", ownsCurrentMenu);
-            } else {
-                abortRequest("容器包不匹配", ownsCurrentMenu);
-            }
+    public void onContainerContent(int containerId, int revision, List<ItemStack> items, ItemStack cursor) {
+        if (this.transfer != null) {
+            this.transfer.observe(containerId, revision, items, cursor);
+            finishTransfer();
+            showRecoveryScreen();
             return;
         }
-        this.expectedContainerId = -1;
+        if (this.openingMenu != null && sameWorld() && this.client.player.containerMenu == this.openingMenu
+                && containerId == this.openingMenu.containerId && items.size() == this.openingMenu.slots.size()
+                && ContainerSyncTransfer.newerRevision(revision, this.openingRevision)) {
+            // The no-op after our open was handled on the old menu: no container was opened.
+            var previous = this.openingMenu;
+            this.openingMenu = null;
+            if (!cursor.isEmpty()) {
+                this.cancelling = true;
+                this.transfer = new ChestTrackerTransfer(this.client, previous);
+                this.transfer.cancel();
+                this.transfer.synchronize();
+            } else if (this.cancelling) discard();
+            else failAndContinue();
+            return;
+        }
+        if (this.activeRequest == null
+                || (this.phase != Phase.WAITING_CONTENT && this.phase != Phase.RESTORE_WAIT_CONTENT)) return;
         LocalPlayer player = this.client.player;
-        if (player == null || player.containerMenu.containerId != containerId) return;
+        if (player == null || this.ownedMenu == null || !sameWorld() || player.containerMenu != this.ownedMenu
+                || this.expectedContainerId != containerId || items.size() != this.ownedMenu.slots.size()) return;
+        if (!acquire()) return;
+        if (!cursor.isEmpty()) {
+            this.cancelling = true;
+            this.transfer = new ChestTrackerTransfer(this.client, this.ownedMenu);
+            this.transfer.cancel();
+            this.transfer.synchronize();
+            return;
+        }
+        if (this.cancelling) { closeContainer(); discard(); return; }
         if (this.client.gameMode == null) {
             finishUnavailable(this.requestedItem);
             return;
@@ -263,27 +305,12 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             if (!openNextCandidate()) finishUnavailable(this.requestedItem);
             return;
         }
-        if (!this.actionBroker.tryAcquire(LEASE_OWNER, EnumSet.of(ResourceLease.CONTAINER), 0L)) {
-            return;
-        }
-        if (!this.actionBroker.tryAcquire(LEASE_OWNER + "_take", EnumSet.of(ResourceLease.INVENTORY), 0L)) {
-            return;
-        }
-        ItemStack nestedSnapshot = nested ? menu.slots.get(sourceSlot).getItem().copy() : ItemStack.EMPTY;
-        List<ItemStack> inventoryBefore = nested ? NestedShulkerReturn.inventorySnapshot(player) : List.of();
-        quickMove(menu, sourceSlot, player);
-        this.actionBroker.releaseOwner(LEASE_OWNER + "_take");
-        closeContainer();
-        if (nested) {
-            this.nestedReturn.recordTransfer(this.targetPos, sourceSlot, nestedSnapshot,
-                    NestedShulkerReturn.locateMovedShulker(player, nestedSnapshot, inventoryBefore));
-            this.phase = Phase.WAITING_INVENTORY;
-            if (!TakeItOutUtils.tryRequestItem(this.requestedItem)) {
-                RuntimeAccess.get().quickShulkerAdapter().requestItemsDirect(List.of(this.requestedItem));
-            }
-        } else {
-            this.phase = Phase.WAITING_INVENTORY;
-        }
+        this.pendingShulker = nested ? menu.slots.get(sourceSlot).getItem().copy() : ItemStack.EMPTY;
+        this.inventoryBeforeTake = nested ? NestedShulkerReturn.inventorySnapshot(player) : List.of();
+        this.pendingSourceSlot = sourceSlot;
+        this.phase = Phase.WAITING_INVENTORY;
+        this.transfer = new ChestTrackerTransfer(this.client, menu);
+        this.transfer.take(sourceSlot);
     }
 
     public boolean requestFromScreen(ItemStack stack) {
@@ -318,7 +345,29 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         // Only hide the screen opened by our own remote interaction. Keeping
         // this tied to the phase used to block a player's manually opened
         // chest while an inventory packet was still pending.
-        return this.suppressContainerScreen;
+        return this.suppressContainerScreen && (this.transfer == null || !this.transfer.needsAttention());
+    }
+
+    public void rememberSuppressedScreen(AbstractContainerScreen<?> screen) {
+        if (this.activeRequest != null && this.client.player != null
+                && screen.getMenu() == this.client.player.containerMenu) this.suppressedScreen = screen;
+    }
+
+    private void showRecoveryScreen() {
+        if (this.transfer == null || !this.transfer.needsAttention() || !sameWorld()) return;
+        var current = this.client.player.containerMenu;
+        if (this.recoveryShownMenu == current) return;
+        // Reuse the actual suppressed screen: an InventoryScreen while a chest menu is active
+        // would send recovery clicks to the wrong container ID.
+        AbstractContainerScreen<?> screen = this.suppressedScreen;
+        if (current == this.client.player.inventoryMenu) screen = new InventoryScreen(this.client.player);
+        if (screen == null || screen.getMenu() != current) return;
+        this.recoveryShownMenu = current;
+        //#if MC > 260100
+        //$$ this.client.gui.setScreen(screen);
+        //#else
+        this.client.setScreen(screen);
+        //#endif
     }
 
     @Override
@@ -378,8 +427,23 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void reset() {
-        closeContainer();
+        this.completedReservation = null;
+        if (sameWorld() && (this.transfer != null || this.openingMenu != null || this.ownedMenu != null)) {
+            this.cancelling = true;
+            if (this.transfer != null) this.transfer.cancel();
+            acquire();
+            return;
+        }
+        discard();
+    }
+
+    private void discard() {
         releaseResources();
+        this.transfer = null;
+        this.openingMenu = null;
+        this.cancelling = false;
+        this.pendingShulker = ItemStack.EMPTY;
+        this.inventoryBeforeTake = List.of();
         this.activeRequest = null;
         this.candidates = List.of();
         this.candidateIndex = 0;
@@ -400,7 +464,18 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void onEpochChanged(RuntimeEvent.EpochChanged event) {
-        this.reset();
+        if (!this.client.isSameThread()) {
+            Object connection = this.ownedConnection, level = this.ownedLevel;
+            this.client.execute(() -> {
+                if (connection == this.ownedConnection && level == this.ownedLevel) onEpochChanged(event);
+            });
+            return;
+        }
+        if (event.reason().equals("disconnect") || event.reason().equals("client_scope_changed")
+                || event.reason().equals("local_player_init") || !sameWorld()) {
+            this.completedReservation = null;
+            discard();
+        } else reset();
     }
 
     private boolean enabled() {
@@ -424,25 +499,21 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private boolean open(BlockPos pos) {
-        if (this.client.player == null || this.client.level == null) return false;
+        if (this.client.player == null || this.client.level == null
+                || this.client.player.containerMenu != this.client.player.inventoryMenu
+                || !this.client.player.containerMenu.getCarried().isEmpty()) return false;
         this.expectedContainerId = -1;
-        if (!this.actionBroker.tryAcquire(LEASE_OWNER, EnumSet.of(ResourceLease.CONTAINER), 0L)) return false;
-        if (!this.actionBroker.tryAcquire(DISPATCH_LEASE_OWNER,
-                EnumSet.of(ResourceLease.MAIN_HAND, ResourceLease.INTERACTION), 0L)) {
-            this.actionBroker.releaseOwner(LEASE_OWNER);
-            return false;
-        }
-        this.resourcesAcquired = true;
-        this.dispatchAcquired = true;
+        if (!acquire()) return false;
+        this.ownedConnection = this.client.getConnection();
+        this.ownedLevel = this.client.level;
+        this.openingMenu = this.client.player.containerMenu;
+        this.openingRevision = this.openingMenu.getStateId();
         this.suppressContainerScreen = true;
-        try {
-            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
-            InteractionResult result = InteractionUtils.getRuntime().useItemOn(false, InteractionHand.MAIN_HAND, hit);
-            return result != InteractionResult.FAIL;
-        } finally {
-            this.actionBroker.releaseOwner(DISPATCH_LEASE_OWNER);
-            this.dispatchAcquired = false;
-        }
+        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+        InteractionResult result = InteractionUtils.getRuntime().useItemOn(false, InteractionHand.MAIN_HAND, hit);
+        if (result == InteractionResult.FAIL) { this.openingMenu = null; releaseResources(); return false; }
+        QuickShulkerClicks.requestFullSync(this.openingMenu);
+        return true;
     }
 
     private void failAndContinue() {
@@ -460,6 +531,14 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void finishAvailable(boolean closeOwnedMenu) {
+        if (this.activeRequest != null) {
+            for (Item item : this.activeRequest.acceptedItems()) {
+                if (InventoryUtils.playerHasItemInInventory(this.client.player, item, this.activeRequest::acceptsStack)) {
+                    this.completedReservation = MaterialReservation.available(this.activeRequest, item);
+                    break;
+                }
+            }
+        }
         if (closeOwnedMenu) closeContainer();
         else releaseResources();
         selectCompletedPickBlockItem();
@@ -504,29 +583,90 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
                 && this.ownedMenu != this.client.player.inventoryMenu
                 && this.client.getConnection() == this.ownedConnection
                 && this.client.level == this.ownedLevel) {
-            this.client.player.closeContainer();
+            this.closing = true;
+            try { this.client.player.closeContainer(); } finally { this.closing = false; }
         }
         clearOwnedMenu();
-        this.actionBroker.releaseOwner(LEASE_OWNER + "_take");
         this.actionBroker.releaseOwner(LEASE_OWNER);
-        this.resourcesAcquired = false;
         this.suppressContainerScreen = false;
         this.expectedContainerId = -1;
     }
 
     private void releaseResources() {
         clearOwnedMenu();
-        if (this.dispatchAcquired) this.actionBroker.releaseOwner(DISPATCH_LEASE_OWNER);
-        this.actionBroker.releaseOwner(LEASE_OWNER + "_take");
         this.actionBroker.releaseOwner(LEASE_OWNER);
-        this.dispatchAcquired = false;
-        this.resourcesAcquired = false;
     }
 
     private void clearOwnedMenu() {
         this.ownedMenu = null;
         this.ownedConnection = null;
         this.ownedLevel = null;
+        this.suppressedScreen = null;
+        this.recoveryShownMenu = null;
+    }
+
+    private boolean acquire() {
+        return this.actionBroker.tryAcquire(LEASE_OWNER, EnumSet.of(ResourceLease.INVENTORY,
+                ResourceLease.CONTAINER, ResourceLease.MAIN_HAND, ResourceLease.INTERACTION), 0L);
+    }
+
+    private boolean sameWorld() {
+        return this.client.player != null && this.client.getConnection() == this.ownedConnection
+                && this.client.level == this.ownedLevel;
+    }
+
+    private void finishTransfer() {
+        if (this.transfer == null || !this.transfer.finished()) return;
+        boolean completed = this.transfer.completed();
+        this.transfer = null;
+        if (this.cancelling || !completed) {
+            closeContainer();
+            discard();
+            return;
+        }
+        if (this.phase == Phase.WAITING_RESTORE_SYNC) {
+            finishAvailable();
+            return;
+        }
+        int shulkerSlot = this.pendingShulker.isEmpty() ? -1
+                : NestedShulkerReturn.locateMovedShulker(this.client.player, this.pendingShulker, this.inventoryBeforeTake);
+        closeContainer();
+        if (!this.pendingShulker.isEmpty() && shulkerSlot >= 0) {
+            this.nestedReturn.recordTransfer(this.targetPos, this.pendingSourceSlot, this.pendingShulker, shulkerSlot);
+            this.pendingShulker = ItemStack.EMPTY;
+            this.inventoryBeforeTake = List.of();
+            // The nested provider may acquire inventory only after the outer take is confirmed and closed.
+            if (!TakeItOutUtils.tryRequestItem(this.requestedItem)) {
+                RuntimeAccess.get().quickShulkerAdapter().requestItemsDirect(List.of(this.requestedItem));
+            }
+        } else if (hasRequestedItem()) {
+            finishAvailable();
+        } else {
+            failAndContinue();
+        }
+    }
+
+    public boolean guardManualInput() {
+        if (this.closing || !sameWorld()) return false;
+        if (this.transfer != null) {
+            this.cancelling = true;
+            return this.transfer.guardManualInput();
+        }
+        if (this.openingMenu != null || this.ownedMenu != null) {
+            this.cancelling = true;
+            return true;
+        }
+        return false;
+    }
+
+    public boolean guardClose() {
+        if (this.closing || !sameWorld()) return false;
+        if (this.transfer != null) {
+            this.cancelling = true;
+            this.transfer.cancel();
+            return true;
+        }
+        return guardManualInput();
     }
 
     private boolean failedRecently(Item item) {
@@ -581,22 +721,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
                 && blockItem.getBlock() instanceof ShulkerBoxBlock;
     }
 
-    private static void quickMove(AbstractContainerMenu menu, int slot, LocalPlayer player) {
-        //#if MC > 260100
-        Minecraft.getInstance().gameMode.handleContainerInput(menu.containerId, slot, 0, ContainerInput.QUICK_MOVE, player);
-        //#else
-        //$$ Minecraft.getInstance().gameMode.handleInventoryMouseClick(menu.containerId, slot, 0, ClickType.QUICK_MOVE, player);
-        //#endif
-    }
-
-    private static void pickup(AbstractContainerMenu menu, int slot, LocalPlayer player) {
-        //#if MC > 260100
-        Minecraft.getInstance().gameMode.handleContainerInput(menu.containerId, slot, 0, ContainerInput.PICKUP, player);
-        //#else
-        //$$ Minecraft.getInstance().gameMode.handleInventoryMouseClick(menu.containerId, slot, 0, ClickType.PICKUP, player);
-        //#endif
-    }
-
     private void beginNestedRestore() {
         if (!this.nestedReturn.beginRestore(
                 RuntimeAccess.get().quickShulkerAdapter().hasPendingRequest(),
@@ -636,16 +760,13 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             failNestedRestore("背包中找不到原潜影盒");
             return;
         }
-        pickup(menu, playerSlot, player);
-        pickup(menu, sourceSlot, player);
-        if (!menu.getCarried().isEmpty()) {
-            pickup(menu, playerSlot, player);
-            failNestedRestore("服务器拒绝归还");
+        if (!menu.slots.get(playerSlot).mayPickup(player) || !menu.slots.get(sourceSlot).mayPlace(player.getInventory().getItem(inventorySlot))) {
+            failNestedRestore("槽位不允许归还");
             return;
         }
-        closeContainer();
         this.phase = Phase.WAITING_RESTORE_SYNC;
-        this.nestedReturn.markWaitingForSync(gameTick());
+        this.transfer = new ChestTrackerTransfer(this.client, menu);
+        this.transfer.returnStack(playerSlot, sourceSlot);
     }
 
     private void failNestedRestore(String reason) {

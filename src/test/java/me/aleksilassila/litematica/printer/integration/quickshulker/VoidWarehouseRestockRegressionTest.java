@@ -3,14 +3,17 @@ package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import java.util.List;
 import java.util.EnumSet;
+import java.io.IOException;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.integration.inventory.InventoryProvider;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialReservation;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseRestockAdapter;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseRestockNetwork;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseRestockPort;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
+import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import neko.voidwarehouse.restock.PrinterTakeResultPayload;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.level.Level;
@@ -52,26 +55,18 @@ class VoidWarehouseRestockRegressionTest {
     }
 
     static class Fixture extends TakeItOutRequestOwnershipTest.Fixture {
+        final Class<?> warehouseType = new RestockTestLoader().loadClass(VoidWarehouseRestockAdapter.class.getName());
         final Network network = new Network();
-        final VoidWarehouseRestockAdapter warehouse = new VoidWarehouseRestockAdapter(broker, network);
+        final InventoryProvider warehouse = (InventoryProvider) warehouseType
+                .getConstructor(ActionPort.class, VoidWarehouseRestockPort.class).newInstance(broker, network);
         final MaterialRequestCoordinator materials = new MaterialRequestCoordinator(List.of(warehouse, next));
         final ClientLevel.ClientLevelData clock = new ClientLevel.ClientLevelData(Difficulty.NORMAL, false, false);
-        final Object previousInventoryClient;
         Fixture() throws Exception {
             set(client.level, Level.class, "levelData", clock);
             set(client.level, ClientLevel.class, "clientLevelData", clock);
-            var field = InventoryUtils.class.getDeclaredField("client"); field.setAccessible(true);
-            previousInventoryClient = field.get(null);
-            setInventoryClient(client);
         }
-        private static void setInventoryClient(Object client) throws Exception {
-            var access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe"); access.setAccessible(true);
-            var unsafe = (sun.misc.Unsafe) access.get(null);
-            var field = InventoryUtils.class.getDeclaredField("client");
-            unsafe.putObject(unsafe.staticFieldBase(field), unsafe.staticFieldOffset(field), client);
-        }
-        @Override public void close() throws Exception {
-            try { setInventoryClient(previousInventoryClient); } finally { super.close(); }
+        InventoryProvider defaultWarehouse() throws Exception {
+            return (InventoryProvider) warehouseType.getConstructor(ActionPort.class).newInstance(broker);
         }
         void advance(int ticks) { for (int i = 0; i < ticks; i++) materials.tick(); }
         void assertHeld() {
@@ -82,17 +77,40 @@ class VoidWarehouseRestockRegressionTest {
         }
     }
 
+    /** Isolate cached clients without changing the production classes' bytecode or static final fields. */
+    private static class RestockTestLoader extends ClassLoader {
+        RestockTestLoader() { super(VoidWarehouseRestockRegressionTest.class.getClassLoader()); }
+
+        @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            boolean isolated = List.of(VoidWarehouseRestockAdapter.class, InventoryUtils.class).stream()
+                    .map(Class::getName).anyMatch(type -> name.equals(type) || name.startsWith(type + "$"));
+            if (!isolated) return super.loadClass(name, resolve);
+            synchronized (getClassLoadingLock(name)) {
+                var result = findLoadedClass(name);
+                if (result == null) {
+                    try (var input = getParent().getResourceAsStream(name.replace('.', '/') + ".class")) {
+                        if (input == null) throw new ClassNotFoundException(name);
+                        byte[] bytes = input.readAllBytes();
+                        result = defineClass(name, bytes, 0, bytes.length);
+                    } catch (IOException e) { throw new ClassNotFoundException(name, e); }
+                }
+                if (resolve) resolveClass(result);
+                return result;
+            }
+        }
+    }
+
     @Test void anEmptyBoxRequestNeverCompletesWithAStoredFullBox() throws Exception {
         try (var f = new Fixture()) {
-            var adapter = new VoidWarehouseRestockAdapter(f.broker);
+            var adapter = f.defaultWarehouse();
             var request = new MaterialRequest(1, List.of(Items.SHULKER_BOX), Items.SHULKER_BOX,
                     1, MaterialRequest.Source.PRINT, true);
             var full = new ItemStack(Items.SHULKER_BOX);
             full.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIAMOND, 64))));
             f.player.inventory.setItem(10, full);
             // A request already sent; no Fabric networking or game launch is needed to poll it.
-            set(adapter, VoidWarehouseRestockAdapter.class, "activeRequest", request);
-            set(adapter, VoidWarehouseRestockAdapter.class, "activeNonce", 1);
+            set(adapter, f.warehouseType, "activeRequest", request);
+            set(adapter, f.warehouseType, "activeNonce", 1);
             VoidWarehouseRestockNetwork.forget();
             assertEquals(MaterialReservation.State.PENDING, adapter.status(request).state());
             f.player.inventory.setItem(11, new ItemStack(Items.SHULKER_BOX));
@@ -103,11 +121,11 @@ class VoidWarehouseRestockRegressionTest {
 
     @Test void completedRestockWaitsForTheOtherInventoryOwnerBeforeSelecting() throws Exception {
         try (var f = new Fixture()) {
-            var adapter = new VoidWarehouseRestockAdapter(f.broker);
+            var adapter = f.defaultWarehouse();
             var request = new MaterialRequest(2, List.of(Items.STONE), Items.STONE, 1,
                     MaterialRequest.Source.PICK_BLOCK);
-            set(adapter, VoidWarehouseRestockAdapter.class, "activeRequest", request);
-            set(adapter, VoidWarehouseRestockAdapter.class, "activeNonce", 2);
+            set(adapter, f.warehouseType, "activeRequest", request);
+            set(adapter, f.warehouseType, "activeNonce", 2);
             f.player.inventory.setItem(3, new ItemStack(Items.STONE));
             f.player.inventory.setSelectedSlot(0);
             assertTrue(f.broker.tryAcquire("container_sync", EnumSet.of(ResourceLease.INVENTORY,

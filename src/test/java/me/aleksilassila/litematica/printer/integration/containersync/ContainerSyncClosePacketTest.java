@@ -80,22 +80,24 @@ class ContainerSyncClosePacketTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(strings = {"space", "partial", "full"})
+    @ParameterizedTest @ValueSource(strings = {"space", "partial", "full", "half_source"})
     void vanillaForcedCloseReturnsCursorOrDropsOnlyWhatCannotFit(String capacity) throws Exception {
         var player = allocate(ServerPlayer.class);
         player.inventory = new ServerInventory(player);
         player.dropped = new ArrayList<>();
         set(player, net.minecraft.world.entity.player.Player.class, "abilities", new Abilities());
-        if (!capacity.equals("space")) {
+        if (capacity.equals("half_source")) {
+            player.inventory.setItem(0, new ItemStack(Items.STONE, 32));
+        } else if (!capacity.equals("space")) {
             for (int slot = 0; slot < 36; slot++) player.inventory.setItem(slot, new ItemStack(Items.DIRT, 64));
             if (capacity.equals("partial")) player.inventory.setItem(0, new ItemStack(Items.STONE, 63));
         }
         var menu = new Menu(7);
-        menu.setCarried(new ItemStack(Items.STONE, 4));
+        menu.setCarried(new ItemStack(Items.STONE, capacity.equals("half_source") ? 32 : 4));
         menu.removed(player); // The actual server close path invokes this before switching to inventoryMenu.
         assertTrue(menu.getCarried().isEmpty());
-        if (capacity.equals("space")) {
-            assertEquals(4, player.inventory.getItem(0).getCount());
+        if (capacity.equals("space") || capacity.equals("half_source")) {
+            assertEquals(capacity.equals("half_source") ? 64 : 4, player.inventory.getItem(0).getCount());
             assertTrue(player.inventory.getItem(0).is(Items.STONE));
             assertTrue(player.dropped.isEmpty());
         } else {

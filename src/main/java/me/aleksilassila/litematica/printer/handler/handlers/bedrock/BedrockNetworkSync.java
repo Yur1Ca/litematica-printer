@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import net.minecraft.core.BlockPos;
 
 import java.util.HashMap;
@@ -9,6 +10,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
+
+import static me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason.*;
 
 /** Tracks authoritative block updates without delaying the first critical packet bundle. */
 final class BedrockNetworkSync {
@@ -20,14 +23,20 @@ final class BedrockNetworkSync {
 
     private final LongSupplier tickClock;
     private final IntSupplier rttExtraTicks;
+    private final RuntimeTiming timing;
     private final Map<BlockPos, PendingAttempt> pending = new HashMap<>();
     private int adaptiveBackoffs;
     private int serverUpdateTimeouts;
     private String lastResult = "idle";
 
     BedrockNetworkSync(LongSupplier tickClock, IntSupplier rttExtraTicks) {
+        this(tickClock, rttExtraTicks, RuntimeTiming.disabled());
+    }
+
+    BedrockNetworkSync(LongSupplier tickClock, IntSupplier rttExtraTicks, RuntimeTiming timing) {
         this.tickClock = tickClock;
         this.rttExtraTicks = rttExtraTicks;
+        this.timing = timing;
     }
 
     void reset() {
@@ -41,7 +50,10 @@ final class BedrockNetworkSync {
         if (target == null) {
             return;
         }
-        this.pending.put(target.immutable(), new PendingAttempt(footprint, this.tickClock.getAsLong()));
+        PendingAttempt previous = this.pending.put(
+                target.immutable(), new PendingAttempt(footprint, this.tickClock.getAsLong()));
+        this.finishObservation(previous, BEDROCK_DISCARDED_ATTEMPTS);
+        this.timing.count("bedrock", BEDROCK_ATTEMPTS, 1);
         this.lastResult = "dispatched";
     }
 
@@ -56,6 +68,11 @@ final class BedrockNetworkSync {
             }
             if (attempt.firstServerUpdateTick < 0) {
                 attempt.firstServerUpdateTick = tick;
+                if (this.timing.enabled() && !attempt.outcomeRecorded) {
+                    this.timing.count("bedrock", BEDROCK_FIRST_UPDATES, 1);
+                    this.timing.count("bedrock", BEDROCK_FIRST_UPDATE_TICKS,
+                            Math.max(0L, tick - attempt.submittedTick));
+                }
             }
             if (attempt.timeoutRecorded) {
                 attempt.lateUpdate = true;
@@ -71,6 +88,9 @@ final class BedrockNetworkSync {
             return;
         }
         attempt.timeoutRecorded = true;
+        if (!attempt.outcomeRecorded) {
+            this.timing.count("bedrock", BEDROCK_ATTEMPT_TIMEOUTS, 1);
+        }
         attempt.result = "late_update";
         this.serverUpdateTimeouts++;
         this.lastResult = "late_update";
@@ -79,6 +99,7 @@ final class BedrockNetworkSync {
     void recordRetry(BlockPos target) {
         PendingAttempt attempt = this.pending.get(target);
         if (attempt != null) {
+            this.finishObservation(attempt, BEDROCK_RETRIES);
             attempt.result = "retry";
             this.lastResult = "retry";
         }
@@ -88,6 +109,7 @@ final class BedrockNetworkSync {
         if (target != null) {
             PendingAttempt attempt = this.pending.remove(target);
             if (attempt != null) {
+                this.finishObservation(attempt, BEDROCK_CONFIRMED_ATTEMPTS);
                 attempt.result = "confirmed";
             }
             this.lastResult = "confirmed";
@@ -98,10 +120,27 @@ final class BedrockNetworkSync {
         if (target != null) {
             PendingAttempt attempt = this.pending.remove(target);
             if (attempt != null) {
+                this.finishObservation(attempt, BEDROCK_DISCARDED_ATTEMPTS);
                 attempt.result = stuck ? "stuck" : "retry";
             }
         }
         this.lastResult = stuck ? "stuck" : "retry";
+    }
+
+    private void finishObservation(PendingAttempt attempt, RuntimeTiming.Reason outcome) {
+        if (attempt == null || attempt.outcomeRecorded) {
+            return;
+        }
+        // Retain the existing pending-observation lifetime for late updates and the HUD.
+        // Only diagnostic outcomes close here; they never gate an action or change a deadline.
+        attempt.outcomeRecorded = true;
+        if (!this.timing.enabled()) {
+            return;
+        }
+        this.timing.count("bedrock", outcome, 1);
+        this.timing.count("bedrock", BEDROCK_FINISHED_ATTEMPTS, 1);
+        this.timing.count("bedrock", BEDROCK_ATTEMPT_TICKS,
+                Math.max(0L, this.tickClock.getAsLong() - attempt.submittedTick));
     }
 
     int pendingCount() {
@@ -182,6 +221,7 @@ final class BedrockNetworkSync {
         private final long submittedTick;
         private long firstServerUpdateTick = -1L;
         private boolean timeoutRecorded;
+        private boolean outcomeRecorded;
         private boolean lateUpdate;
         private String result = "dispatched";
 

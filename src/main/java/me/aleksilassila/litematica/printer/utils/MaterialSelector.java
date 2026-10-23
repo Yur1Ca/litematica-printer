@@ -1,8 +1,6 @@
 package me.aleksilassila.litematica.printer.utils;
 
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
-import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
-import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -17,6 +15,7 @@ import java.util.function.Predicate;
 /** Selects, reserves and requests material stacks without owning inventory transport state. */
 public final class MaterialSelector {
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
+    private static final MaterialSelectionAccess execution = new ClientMaterialSelectionAccess();
 
     private MaterialSelector() {
     }
@@ -26,7 +25,7 @@ public final class MaterialSelector {
     }
 
     public static boolean switchToItems(LocalPlayer player, Item[] items, int reserveCount, MaterialRequest.Source source) {
-        if (player == null || RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
+        if (player == null || execution.isWaitingForSwitch()) {
             return false;
         }
         if (items == null || items.length == 0) {
@@ -42,23 +41,27 @@ public final class MaterialSelector {
         }
         Minecraft client = Minecraft.getInstance();
         if (PlayerUtils.getAbilities(player).instabuild) {
-            return InventoryUtils.setPickedItemToHand(new ItemStack(items[0]), client);
+            return execution.setPickedItemToHand(new ItemStack(items[0]), client);
         }
         for (Item item : items) {
+            int surplus = -1;
             for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
                 ItemStack itemStack = inventory.getItem(slot);
-                if (itemStack.getItem().equals(item)
-                        && getConsumableSurplus(player, itemStack, null, reserveCount) > 0) {
+                if (itemStack.getItem().equals(item)) {
+                    if (requiresReserve(player, itemStack, reserveCount)) {
+                        if (surplus < 0) surplus = getConsumableSurplus(player, itemStack, null, reserveCount);
+                        if (surplus <= 0) continue;
+                    }
                     boolean needsInventoryConfirmation = !Inventory.isHotbarSlot(slot);
-                    if (InventoryUtils.setPickedItemToHand(slot, itemStack, client)) {
+                    if (execution.setPickedItemToHand(slot, itemStack, client)) {
                         return !needsInventoryConfirmation
-                                || !RuntimeAccess.get().inventorySwitchGuard().markSwitchIfNeeded(item);
+                                || !execution.markSwitchIfNeeded(item);
                     }
                     return false;
                 }
             }
         }
-        QuickShulkerBridge.requestItems(items, source);
+        execution.requestItems(items, source);
         return false;
     }
 
@@ -68,27 +71,34 @@ public final class MaterialSelector {
             ItemStack creativeFallback,
             int reserveCount
     ) {
-        if (player == null || predicate == null || RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
+        if (player == null || predicate == null || execution.isWaitingForSwitch()) {
             return false;
         }
         ItemStack mainHandStack = player.getMainHandItem();
-        if (predicate.test(mainHandStack)
-                && getConsumableSurplus(player, mainHandStack, predicate, reserveCount) > 0) {
-            return true;
+        // Reuse only the reserve total within this decision. No inventory writes happen before
+        // selection returns, and the next call must observe server updates even in the same tick.
+        int surplus = -1;
+        if (predicate.test(mainHandStack)) {
+            if (!requiresReserve(player, mainHandStack, reserveCount)) return true;
+            surplus = getConsumableSurplus(player, mainHandStack, predicate, reserveCount);
+            if (surplus > 0) return true;
         }
 
         Minecraft client = Minecraft.getInstance();
         Inventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty() || !predicate.test(stack)
-                    || getConsumableSurplus(player, stack, predicate, reserveCount) <= 0) {
+            if (stack.isEmpty() || !predicate.test(stack)) {
                 continue;
             }
+            if (requiresReserve(player, stack, reserveCount)) {
+                if (surplus < 0) surplus = getConsumableSurplus(player, stack, predicate, reserveCount);
+                if (surplus <= 0) continue;
+            }
             boolean needsInventoryConfirmation = !Inventory.isHotbarSlot(slot);
-            if (InventoryUtils.setPickedItemToHand(slot, stack, client)) {
+            if (execution.setPickedItemToHand(slot, stack, client)) {
                 return !needsInventoryConfirmation
-                        || !RuntimeAccess.get().inventorySwitchGuard().markSwitchIfNeeded(stack.getItem());
+                        || !execution.markSwitchIfNeeded(stack.getItem());
             }
             return false;
         }
@@ -96,12 +106,12 @@ public final class MaterialSelector {
         if (!PlayerUtils.getAbilities(player).instabuild
                 && MaterialRequest.isEmptyShulker(creativeFallback)
                 && predicate.test(creativeFallback)) {
-            RuntimeAccess.get().materialRequests().requestEmptyShulker(creativeFallback.getItem());
+            execution.requestEmptyShulker(creativeFallback.getItem());
         }
         return PlayerUtils.getAbilities(player).instabuild
                 && creativeFallback != null
                 && predicate.test(creativeFallback)
-                && InventoryUtils.setPickedItemToHand(creativeFallback.copy(), client);
+                && execution.setPickedItemToHand(creativeFallback.copy(), client);
     }
 
     public static int getConsumableSurplus(
@@ -113,10 +123,7 @@ public final class MaterialSelector {
         if (player == null || stack == null) {
             return 0;
         }
-        if (reserveCount < 0
-                || PlayerUtils.getAbilities(player).instabuild
-                || stack.isEmpty()
-                || stack.isDamageableItem()) {
+        if (!requiresReserve(player, stack, reserveCount)) {
             return Integer.MAX_VALUE;
         }
         Predicate<ItemStack> predicate = requiredStackPredicate != null
@@ -173,5 +180,10 @@ public final class MaterialSelector {
             }
         }
         return count;
+    }
+
+    private static boolean requiresReserve(LocalPlayer player, ItemStack stack, int reserveCount) {
+        return reserveCount >= 0 && !PlayerUtils.getAbilities(player).instabuild
+                && !stack.isEmpty() && !stack.isDamageableItem();
     }
 }

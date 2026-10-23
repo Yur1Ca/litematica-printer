@@ -176,11 +176,19 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
     }
 
     public void onSlotUpdate(int containerId, int slot, net.minecraft.world.item.ItemStack stack) {
+        this.observeSlotUpdate(containerId, slot, stack);
+        if (this.prepareConfirmationAdvance()) this.requests.completeTransfer();
+        this.synchronizeResources();
+    }
+
+    /** Full snapshots observe every slot before any acknowledgement can start the next swap. */
+    public void observeSlotUpdate(int containerId, int slot, net.minecraft.world.item.ItemStack stack) {
         this.requests.onSlotUpdate(containerId, slot, stack);
     }
 
     public void onInventoryContent(int containerId, java.util.List<net.minecraft.world.item.ItemStack> items,
                                    net.minecraft.world.item.ItemStack carried) {
+        this.cancelDisabledDrain();
         if (this.orderedStorage.onInventoryContent(containerId, items, carried)) {
             this.synchronizeResources();
             return;
@@ -190,14 +198,41 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
             this.synchronizeResources();
             return;
         }
-        if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()) return;
-        if (!this.requests.confirmContainer(containerId, items, carried)) return;
-        if (this.requests.isOpenHandler()) {
-            this.requests.switchInv();
+        if (this.orderedStorage.isWaitingForRestoreContainer()
+                && (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                || !Configs.Core.WORK_SWITCH.getBooleanValue())) {
+            // An external pick request permits extraction with WORK off, never an orderly return.
+            // Cancel the pending restore session too, so it cannot retain its lease or reopen.
+            this.reset();
+            return;
         }
-        if (this.orderedStorage.isWaitingForRestoreContainer()) {
-            this.orderedStorage.restorePendingItem();
+        if (this.prepareConfirmationAdvance()) {
+            this.requests.completeTransfer();
+            if (this.requests.confirmContainer(containerId, items, carried)) {
+                if (this.requests.isOpenHandler()) this.requests.switchInv();
+                if (this.orderedStorage.isWaitingForRestoreContainer()) this.orderedStorage.restorePendingItem();
+            }
         }
+        this.synchronizeResources();
+    }
+
+    private boolean prepareConfirmationAdvance() {
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
+            this.cancelDisabledDrain();
+            this.requests.tickCancellation();
+            return false;
+        }
+        if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                || (!Configs.Core.WORK_SWITCH.getBooleanValue() && !this.externalRequestActive)) {
+            this.reset();
+            return false;
+        }
+        return this.requests.hasPendingSwitchRequest() && this.acquireResources();
+    }
+
+    private void cancelDisabledDrain() {
+        if (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
+                || !Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.cancelDrain();
     }
 
     public void onMainHandUse(LocalPlayer player) {

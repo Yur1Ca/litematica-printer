@@ -216,6 +216,12 @@ abstract class ModPlugin : Plugin<Project> {
                                 if (relative.endsWith("/printer/ActionManager.java") && text.contains("Configs.Print")) {
                                     violations += "$relative: feature reserve policy belongs at the composition boundary"
                                 }
+                                if (relative.endsWith("/utils/MaterialSelector.java")) {
+                                    listOf("RuntimeAccess", "QuickShulkerBridge", "InventoryUtils")
+                                        .filter(text::contains).forEach { dependency ->
+                                            violations += "$relative: material selection must use its execution boundary, forbidden '$dependency'"
+                                        }
+                                }
                                 if (listOf("/handler/handlers/FillHandler.java", "/handler/handlers/FluidHandler.java")
                                         .any(relative::endsWith) && text.contains("Configs.Print")) {
                                     violations += "$relative: shared placement settings must use SharedPlacementSettings"

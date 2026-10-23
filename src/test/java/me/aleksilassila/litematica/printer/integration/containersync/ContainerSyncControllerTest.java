@@ -129,6 +129,36 @@ class ContainerSyncControllerTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"pickup", "insertion", "recovery"})
+    void forcedCloseOfHalfPickupRetainsOwnershipUntilReplacementInventoryIsConfirmed(String stage) throws Exception {
+        try (var f = new Fixture()) {
+            var plan = ContainerSyncPickupPlanTest.halfPlan();
+            var port = f.startTransfer(stage.equals("recovery") ? "pickup" : stage, plan);
+            var owned = f.client.player.containerMenu;
+            if (stage.equals("recovery")) {
+                var transfer = (ContainerSyncTransfer) get(f.controller, "transfer");
+                transfer.observe(owned, plan.steps().get(0).items(), plan.steps().get(0).cursor());
+                owned.setCarried(plan.steps().get(0).cursor().copy());
+                f.controller.guardClose();
+                transfer.tick(1, false);
+            }
+            int clicks = port.clicks.size();
+            var inventory = new Menu(0);
+            f.client.player.containerMenu = inventory;
+            f.controller.tick();
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
+            for (int tick = 0; tick < 100; tick++) f.controller.tick();
+            assertFalse(f.otherInventoryOwner());
+            f.controller.content(owned.containerId, 99, java.util.List.of(), ItemStack.EMPTY);
+            assertFalse(f.otherInventoryOwner());
+            f.controller.content(0, 1, java.util.List.of(), ItemStack.EMPTY);
+            assertTrue(f.otherInventoryOwner());
+            assertEquals(clicks, port.clicks.size(), "No old half-pickup or recovery may be replayed in inventory menu 0");
+            assertSame(inventory, f.client.player.containerMenu);
+        }
+    }
+
     @Test void replacingMenuDuringForcedCloseDrainRejectsThePreviousReply() throws Exception {
         try (var f = new Fixture()) {
             f.startTransfer("pickup");
@@ -213,13 +243,15 @@ class ContainerSyncControllerTest {
             return broker.tryAcquire("quick_shulker", EnumSet.of(ResourceLease.INVENTORY, ResourceLease.CONTAINER), 0);
         }
         ContainerSyncTransferTest.Port startTransfer(String step) throws Exception {
+            return startTransfer(step, ContainerSyncTransferTest.plan());
+        }
+        ContainerSyncTransferTest.Port startTransfer(String step, ContainerSyncPlan plan) throws Exception {
             var owned = client.player.containerMenu;
             var port = new ContainerSyncTransferTest.Port() {
                 @Override public Object context() { return client.player.containerMenu == owned ? owned : null; }
                 @Override public boolean acquire() { return true; }
                 @Override public void release() { }
             };
-            var plan = ContainerSyncTransferTest.plan();
             var transfer = new ContainerSyncTransfer(port, plan);
             set(controller, "menu", owned);
             set(controller, "transfer", transfer);

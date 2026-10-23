@@ -3,8 +3,11 @@
   "minVersion": "0.8",
   "package": "me.aleksilassila.litematica.printer.mixin",
   "compatibilityLevel": "${compatibility_level}",
+  "plugin": "me.aleksilassila.litematica.printer.mixin_plugin.InventoryProfilesNextMixinConfigPlugin",
   "client": [
-    "printer.tweakeroo.MixinInputHandler"
+    "printer.tweakeroo.MixinInputHandler",
+    "printer.ipn.MixinAutoRefillHandler",
+    "printer.ipn.MixinLockedSlotKeeper"
   ],
   "injectors": {
     "defaultRequire": 0

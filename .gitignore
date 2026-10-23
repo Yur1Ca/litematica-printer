@@ -88,4 +88,8 @@ $RECYCLE.BIN/
 !.env.example
 
 *profile*
+# IPN compatibility sources are not local profiling output.
+!src/main/java/me/aleksilassila/litematica/printer/mixin_plugin/InventoryProfilesNextMixinConfigPlugin.java
+!src/test/java/me/aleksilassila/litematica/printer/mixin_plugin/InventoryProfilesNextContractTest.java
+!src/test/java/me/aleksilassila/litematica/printer/mixin_plugin/InventoryProfilesNextKeeperContractTest.java
 .agents

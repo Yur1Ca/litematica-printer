@@ -364,6 +364,28 @@ class BedrockPlacementRegressionTest {
         }
     }
 
+    @Test void leavingSelectionDiscardsThePendingNetworkAttempt() throws Exception {
+        try (var f = new Fixture()) {
+            var engine = f.engine();
+            var placer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
+            var targets = (BedrockTargetRegistry) get(engine, BedrockEngine.class, "targets");
+            var sync = (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync");
+            var target = f.target(TARGET, Direction.UP, placer);
+            targets.add(target);
+            sync.beginAttempt(TARGET, target.getMachineFootprint());
+            assertEquals(1, sync.pendingCount());
+            assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET));
+
+            f.tick(1);
+            engine.tick();
+
+            assertTrue(targets.isEmpty());
+            assertEquals(0, sync.pendingCount(), "A target leaving the selection must also release its network observation");
+            sync.onServerBlockUpdate(TARGET);
+            assertEquals(0, sync.pendingCount(), "Late updates must not restore an abandoned attempt");
+        }
+    }
+
     @ParameterizedTest @ValueSource(strings = {"work_switch_disabled", "execution_scope_changed", "client_scope_changed", "disconnect"})
     void runtimeResetCancelsDelayedPlacementAndLookBeforePositionReuse(String reason) throws Exception {
         try (var f = new Fixture()) {
@@ -435,6 +457,7 @@ class BedrockPlacementRegressionTest {
         List<BlockHitResult> hits;
         List<Boolean> predictions;
         TestGameMode() { super(null, null); }
+        @Override public net.minecraft.world.level.GameType getPlayerMode() { return net.minecraft.world.level.GameType.SURVIVAL; }
         @Override public InteractionResult litematica_printer$useItemOn(boolean prediction, InteractionHand hand, BlockHitResult hit) {
             assertEquals(InteractionHand.OFF_HAND, hand);
             hits.add(hit);

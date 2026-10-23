@@ -16,8 +16,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 public final class QuickShulkerRequestController {
 
@@ -227,7 +230,35 @@ public final class QuickShulkerRequestController {
             Slot slot = menu.slots.get(source);
             if (slot.container == player.getInventory() || !lastNeedItemList.contains(slot.getItem().getItem())
                     || this.emptyShulkerOnly && !me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest.isEmptyShulker(slot.getItem())) continue;
-            for (String configured : fi.dy.masa.litematica.config.Configs.Generic.PICK_BLOCKABLE_SLOTS.getStringValue().split(",")) {
+            TargetChoice choice = selectTarget(menu, shulkerInventoryMenuSlot);
+            if (choice == null) continue;
+            targetHotbarSlot = choice.hotbar();
+            if (choice.emptyMainSlot() >= 0) {
+                clearingHotbar = true;
+                movedInventorySlot = menu.slots.get(choice.emptyMainSlot()).getContainerSlot();
+                beginSwap(menu, choice.emptyMainSlot(), choice.target(), choice.hotbar());
+                return;
+            }
+            clearingHotbar = false;
+            extractionSlot = source;
+            extractedStack = slot.getItem().copy();
+            sourceShulker = player.inventoryMenu.slots.get(shulkerInventoryMenuSlot).getItem().copy();
+            beginSwap(menu, source, choice.target(), choice.hotbar());
+            return;
+        }
+        closeAutomatedContainer();
+        clearSwitchRequest();
+    }
+
+    private record TargetChoice(int hotbar, int target, int emptyMainSlot) { }
+
+    private TargetChoice selectTarget(AbstractContainerMenu menu, int sourceMenuSlot) {
+        LocalPlayer player = client.player;
+        if (player == null) return null;
+        String[] configuredSlots = fi.dy.masa.litematica.config.Configs.Generic.PICK_BLOCKABLE_SLOTS.getStringValue().split(",");
+        // Exhaust configured empty targets before considering a swap to clear an occupied one.
+        for (int pass = 0; pass < 2; pass++) {
+            for (String configured : configuredSlots) {
                 int hotbar;
                 try { hotbar = Integer.parseInt(configured.trim()) - 1; }
                 catch (NumberFormatException ignored) { continue; }
@@ -235,37 +266,23 @@ public final class QuickShulkerRequestController {
                 if (!me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUtilsAccessor
                         .canPickToSlot(player.getInventory(), hotbar)) continue;
                 // Validate the final destination, not a configured slot which is subsequently replaced.
-                if (!QuickShulkerSupport.isSafeHotbarTarget(hotbar, shulkerInventoryMenuSlot,
+                if (!QuickShulkerSupport.isSafeHotbarTarget(hotbar, sourceMenuSlot,
                         player.getInventory().getItem(hotbar))) continue;
                 int target = findPlayerSlot(menu, hotbar);
                 if (target < 0) continue;
-                targetHotbarSlot = hotbar;
-                if (!menu.slots.get(target).getItem().isEmpty()) {
-                    int empty = -1;
-                    for (int i = 0; i < menu.slots.size(); i++) {
-                        Slot candidate = menu.slots.get(i);
-                        if (candidate.container == player.getInventory() && candidate.getContainerSlot() >= 9
-                                && candidate.getContainerSlot() < 36 && candidate.getItem().isEmpty()) {
-                            empty = i;
-                            break;
-                        }
+                boolean emptyTarget = menu.slots.get(target).getItem().isEmpty();
+                if (emptyTarget != (pass == 0)) continue;
+                if (emptyTarget) return new TargetChoice(hotbar, target, -1);
+                for (int i = 0; i < menu.slots.size(); i++) {
+                    Slot candidate = menu.slots.get(i);
+                    if (candidate.container == player.getInventory() && candidate.getContainerSlot() >= 9
+                            && candidate.getContainerSlot() < 36 && candidate.getItem().isEmpty()) {
+                        return new TargetChoice(hotbar, target, i);
                     }
-                    if (empty < 0) continue;
-                    clearingHotbar = true;
-                    movedInventorySlot = menu.slots.get(empty).getContainerSlot();
-                    beginSwap(menu, empty, target, hotbar);
-                    return;
                 }
-                clearingHotbar = false;
-                extractionSlot = source;
-                extractedStack = slot.getItem().copy();
-                sourceShulker = player.inventoryMenu.slots.get(shulkerInventoryMenuSlot).getItem().copy();
-                beginSwap(menu, source, target, hotbar);
-                return;
             }
         }
-        closeAutomatedContainer();
-        clearSwitchRequest();
+        return null;
     }
 
     private static int findPlayerSlot(AbstractContainerMenu menu, int inventorySlot) {
@@ -291,15 +308,21 @@ public final class QuickShulkerRequestController {
     }
 
     public void onSlotUpdate(int containerId, int slot, ItemStack stack) {
-        if (transfer.active()) {
+        if (transfer.active() && isTransferScopeCurrent()) {
             QuickShulkerDiagnostics.log("slot-reply menu=" + containerId + " slot=" + slot
                     + " stack=" + QuickShulkerDiagnostics.stack(stack));
             transfer.observe(containerId, slot, stack);
         }
     }
 
-    private void completeTransfer() {
-        if (!transfer.confirmed()) return;
+    private boolean isTransferScopeCurrent() {
+        return client != null && client.player != null
+                && client.player.containerMenu == this.transferMenu
+                && this.transferConnection != null && client.getConnection() == this.transferConnection;
+    }
+
+    void completeTransfer() {
+        if (!transfer.confirmed() || !isTransferScopeCurrent()) return;
         LocalPlayer player = client.player;
         if (player == null || player.containerMenu.containerId != automatedContainerId
                 || !player.containerMenu.getCarried().isEmpty()) return;
@@ -323,21 +346,31 @@ public final class QuickShulkerRequestController {
         if (shulkerCooldown > 0) {
             return false;
         }
+        Map<Integer, List<ItemStack>> decoded = items.size() > 1 ? new HashMap<>() : null;
         for (Item item : items) {
             AbstractContainerMenu sc = Minecraft.getInstance().player.inventoryMenu;
             for (int i = 9; i < sc.slots.size(); i++) {
                 ItemStack stack = sc.slots.get(i).getItem();
                 String itemid = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
                 if (itemid.contains("shulker_box") && stack.getCount() == 1) {
-                    var items1 = fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(stack, -1);
+                    var items1 = decoded == null ? null : decoded.get(i);
+                    if (items1 == null) {
+                        items1 = fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(stack, -1);
+                        if (decoded != null) decoded.put(i, items1);
+                    }
                     if (items1.stream().anyMatch(s1 -> s1.getItem().equals(item)
                             && (!this.emptyShulkerOnly || me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest.isEmptyShulker(s1)))) {
+                        // Recheck live inventory/configuration for every external opening attempt.
+                        if (selectTarget(sc, i) == null) continue;
                         try {
                             shulkerInventoryMenuSlot = i;
                             QuickShulkerDiagnostics.log("open-send source=" + i + " wanted=" + item
                                     + " mode=" + Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue());
                             this.containerSession.begin(stack, Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
                                     == me.aleksilassila.litematica.printer.enums.QuickShulkerModeType.CLICK_SLOT);
+                            // An optional mod may mutate inventory even when opening fails.
+                            // Reuse is confined to the pure query between external attempts.
+                            if (decoded != null) decoded.clear();
                             if (!ShulkerUtils.openShulker(stack, shulkerInventoryMenuSlot)) {
                                 this.containerSession.reset();
                                 shulkerInventoryMenuSlot = -1;

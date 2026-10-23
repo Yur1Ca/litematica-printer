@@ -13,6 +13,7 @@ import me.aleksilassila.litematica.printer.runtime.*;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.HashedStack;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.*;
@@ -42,9 +43,23 @@ class OrderedStorageDrainTest {
         }
     }
 
-    static class SplitMenu extends QuickShulkerPacketContractTest.ServerMenu {
-        SplitMenu(net.minecraft.world.Container box, Inventory inventory) {
-            super(box, inventory);
+    static class ReturnMenu extends AbstractContainerMenu {
+        ReturnMenu(net.minecraft.world.Container box, Inventory inventory, int source, int targetCapacity) {
+            super(null, 7);
+            addSlot(new Slot(box, 0, 0, 0) {
+                @Override public int getMaxStackSize(ItemStack stack) {
+                    return Math.min(targetCapacity, super.getMaxStackSize(stack));
+                }
+            });
+            addSlot(new Slot(inventory, source, 0, 0));
+        }
+        @Override public ItemStack quickMoveStack(net.minecraft.world.entity.player.Player player, int slot) { return ItemStack.EMPTY; }
+        @Override public boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
+    }
+
+    static class SplitMenu extends ReturnMenu {
+        SplitMenu(net.minecraft.world.Container box, Inventory inventory, int source) {
+            super(box, inventory, source, 64);
             addSlot(new Slot(box, 1, 0, 0));
             addSlot(new Slot(box, 2, 0, 0));
             addSlot(new Slot(inventory, 3, 0, 0));
@@ -67,21 +82,25 @@ class OrderedStorageDrainTest {
         final QuickShulkerAdapter adapter;
 
         Fixture() throws Exception { this(false); }
-        Fixture(boolean split) throws Exception {
+        Fixture(boolean split) throws Exception { this(split, 9, 64); }
+        Fixture(int source, int targetCapacity) throws Exception { this(false, source, targetCapacity); }
+        Fixture(boolean split, int source, int targetCapacity) throws Exception {
             player.auditLevel = QuickShulkerPacketContractTest.allocate(QuickShulkerPacketContractTest.AuditLevel.class);
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
-            player.inventory.setItem(2, new ItemStack(Items.PISTON, 64));
+            player.inventory.setItem(source, new ItemStack(Items.PISTON, 64));
             set(player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
             connection.packets = new ArrayList<>();
             set(player, net.minecraft.client.player.LocalPlayer.class, "connection", connection);
-            menu = split ? new SplitMenu(new net.minecraft.world.SimpleContainer(3), player.inventory)
-                    : new QuickShulkerPacketContractTest.ServerMenu(new net.minecraft.world.SimpleContainer(1), player.inventory);
+            menu = split ? new SplitMenu(new net.minecraft.world.SimpleContainer(3), player.inventory, source)
+                    : new ReturnMenu(new net.minecraft.world.SimpleContainer(1), player.inventory, source, targetCapacity);
             player.containerMenu = menu;
             client.player = player;
             set(client, Minecraft.class, "gui", QuickShulkerPacketContractTest.allocate(net.minecraft.client.gui.Gui.class));
             client.gameMode = QuickShulkerPacketContractTest.allocate(GameMode.class);
             set(null, Minecraft.class, "instance", client);
             set(runtime, PrinterRuntime.class, "epoch", RuntimeEpoch.INITIAL);
+            set(runtime, PrinterRuntime.class, "inventorySwitchGuard",
+                    new me.aleksilassila.litematica.printer.utils.InventorySwitchGuard(client, () -> 0L));
             adapter = new QuickShulkerAdapter(broker);
             set(runtime, PrinterRuntime.class, "quickShulkerAdapter", adapter);
             RuntimeAccess.install(runtime);
@@ -89,7 +108,7 @@ class OrderedStorageDrainTest {
             Configs.Core.WORK_SWITCH.setBooleanValue(true);
             Configs.Placement.QUICK_SHULKER.setBooleanValue(true);
             Configs.Placement.STORE_ORDERLY.setBooleanValue(true);
-            storage.newItem(new ItemStack(Items.PISTON, 64), ItemStack.EMPTY, 0, 9, 2);
+            storage.newItem(new ItemStack(Items.PISTON, 64), ItemStack.EMPTY, 0, 9, source);
             @SuppressWarnings("unchecked")
             var entries = (List<OrderedStorageEntry>) get(storage, OrderedStorageController.class, "trackedItems");
             @SuppressWarnings("unchecked")
@@ -213,7 +232,7 @@ class OrderedStorageDrainTest {
             f.adapter.tick();
             assertTrue(f.player.closed);
             assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
-            assertEquals(63, f.player.inventory.getItem(2).getCount());
+            assertEquals(63, f.player.inventory.getItem(9).getCount());
         }
     }
 
@@ -330,7 +349,7 @@ class OrderedStorageDrainTest {
         server.suppressRemoteUpdates();
         server.clicked(1, 0, ContainerInput.PICKUP, player);
         // Client predicted 64; a previous use/replenishment changed the authoritative count to 63.
-        server.setRemoteCarried(new HashedStack.ActualItem(Items.PISTON.builtInRegistryHolder(), 64,
+        server.setRemoteCarried(new HashedStack.ActualItem(BuiltInRegistries.ITEM.wrapAsHolder(Items.PISTON), 64,
                 new net.minecraft.network.HashedPatchMap(Map.of(), Set.of())));
         server.resumeRemoteUpdates();
         server.broadcastChanges();

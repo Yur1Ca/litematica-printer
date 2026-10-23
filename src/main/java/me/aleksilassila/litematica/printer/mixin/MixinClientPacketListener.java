@@ -28,6 +28,7 @@ public abstract class MixinClientPacketListener {
 
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/MenuScreens;create(Lnet/minecraft/world/inventory/MenuType;Lnet/minecraft/client/Minecraft;ILnet/minecraft/network/chat/Component;)V"), method = "handleOpenScreen")
     private void printer$trackQuickShulkerContainerOpen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
         QuickShulkerBridge.onContainerOpen(packet.getContainerId(), packet.getType());
         RuntimeAccess.get().containerSync().opened(packet.getContainerId(), packet.getType());
     }
@@ -71,17 +72,11 @@ public abstract class MixinClientPacketListener {
         //$$ var items = packet.getItems();
         //$$ var carried = packet.getCarriedItem();
         //#endif
-        for (int slot = 0; slot < items.size(); slot++) {
-            QuickShulkerBridge.onSlotUpdate(containerId, slot, items.get(slot));
-        }
-        if (client.player != null && containerId == client.player.containerMenu.containerId) {
-            QuickShulkerBridge.onSlotUpdate(-1, -1, carried);
-        }
         ChestTrackerBridge.onContainerContent(containerId);
-        if (client.player == null || containerId != client.player.containerMenu.containerId) {
-            return;
-        }
+        if ((Object) this != client.getConnection()) return;
+        boolean currentContainer = client.player != null && containerId == client.player.containerMenu.containerId;
         QuickShulkerBridge.onInventoryContent(containerId, items, carried);
+        if (!currentContainer) return;
         //#if MC >= 12105
         RuntimeAccess.get().containerSync().content(containerId, packet.stateId(), items, carried);
         //#else
@@ -90,11 +85,13 @@ public abstract class MixinClientPacketListener {
     }
     @Inject(at = @At("TAIL"), method = "handleContainerSetSlot")
     private void printer$confirmQuickShulkerSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
         QuickShulkerBridge.onSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
     }
     //#if MC >= 12103
     @Inject(at = @At("TAIL"), method = "handleSetCursorItem")
     private void printer$trackCursor(ClientboundSetCursorItemPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
         QuickShulkerBridge.onSlotUpdate(-1, -1, packet.contents());
     }
     //#endif

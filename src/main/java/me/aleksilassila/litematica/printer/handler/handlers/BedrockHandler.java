@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockCandidatePlanner;
@@ -18,6 +19,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class BedrockHandler extends FeatureModuleBase {
+    private static final ResourceLease[] CONTINUATION_RESOURCES = {
+            ResourceLease.LOOK, ResourceLease.MAIN_HAND, ResourceLease.INVENTORY,
+            ResourceLease.CONTAINER, ResourceLease.INTERACTION
+    };
     private final BedrockCandidatePlanner candidatePlanner;
 
     public BedrockHandler(PrinterRuntime runtime) {
@@ -55,6 +60,9 @@ public class BedrockHandler extends FeatureModuleBase {
 
     @Override
     protected boolean canIterate() {
+        if (!this.canAdvanceController()) {
+            return false;
+        }
         BedrockController.tick();
         // A full active-target lane may temporarily reject new submissions, but it must not
         // prevent already discovered candidates from reaching the controller. Previously this
@@ -137,9 +145,20 @@ public class BedrockHandler extends FeatureModuleBase {
 
     @Override
     protected void stopIteration(boolean interrupt) {
-        if (!interrupt) {
+        if (!interrupt && this.canAdvanceController()) {
             BedrockController.tick();
         }
+    }
+
+    private boolean canAdvanceController() {
+        // Existing machines act before the candidate runner's resource checks. A previous
+        // feature may also acquire inventory ownership after the shared scheduler precheck.
+        for (ResourceLease resource : CONTINUATION_RESOURCES) {
+            if (this.actionBroker.isResourceHeldByOther(resource, this.getId())) {
+                return false;
+            }
+        }
+        return true;
     }
 
 }

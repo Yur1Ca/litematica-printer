@@ -56,10 +56,13 @@ public final class QuickShulkerBridge {
                 || !QuickShulkerInvocationPolicy.allowsPickBlock(
                         player.getAbilities().instabuild,
                         player.isSpectator()
-                )
-                || player.containerMenu != player.inventoryMenu
-                || InventoryUtils.playerHasItemInInventory(player, item)) {
+                )) {
             return false;
+        }
+        if (player.containerMenu != player.inventoryMenu
+                || InventoryUtils.playerHasItemInInventory(player, item)) {
+            // Native selection can change the hotbar even without requesting missing material.
+            return inventoryOperationPending();
         }
 
         if (Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
@@ -67,9 +70,13 @@ public final class QuickShulkerBridge {
         }
 
         MaterialReservation reservation = requestItem(item, MaterialRequest.Source.PICK_BLOCK);
-        var broker = RuntimeAccess.get().actionBroker();
         return PickBlockRequestPolicy.shouldConsume(reservation.state())
-                || broker.isResourceHeld(ResourceLease.INVENTORY)
+                || inventoryOperationPending();
+    }
+
+    private static boolean inventoryOperationPending() {
+        var broker = RuntimeAccess.get().actionBroker();
+        return broker.isResourceHeld(ResourceLease.INVENTORY)
                 || broker.isResourceHeld(ResourceLease.CONTAINER)
                 || broker.isResourceHeld(ResourceLease.MAIN_HAND);
     }
@@ -83,10 +90,10 @@ public final class QuickShulkerBridge {
     }
 
     public static boolean handleEasyPlacePickBlock(LocalPlayer player, ItemStack stack) {
-        if (player == null || stack == null || stack.isEmpty()
-                || ItemStack.isSameItemSameComponents(player.getMainHandItem(), stack)) {
+        if (player == null || stack == null || stack.isEmpty()) {
             return false;
         }
+        // Easy Place also consumes the held stack, so matching the hand cannot bypass its owner.
         return handleMissingPickBlock(player, stack.getItem());
     }
 
@@ -124,19 +131,34 @@ public final class QuickShulkerBridge {
     }
 
     public static void onSlotUpdate(int containerId, int slot, ItemStack stack) {
+        observeServerSlot(containerId, slot, stack);
+        RuntimeAccess.get().quickShulkerAdapter().onSlotUpdate(containerId, slot, stack);
+    }
+
+    private static void observeServerSlot(int containerId, int slot, ItemStack stack) {
         ShulkerUtils.onSlotUpdate(containerId, slot, stack);
         if (me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.enabled()) {
             me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log(
                     "server-slot menu=" + containerId + " slot=" + slot + " stack="
                     + me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.stack(stack));
         }
-        if (Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
-            RuntimeAccess.get().quickShulkerAdapter().onSlotUpdate(containerId, slot, stack);
-        }
     }
 
     public static void onInventoryContent(int containerId, java.util.List<ItemStack> items, ItemStack carried) {
-        RuntimeAccess.get().quickShulkerAdapter().onInventoryContent(containerId, items, carried);
+        var adapter = RuntimeAccess.get().quickShulkerAdapter();
+        // A snapshot belongs to the preceding click in its entirety. Never advance midway
+        // and let its remaining slots acknowledge a click sent while reading the same packet.
+        for (int slot = 0; slot < items.size(); slot++) {
+            ItemStack stack = items.get(slot);
+            observeServerSlot(containerId, slot, stack);
+            adapter.observeSlotUpdate(containerId, slot, stack);
+        }
+        var player = Minecraft.getInstance().player;
+        if (player != null && containerId == player.containerMenu.containerId) {
+            observeServerSlot(-1, -1, carried);
+            adapter.observeSlotUpdate(-1, -1, carried);
+            adapter.onInventoryContent(containerId, items, carried);
+        }
     }
 
     public static void onMainHandUse(LocalPlayer player) {

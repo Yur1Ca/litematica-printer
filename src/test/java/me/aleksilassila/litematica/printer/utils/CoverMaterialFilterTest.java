@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import me.aleksilassila.litematica.printer.utils.minecraft.IdentifierUtils;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.tags.TagKey;
@@ -62,7 +63,7 @@ class CoverMaterialFilterTest {
             Set<Item> members = readVanillaItemTag(tag);
             expected.addAll(members);
             for (Item item : members) {
-                bindTags(item.builtInRegistryHolder(), List.of(TagKey.create(
+                bindTags(registryHolder(BuiltInRegistries.ITEM, item), List.of(TagKey.create(
                         BuiltInRegistries.ITEM.key(), IdentifierUtils.of("minecraft", tag))));
             }
         }
@@ -80,15 +81,15 @@ class CoverMaterialFilterTest {
     @Test
     void carpetAliasAlsoWorksWhenOnlyBlockTagIsBound() throws Exception {
         Item carpet = itemById("minecraft:white_carpet");
-        bindTags(carpet.builtInRegistryHolder(), List.of());
-        bindTags(((BlockItem) carpet).getBlock().builtInRegistryHolder(), List.of(TagKey.create(
+        bindTags(registryHolder(BuiltInRegistries.ITEM, carpet), List.of());
+        bindTags(registryHolder(BuiltInRegistries.BLOCK, ((BlockItem) carpet).getBlock()), List.of(TagKey.create(
                 BuiltInRegistries.BLOCK.key(), IdentifierUtils.of("minecraft:wool_carpets"))));
         assertTrue(RegistryFilterResolver.resolveItems(DEFAULT_FILTERS).contains(carpet));
     }
 
     @Test
     void customIdsAndTagsRemainAnAlternativeList() throws Exception {
-        bindTags(Items.GLASS.builtInRegistryHolder(), List.of(TagKey.create(
+        bindTags(registryHolder(BuiltInRegistries.ITEM, Items.GLASS), List.of(TagKey.create(
                 BuiltInRegistries.ITEM.key(), IdentifierUtils.of("test:cover_materials"))));
         List<Item> actual = RegistryFilterResolver.resolveItems(List.of(
                 "minecraft:white_carpet", "#test:cover_materials"));
@@ -120,6 +121,10 @@ class CoverMaterialFilterTest {
         return BuiltInRegistries.ITEM.stream()
                 .filter(item -> BuiltInRegistries.ITEM.getKey(item).toString().equals(id))
                 .findFirst().orElseThrow();
+    }
+
+    private static <T> Holder.Reference<T> registryHolder(Registry<T> registry, T value) {
+        return registry.getOrThrow(registry.getResourceKey(value).orElseThrow());
     }
 
     private <T> void bindTags(Holder.Reference<T> holder, Collection<TagKey<T>> tags) throws Exception {

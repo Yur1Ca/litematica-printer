@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
+import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
@@ -35,12 +36,23 @@ public final class BedrockEngine implements RuntimeComponent {
             LongSupplier tickClock,
             LitematicaAdapter litematica
     ) {
+        this(client, cooldownUtils, tickClock, litematica, RuntimeTiming.disabled());
+    }
+
+    public BedrockEngine(
+            Minecraft client,
+            CooldownUtils cooldownUtils,
+            LongSupplier tickClock,
+            LitematicaAdapter litematica,
+            RuntimeTiming timing
+    ) {
         this.client = client;
         this.tickClock = tickClock;
         this.networkSync = new BedrockNetworkSync(
                 tickClock,
                 () -> me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get()
-                        .rttReplayController().getExtraIntervalTicks(100)
+                        .rttReplayController().getExtraIntervalTicks(100),
+                timing
         );
         this.placer = new BedrockPlacer(client, this.networkSync);
         this.criticalExecutor = new BedrockCriticalExecutor(this.placer, this.stats);

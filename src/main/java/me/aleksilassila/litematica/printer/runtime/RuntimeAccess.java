@@ -23,4 +23,9 @@ public final class RuntimeAccess {
         }
         return runtime;
     }
+
+    /** Optional integrations may receive callbacks before the printer has been installed. */
+    public static PrinterRuntime currentOrNull() {
+        return current;
+    }
 }

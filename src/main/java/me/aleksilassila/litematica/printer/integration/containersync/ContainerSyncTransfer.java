@@ -24,6 +24,7 @@ public final class ContainerSyncTransfer {
     private ItemStack unexpectedCursor;
     private ContainerSyncPlan.Step recovery;
     private boolean cancellationRecovery;
+    private int returnLimit;
     private String problem;
 
     public ContainerSyncTransfer(Port port, ContainerSyncPlan plan) {
@@ -55,18 +56,17 @@ public final class ContainerSyncTransfer {
                 waiting = true;
                 if (unexpected != null) {
                     if (unexpectedCursor.isEmpty()) { finish("SERVER_CHANGED"); return; }
-                    // Only return our own stack to its original slot. Never overwrite an occupied slot.
+                    // Return only our own stack, bounded by the original source count.
                     var step = plan.steps().get(next);
                     ItemStack owned = next == 0 ? step.cursor() : plan.steps().get(next - 1).cursor();
                     int back = step.returnSlot();
                     if (recovery == null && !needsAttention() && !owned.isEmpty() && ContainerSyncPlan.same(owned, unexpectedCursor)
-                            && unexpectedCursor.getCount() <= owned.getCount()
-                            && unexpected.get(back).isEmpty()) {
-                        var restored = new java.util.ArrayList<>(ContainerSyncPlan.copy(unexpected));
-                        restored.set(back, unexpectedCursor.copy());
-                        recovery = new ContainerSyncPlan.Step(back, 0, back, restored, ItemStack.EMPTY);
-                        unexpected = null;
-                        port.click(back, 0);
+                            && unexpectedCursor.getCount() <= owned.getCount()) {
+                        recovery = recoveryStep(unexpected, back, unexpectedCursor);
+                        if (recovery != null) {
+                            unexpected = null;
+                            port.click(back, 0);
+                        } else problem = "CURSOR_NEEDS_ATTENTION";
                     } else problem = "CURSOR_NEEDS_ATTENTION";
                 }
                 // A timeout is not permission to repeat the original click.
@@ -92,15 +92,20 @@ public final class ContainerSyncTransfer {
         }
         if (cancelled && !cursor.isEmpty()) {
             int back = plan.steps().get(next - 1).returnSlot();
-            var restored = new java.util.ArrayList<>(ContainerSyncPlan.copy(before));
-            restored.set(back, cursor.copy());
-            recovery = new ContainerSyncPlan.Step(back, 0, back, restored, ItemStack.EMPTY);
+            recovery = recoveryStep(before, back, cursor);
+            if (recovery == null) {
+                problem = "CURSOR_NEEDS_ATTENTION";
+                pending = true; unexpected = null; sentAt = now;
+                port.refresh();
+                return;
+            }
             cancellationRecovery = true;
             pending = true; unexpected = null; sentAt = now;
             port.click(back, 0);
             return;
         }
         var step = plan.steps().get(next);
+        if (cursor.isEmpty()) returnLimit = before.get(step.returnSlot()).getCount();
         pending = true;
         unexpected = null;
         sentAt = now;
@@ -132,6 +137,18 @@ public final class ContainerSyncTransfer {
             unexpected = ContainerSyncPlan.copy(items);
             unexpectedCursor = carried.copy();
         }
+    }
+
+    private ContainerSyncPlan.Step recoveryStep(List<ItemStack> items, int back, ItemStack carried) {
+        ItemStack there = items.get(back);
+        int count = there.getCount() + carried.getCount();
+        if (!there.isEmpty() && !ContainerSyncPlan.same(there, carried)
+                || count > Math.min(returnLimit, carried.getMaxStackSize())) return null;
+        var restored = new java.util.ArrayList<>(ContainerSyncPlan.copy(items));
+        ItemStack merged = carried.copy();
+        merged.setCount(count);
+        restored.set(back, merged);
+        return new ContainerSyncPlan.Step(back, 0, back, restored, ItemStack.EMPTY);
     }
 
     private void finish(String reason) {

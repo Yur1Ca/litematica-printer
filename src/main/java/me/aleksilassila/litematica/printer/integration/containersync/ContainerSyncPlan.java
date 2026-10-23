@@ -56,14 +56,14 @@ public record ContainerSyncPlan(List<ItemStack> initial, List<Step> steps, Probl
                 if (i == j || !same(state.get(i), template.get(j))) continue;
                 int deficit = template.get(j).getCount() - state.get(j).getCount();
                 int amount = Math.min(extra, Math.min(deficit, room(state, j, state.get(i), rules)));
-                if (amount > 0) { move(state, steps, i, j, amount); extra -= amount; }
+                if (amount > 0) { move(state, steps, i, j, amount, rules); extra -= amount; }
             }
             // Merge before occupying empty slots.
             for (int pass = 0; pass < 2; pass++) {
                 for (int j = size; j < state.size() && extra > 0; j++) {
                     if (state.get(j).isEmpty() != (pass == 1)) continue;
                     int amount = Math.min(extra, room(state, j, state.get(i), rules));
-                    if (amount > 0) { move(state, steps, i, j, amount); extra -= amount; }
+                    if (amount > 0) { move(state, steps, i, j, amount, rules); extra -= amount; }
                 }
             }
             if (extra > 0) return failed(Problem.NO_SPACE);
@@ -75,7 +75,7 @@ public record ContainerSyncPlan(List<ItemStack> initial, List<Step> steps, Probl
             for (int j = size; j < state.size() && missing > 0; j++) {
                 if (!rules.movable(j) || !same(state.get(j), template.get(i))) continue;
                 int amount = Math.min(missing, state.get(j).getCount());
-                if (amount > 0) { move(state, steps, j, i, amount); missing -= amount; }
+                if (amount > 0) { move(state, steps, j, i, amount, rules); missing -= amount; }
             }
             if (missing > 0) return failed(Problem.MISSING_ITEMS);
         }
@@ -91,8 +91,19 @@ public record ContainerSyncPlan(List<ItemStack> initial, List<Step> steps, Probl
         return Math.max(0, Math.min(stack.getMaxStackSize(), rules.capacity(slot, stack)) - there.getCount());
     }
 
-    private static void move(List<ItemStack> state, List<Step> steps, int from, int to, int count) {
+    private static void move(List<ItemStack> state, List<Step> steps, int from, int to, int count, Rules rules) {
         ItemStack cursor = state.get(from).copy();
+        // Right PICKUP takes the rounded-up half. Only use it when both insertion and
+        // cancellation can be completed with ordinary clicks into the original slots.
+        if (count < cursor.getCount() && count == (cursor.getCount() + 1) / 2
+                && rules.capacity(from, cursor) >= cursor.getCount()) {
+            state.get(from).shrink(count);
+            cursor.setCount(count);
+            steps.add(new Step(from, 1, from, copy(state), cursor.copy()));
+            put(state, to, cursor, count);
+            steps.add(new Step(to, 0, from, copy(state), ItemStack.EMPTY));
+            return;
+        }
         state.set(from, ItemStack.EMPTY);
         steps.add(new Step(from, 0, from, copy(state), cursor.copy()));
         if (count == cursor.getCount()) {

@@ -127,7 +127,7 @@ final class MaterialListTestLoader extends ClassLoader {
     @SuppressWarnings("unchecked")
     private static void apply(ClassNode target, ClassNode mixin) {
         var mapped = new ClassNode();
-        mixin.accept(new ClassRemapper(mapped, new SimpleRemapper(mixin.name, target.name)));
+        mixin.accept(new ClassRemapper(mapped, new SimpleRemapper(Opcodes.ASM9, mixin.name, target.name)));
         var originalMethods = List.copyOf(target.methods);
         for (var handler : mapped.methods) {
             if (handler.name.startsWith("<")) continue;

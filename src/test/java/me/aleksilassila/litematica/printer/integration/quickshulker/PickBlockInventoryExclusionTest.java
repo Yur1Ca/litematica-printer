@@ -2,6 +2,8 @@
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import java.util.List;
+import java.util.EnumSet;
+import java.util.stream.Stream;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncController;
@@ -14,13 +16,19 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import static me.aleksilassila.litematica.printer.integration.quickshulker.CancelledSwapLifecycleTest.set;
 import static me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerPacketContractTest.allocate;
@@ -31,12 +39,14 @@ class PickBlockInventoryExclusionTest {
 
     static class Fixture extends TakeItOutRequestOwnershipTest.Fixture {
         final ContainerSyncController sync = new ContainerSyncController(runtime);
+        final net.minecraft.world.entity.EntityEquipment handEquipment = new net.minecraft.world.entity.EntityEquipment();
 
         Fixture() throws Exception {
             client.gameMode = allocate(MultiPlayerGameMode.class);
             var info = allocate(PlayerInfo.class);
             set(info, PlayerInfo.class, "gameMode", GameType.SURVIVAL);
             set(player, AbstractClientPlayer.class, "playerInfo", info);
+            set(player, net.minecraft.world.entity.LivingEntity.class, "equipment", handEquipment);
             set(runtime, PrinterRuntime.class, "materialRequests", coordinator);
             var guiField = Minecraft.class.getDeclaredField("gui");
             set(client, Minecraft.class, "gui", allocate(guiField.getType()));
@@ -65,6 +75,56 @@ class PickBlockInventoryExclusionTest {
         void useUnavailableProviders() throws Exception {
             coordinator.reset();
             set(runtime, PrinterRuntime.class, "materialRequests", new MaterialRequestCoordinator(List.of(next)));
+        }
+    }
+
+    static Stream<Arguments> existingMaterialCases() {
+        return Stream.of("middle_click", "schematic_pick", "easy_place").flatMap(entry ->
+                Stream.of(0, 2, 9).filter(slot -> slot != 0 || entry.equals("easy_place")).flatMap(slot ->
+                        Stream.of(false, true).flatMap(hiddenMenu ->
+                                Stream.of(false, true).map(work -> Arguments.of(entry, slot, hiddenMenu, work)))));
+    }
+
+    private static boolean manualEntry(String entry, Fixture fixture) throws Exception {
+        if (entry.equals("middle_click")) return QuickShulkerBridge.handlePickBlock(fixture.player, Items.STONE);
+        if (entry.equals("schematic_pick")) return QuickShulkerBridge.handlePickBlock(fixture.player, new ItemStack(Items.STONE));
+        var type = Class.forName("me.aleksilassila.litematica.printer.mixin.printer.litematica.MixinEasyPlaceUtils");
+        var method = type.getDeclaredMethod("litematicaPrinter$restock", CallbackInfoReturnable.class, ItemStack.class);
+        method.setAccessible(true);
+        var callback = new CallbackInfoReturnable<InteractionResult>("handleEasyPlace", true);
+        method.invoke(null, callback, new ItemStack(Items.STONE));
+        if (callback.isCancelled()) assertSame(InteractionResult.FAIL, callback.getReturnValue());
+        return callback.isCancelled();
+    }
+
+    @ParameterizedTest @MethodSource("existingMaterialCases")
+    void existingMaterialsCannotBypassAnotherInventoryOwner(String entry, int materialSlot,
+                                                           boolean hiddenMenu, boolean work) throws Exception {
+        try (var f = new Fixture()) {
+            Configs.Core.WORK_SWITCH.setBooleanValue(work);
+            f.player.inventory.setSelectedSlot(0);
+            f.player.inventory.setItem(0, new ItemStack(Items.DIRT, 16));
+            f.player.inventory.setItem(materialSlot, new ItemStack(Items.STONE, 16));
+            f.handEquipment.set(net.minecraft.world.entity.EquipmentSlot.MAINHAND, f.player.inventory.getItem(0));
+            assertEquals(materialSlot == 0 ? Items.STONE : Items.DIRT, f.player.getMainHandItem().getItem());
+            if (hiddenMenu) f.player.containerMenu = new ShulkerBoxMenu(7, f.player.inventory, new SimpleContainer(27));
+            assertTrue(f.broker.tryAcquire("quick_shulker",
+                    EnumSet.of(ResourceLease.INVENTORY, ResourceLease.CONTAINER, ResourceLease.MAIN_HAND), 0));
+            // The lower click hook only protects ContainerSync's own phases. Native hotbar
+            // selection and Easy Place interaction do not pass through that hook at all.
+            assertFalse(f.sync.guardManualInput());
+
+            assertTrue(manualEntry(entry, f),
+                    "Existing inventory/hand material must not let native selection or placement bypass the lease");
+            assertFalse(f.coordinator.isBusy());
+            assertTrue(f.api.sent.isEmpty());
+            assertTrue(f.broker.isResourceHeldByOther(ResourceLease.INVENTORY, "manual_pick"));
+            assertTrue(f.broker.isResourceHeld(ResourceLease.CONTAINER));
+            assertTrue(f.broker.isResourceHeld(ResourceLease.MAIN_HAND));
+
+            f.broker.releaseOwner("quick_shulker");
+            f.player.containerMenu = f.player.inventoryMenu;
+            assertFalse(manualEntry(entry, f), "The same manual input must resume when the inventory owner finishes");
         }
     }
 

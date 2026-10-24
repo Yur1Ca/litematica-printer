@@ -1,7 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
-import com.sun.management.ThreadMXBean;
-import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -84,29 +82,40 @@ class DirtyScanBurstTest {
         assertEquals(7, drain(session, 3).size());
     }
 
-    @Test void drainingAWarmedBurstDoesNotReallocateTheDedupeTable() throws Exception {
-        var bean = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-        bean.setThreadAllocatedMemoryEnabled(true);
+    @Test void drainingABurstReusesTheDedupeTableUntilResetOrClose() throws Exception {
         var session = session();
+        int initialCapacity = dedupeTable(session).length;
         var points = new ArrayList<BlockPos>();
         for (int x = -12; x <= 12; x += 3) for (int y = -12; y <= 12; y += 3) {
             points.add(new BlockPos(x, y, 0));
         }
-        for (int warm = 0; warm < 200; warm++) {
-            points.forEach(session::invalidate);
-            drainWithoutCandidates(session);
-        }
         points.forEach(session::invalidate);
-        //#if MC >= 12005
-        long thread = Thread.currentThread().threadId();
-        //#else
-        //$$ long thread = Thread.currentThread().getId();
-        //#endif
-        long start = bean.getThreadAllocatedBytes(thread);
-        var result = drainWithoutCandidates(session);
-        long bytes = bean.getThreadAllocatedBytes(thread) - start;
-        assertNull(result);
-        assertTrue(bytes < 1024, "Draining should not resize a table needed by the next burst: " + bytes);
+        long[] burstTable = dedupeTable(session);
+        assertTrue(burstTable.length > initialCapacity, "The fixture must grow beyond the initial table");
+        // Observe the table itself: whole-thread allocation also includes unrelated iterators
+        // whose allocation depends on JIT warmup, escape analysis and the CI runtime.
+        for (int burst = 0; burst < 4; burst++) {
+            assertNull(drainWithoutCandidates(session));
+            assertSame(burstTable, dedupeTable(session), "Draining must not shrink the next burst's table");
+            points.forEach(session::invalidate);
+            assertSame(burstTable, dedupeTable(session), "The next burst must reuse its existing table");
+        }
+        assertNull(drainWithoutCandidates(session));
+        assertTrue(session.canScan(2), "An idle pass restart must remain available");
+        assertEquals(initialCapacity, dedupeTable(session).length, "Restart must release peak capacity");
+        points.forEach(session::invalidate);
+        assertTrue(dedupeTable(session).length > initialCapacity);
+        session.close();
+        assertEquals(initialCapacity, dedupeTable(session).length, "Close must release peak capacity");
+        assertFalse(session.canScan(3));
+    }
+
+    private static long[] dedupeTable(SectionScanSession session) throws Exception {
+        var keys = SectionScanSession.class.getDeclaredField("dirtyPositionKeys");
+        keys.setAccessible(true);
+        var table = it.unimi.dsi.fastutil.longs.LongOpenHashSet.class.getDeclaredField("key");
+        table.setAccessible(true);
+        return (long[]) table.get(keys.get(session));
     }
 
     private static SectionScanSession.Candidate drainWithoutCandidates(SectionScanSession session) {

@@ -93,5 +93,32 @@ class QuickShulkerPacketContractTest {
         assertTrue(player.inventoryForAudit.getItem(2).isEmpty());
         assertTrue(menu.getCarried().is(Items.SHULKER_BOX));
     }
+
+    @Test void fullInventoryExchangeReturnsOldMaterialToBoxWithoutUsingTheCursor() throws Exception {
+        var player = allocate(AuditPlayer.class);
+        player.levelForAudit = allocate(AuditLevel.class);
+        player.inventoryForAudit = new net.minecraft.world.entity.player.Inventory(player, new net.minecraft.world.entity.EntityEquipment());
+        for (int i = 0; i < 36; i++) player.inventoryForAudit.setItem(i, new ItemStack(Items.DIRT, 64));
+        var box = new net.minecraft.world.SimpleContainer(1);
+        box.setItem(0, new ItemStack(Items.STONE, 64));
+        var menu = new ServerMenu(box, player.inventoryForAudit);
+        var replies = new Replies();
+        menu.setSynchronizer(replies);
+        menu.suppressRemoteUpdates();
+        menu.clicked(0, 2, ContainerInput.SWAP, player);
+        menu.setRemoteCarried(HashedStack.EMPTY);
+        menu.resumeRemoteUpdates();
+        menu.broadcastChanges();
+        assertEquals(Set.of(0, 1), replies.slots.keySet());
+        assertTrue(box.getItem(0).is(Items.DIRT));
+        assertEquals(64, box.getItem(0).getCount());
+        assertTrue(player.inventoryForAudit.getItem(2).is(Items.STONE));
+        assertEquals(64, player.inventoryForAudit.getItem(2).getCount());
+        assertTrue(menu.getCarried().isEmpty());
+        for (int i = 0; i < 36; i++) if (i != 2) {
+            assertTrue(player.inventoryForAudit.getItem(i).is(Items.DIRT));
+            assertEquals(64, player.inventoryForAudit.getItem(i).getCount());
+        }
+    }
 }
 //#endif

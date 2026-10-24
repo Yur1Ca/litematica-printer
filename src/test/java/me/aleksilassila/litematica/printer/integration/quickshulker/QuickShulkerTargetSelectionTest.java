@@ -32,23 +32,23 @@ class QuickShulkerTargetSelectionTest {
         }
     }
 
-    @Test void impossibleDestinationDoesNotOpenAndInventoryChangesResumeImmediately() throws Exception {
+    @Test void fullInventoryCanExchangeOrdinaryMaterialWithTheSourceBox() throws Exception {
         try (var f = new QuickShulkerQueryFixture(false)) {
             f.configuredSlots("1");
             for (int i = 0; i < 36; i++) f.inventory(i, new ItemStack(Items.DIRT, 64));
             f.slot(35, box(new ItemStack(Items.STONE)));
-            for (int i = 0; i < 3; i++) f.query(List.of(Items.STONE), false);
-            assertTrue(f.attempts.isEmpty());
-            f.inventory(9, ItemStack.EMPTY);
             f.query(List.of(Items.STONE), false);
             assertEquals(List.of(35), f.attempts);
+            f.extract();
+            assertEquals(List.of(0), f.clickedSource);
+            assertEquals(List.of(0), f.clickedHotbar);
         }
     }
 
     @Test void unconfiguredEmptyHotbarCannotOpenUntilConfigurationChanges() throws Exception {
         try (var f = new QuickShulkerQueryFixture(false)) {
             f.configuredSlots("1");
-            for (int i = 0; i < 36; i++) f.inventory(i, new ItemStack(Items.DIRT, 64));
+            for (int i = 0; i < 36; i++) f.inventory(i, box(new ItemStack(Items.DIRT, 64)));
             f.slot(35, box(new ItemStack(Items.STONE)));
             f.inventory(1, ItemStack.EMPTY);
             f.query(List.of(Items.STONE), false);
@@ -94,8 +94,8 @@ class QuickShulkerTargetSelectionTest {
             for (int i = 0; i < 36; i++) f.inventory(i, new ItemStack(Items.DIRT, 64));
             f.slot(35, box(new ItemStack(Items.STONE)));
             f.extract();
-            assertTrue(f.clickedHotbar.isEmpty());
-            assertTrue(f.player.closed);
+            assertEquals(List.of(0), f.clickedSource);
+            assertEquals(List.of(0), f.clickedHotbar);
         }
     }
 }

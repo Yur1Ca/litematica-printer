@@ -10,12 +10,26 @@ import net.minecraft.network.protocol.Packet;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 
 @Environment(EnvType.CLIENT)
 @Mixin(Connection.class)
 public class MixinConnection {
+    // Capture only the Packet argument: callback/listener parameters differ across supported versions.
+    @ModifyVariable(method = "sendPacket", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private Packet<?> printer$trackRecoveryInput(Packet<?> packet) {
+        me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.inputSent(this, packet);
+        return packet;
+    }
+
+    @ModifyVariable(method = "doSendPacket", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private Packet<?> printer$trackRecoveryFence(Packet<?> packet) {
+        me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.sent(this, packet);
+        return packet;
+    }
+
     @Inject(method = "genericsFtw", at = @At("HEAD"), require = 0)
     private static void hookGenericsFtw(Packet<?> packet, PacketListener listener, CallbackInfo ci) {
         if (ConfigUtils.isEnable()) {

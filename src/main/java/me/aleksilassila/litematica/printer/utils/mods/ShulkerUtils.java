@@ -13,13 +13,17 @@ import net.minecraft.world.item.ItemStack;
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerClicks;
 import me.aleksilassila.litematica.printer.integration.quickshulker.ShulkerCursorRecovery;
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics;
+import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 
 @SuppressWarnings({"DataFlowIssue", "SpellCheckingInspection"})
 public class ShulkerUtils {
     static final Minecraft client = Minecraft.getInstance();
     private static boolean apiFailureLogged;
     private static final ShulkerCursorRecovery recovery = new ShulkerCursorRecovery();
-    private static int recoveryTicks;
+    private static net.minecraft.world.inventory.AbstractContainerMenu recoveryMenu;
+    private static Object recoveryConnection;
+    private static net.minecraft.world.inventory.AbstractContainerMenu requestedMenu;
+    private static InventoryRecoveryFence.Ticket recoveryFence;
 
     public static boolean openShulker(ItemStack stack, int shulkerBoxSlot) {
         if (client.player == null || client.gameMode == null || recovery.active()
@@ -30,6 +34,10 @@ public class ShulkerUtils {
         IConfigOptionListEntry openMode = Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue();
         if (openMode == QuickShulkerModeType.CLICK_SLOT) {
             recovery.begin(shulkerBoxSlot, stack);
+            recoveryMenu = client.player.inventoryMenu;
+            recoveryConnection = client.getConnection();
+            requestedMenu = null;
+            recoveryFence = null;
             QuickShulkerClicks.send(client.player.containerMenu, shulkerBoxSlot, 1, ContainerInput.PICKUP);
             return true;
         } else if (openMode == QuickShulkerModeType.INVOKE) {
@@ -62,13 +70,14 @@ public class ShulkerUtils {
     public static void recoverFailedOpen() {
         if (recovery.active()) return;
         recovery.fail();
-        recoveryTicks = 40;
-        tickRecovery();
     }
 
     public static void clearOpenAttempt() {
         recovery.reset();
-        recoveryTicks = 0;
+        recoveryMenu = null;
+        recoveryConnection = null;
+        requestedMenu = null;
+        recoveryFence = null;
     }
 
     public static void onRuntimeReset(String reason) {
@@ -78,23 +87,37 @@ public class ShulkerUtils {
 
     public static void tickRecovery() {
         if (!recovery.active()) return;
-        if (client == null || client.player == null) { clearOpenAttempt(); return; }
+        if (client == null || client.player == null || client.getConnection() != recoveryConnection
+                || client.player.inventoryMenu != recoveryMenu) { clearOpenAttempt(); return; }
         var menu = client.player.containerMenu;
-        if (menu != client.player.inventoryMenu || recovery.slot() >= menu.slots.size()) {
-            clearOpenAttempt();
+        if (menu != recoveryMenu) {
+            // A late or manually opened container does not cancel the earlier pickup. Do not
+            // click that container; synchronize our inventory after the player returns to it.
+            requestedMenu = null;
+            recoveryFence = null;
             return;
         }
-        if (recovery.shouldReturn(menu.getCarried(), menu.slots.get(recovery.slot()).getItem())) {
-            QuickShulkerDiagnostics.log("cursor-recovery slot=" + recovery.slot());
-            recovery.markReturnSent();
-            recoveryTicks = 40;
-            QuickShulkerClicks.send(menu, recovery.slot(), 0, ContainerInput.PICKUP);
-        } else if (recovery.confirmed()) {
+        if (requestedMenu != menu || recoveryFence == null || recoveryFence.invalidated()) {
+            requestedMenu = menu;
+            QuickShulkerClicks.requestFullSync(menu);
+            requestRecoveryFence();
+            return;
+        }
+        if (!recoveryFence.complete()) return;
+        if (menu.getCarried().isEmpty()) {
             QuickShulkerDiagnostics.log("cursor-recovered slot=" + recovery.slot());
             clearOpenAttempt();
-        } else if (--recoveryTicks <= 0) {
-            Reference.LOGGER.warn("Quick Shulker cursor recovery was not confirmed; leaving the cursor untouched");
-            clearOpenAttempt();
+        } else if (recovery.shouldReturn(menu.getCarried(), menu.slots.get(recovery.slot()).getItem())) {
+            QuickShulkerDiagnostics.log("cursor-recovery slot=" + recovery.slot());
+            recovery.markReturnSent();
+            QuickShulkerClicks.sendWithFullSync(menu, recovery.slot(), 0, ContainerInput.PICKUP);
+            requestRecoveryFence();
         }
+    }
+
+    private static void requestRecoveryFence() {
+        var connection = client.getConnection();
+        recoveryFence = InventoryRecoveryFence.prepare(connection.getConnection());
+        connection.send(recoveryFence.packet());
     }
 }

@@ -29,6 +29,8 @@ public abstract class MixinClientPacketListener {
     @Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/MenuScreens;create(Lnet/minecraft/world/inventory/MenuType;Lnet/minecraft/client/Minecraft;ILnet/minecraft/network/chat/Component;)V"), method = "handleOpenScreen")
     private void printer$trackQuickShulkerContainerOpen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
         if ((Object) this != Minecraft.getInstance().getConnection()) return;
+        me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.invalidate(
+                ((ClientPacketListener) (Object) this).getConnection());
         QuickShulkerBridge.onContainerOpen(packet.getContainerId(), packet.getType());
         RuntimeAccess.get().containerSync().opened(packet.getContainerId(), packet.getType());
     }
@@ -92,6 +94,19 @@ public abstract class MixinClientPacketListener {
     private void printer$confirmQuickShulkerSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
         if ((Object) this != Minecraft.getInstance().getConnection()) return;
         QuickShulkerBridge.onSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
+    }
+
+    @Inject(at = @At("TAIL"), method = "handleContainerClose")
+    private void printer$invalidateRecoveryMenu(net.minecraft.network.protocol.game.ClientboundContainerClosePacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
+        me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.invalidate(
+                ((ClientPacketListener) (Object) this).getConnection());
+    }
+
+    @Inject(at = @At("TAIL"), method = "handleAwardStats")
+    private void printer$confirmRecoveryFence(net.minecraft.network.protocol.game.ClientboundAwardStatsPacket packet, CallbackInfo ci) {
+        me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.received(
+                ((ClientPacketListener) (Object) this).getConnection());
     }
     //#if MC >= 12103
     @Inject(at = @At("TAIL"), method = "handleSetCursorItem")

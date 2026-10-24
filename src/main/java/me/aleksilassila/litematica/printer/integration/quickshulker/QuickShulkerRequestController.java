@@ -232,6 +232,12 @@ public final class QuickShulkerRequestController {
                     || this.emptyShulkerOnly && !me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest.isEmptyShulker(slot.getItem())) continue;
             TargetChoice choice = selectTarget(menu, shulkerInventoryMenuSlot);
             if (choice == null) continue;
+            Slot target = menu.slots.get(choice.target());
+            if (!slot.mayPickup(player) || !target.mayPlace(slot.getItem())
+                    || target.getMaxStackSize(slot.getItem()) < slot.getItem().getCount()) continue;
+            if (choice.emptyMainSlot() < 0 && !target.getItem().isEmpty()
+                    && (!target.mayPickup(player) || !slot.mayPlace(target.getItem())
+                    || slot.getMaxStackSize(target.getItem()) < target.getItem().getCount())) continue;
             targetHotbarSlot = choice.hotbar();
             if (choice.emptyMainSlot() >= 0) {
                 clearingHotbar = true;
@@ -276,10 +282,14 @@ public final class QuickShulkerRequestController {
                 for (int i = 0; i < menu.slots.size(); i++) {
                     Slot candidate = menu.slots.get(i);
                     if (candidate.container == player.getInventory() && candidate.getContainerSlot() >= 9
-                            && candidate.getContainerSlot() < 36 && candidate.getItem().isEmpty()) {
+                            && candidate.getContainerSlot() < 36 && candidate.getItem().isEmpty()
+                            && candidate.getContainerSlot() != sourceMenuSlot) {
                         return new TargetChoice(hotbar, target, i);
                     }
                 }
+                // With no free inventory slot, exchange this ordinary stack with the requested
+                // stack in the box. The real source slot is validated again before sending SWAP.
+                return new TargetChoice(hotbar, target, -1);
             }
         }
         return null;

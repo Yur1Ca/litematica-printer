@@ -34,6 +34,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     private final SchematicSectionSnapshots sectionSnapshots = new SchematicSectionSnapshots();
     private WorldSchematic indexedSchematic;
     private List<ChunkStamp> indexedChunks = List.of();
+    private List<ChunkStamp> encounteredChunks = List.of();
+    private boolean encounteredAllFilled;
     private State state = State.STALE;
 
     enum State {
@@ -75,7 +77,13 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     }
 
     private boolean ensureBuiltWithStableChunkStates(WorldSchematic schematic, RuntimeTiming timing, String owner) {
-        LoadedChunks loadedChunks = captureLoadedChunks(schematic);
+        List<ChunkSchematic> current = loadedChunks(schematic);
+        boolean mayMatch = this.indexedSchematic == schematic
+                && (this.state == State.READY || this.state == State.WAITING && !this.encounteredAllFilled);
+        LoadedChunks loadedChunks = captureLoadedChunks(current, mayMatch ? this.encounteredChunks : null);
+        if (loadedChunks == null) return false;
+        this.encounteredChunks = loadedChunks.encounterOrder();
+        this.encounteredAllFilled = loadedChunks.allFilled();
         if (!loadedChunks.allFilled()) {
             boolean changed = this.indexedSchematic != schematic
                     || this.state != State.WAITING
@@ -106,7 +114,12 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     }
 
     private boolean waitForDenseFallback(WorldSchematic schematic) {
-        LoadedChunks loadedChunks = captureLoadedChunks(schematic);
+        List<ChunkSchematic> current = loadedChunks(schematic);
+        boolean mayMatch = this.indexedSchematic == schematic && this.state == State.WAITING;
+        LoadedChunks loadedChunks = captureLoadedChunks(current, mayMatch ? this.encounteredChunks : null);
+        if (loadedChunks == null) return false;
+        this.encounteredChunks = loadedChunks.encounterOrder();
+        this.encounteredAllFilled = loadedChunks.allFilled();
         boolean changed = this.indexedSchematic != schematic || this.state != State.WAITING
                 || !sameChunkSnapshot(this.indexedChunks, loadedChunks.stamps());
         this.nonAirPositions.clear();
@@ -136,6 +149,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         this.sectionSnapshots.clear();
         this.indexedSchematic = null;
         this.indexedChunks = List.of();
+        this.encounteredChunks = List.of();
+        this.encounteredAllFilled = false;
         this.state = State.STALE;
     }
 
@@ -193,40 +208,60 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         this.state = State.READY;
     }
 
-    private static LoadedChunks captureLoadedChunks(WorldSchematic schematic) {
+    private static List<ChunkSchematic> loadedChunks(WorldSchematic schematic) {
         ChunkManagerSchematic chunkManager = (ChunkManagerSchematic) schematic.getChunkSource();
-        List<ChunkSchematic> chunks = new ArrayList<>();
-        List<ChunkStamp> stamps = new ArrayList<>();
-        boolean allFilled = true;
         //#if MC >= 12111
-        for (ChunkSchematic chunk : chunkManager.getLoadedValueSet()) {
+        return chunkManager.getLoadedValueSet();
         //#else
-        //$$ for (ChunkSchematic chunk : chunkManager.getLoadedChunks().values()) {
+        //$$ return new ArrayList<>(chunkManager.getLoadedChunks().values());
         //#endif
-            if (chunk == null) {
-                continue;
+    }
+
+    /** Null means every entry matched. Encounter order is only a fast path, never an invariant. */
+    private static LoadedChunks captureLoadedChunks(List<ChunkSchematic> current, List<ChunkStamp> previous) {
+        boolean matching = previous != null && previous.size() == current.size();
+        List<ChunkSchematic> chunks = matching ? null : new ArrayList<>(current.size());
+        List<ChunkStamp> stamps = matching ? null : new ArrayList<>(current.size());
+        boolean allFilled = true;
+        for (int i = 0; i < current.size(); i++) {
+            ChunkSchematic chunk = current.get(i);
+            long key = 0L;
+            boolean filled = false;
+            if (chunk != null) {
+                ChunkPos chunkPos = chunk.getPos();
+                //#if MC >= 260100
+                key = chunkKey(chunkPos.x(), chunkPos.z());
+                //#else
+                //$$ key = chunkKey(chunkPos.x, chunkPos.z);
+                //#endif
+                //#if MC >= 12111
+                filled = chunk.getState().atLeast(ChunkSchematicState.FILLED);
+                //#endif
+                allFilled &= filled;
             }
-            ChunkPos chunkPos = chunk.getPos();
-            //#if MC >= 260100
-            int chunkX = chunkPos.x();
-            int chunkZ = chunkPos.z();
-            //#else
-            //$$ int chunkX = chunkPos.x;
-            //$$ int chunkZ = chunkPos.z;
-            //#endif
-            //#if MC >= 12111
-            boolean filled = chunk.getState().atLeast(ChunkSchematicState.FILLED);
-            //#else
-            // Older versions never call the sparse build path; keep this false as a defensive
-            // fallback if the capture helper is reused by future code.
-            //$$ boolean filled = false;
-            //#endif
+            if (matching) {
+                ChunkStamp stamp = previous.get(i);
+                if (chunk != null && stamp.identity() == chunk && stamp.key() == key
+                        && stamp.filled() == filled) continue;
+                // Reuse the already-validated prefix instead of reading its live state twice.
+                // A LOADED observation must not turn into FILLED within this check.
+                matching = false;
+                chunks = new ArrayList<>(current.size());
+                stamps = new ArrayList<>(current.size());
+                for (int prefix = 0; prefix < i; prefix++) {
+                    ChunkStamp observed = previous.get(prefix);
+                    chunks.add((ChunkSchematic) observed.identity());
+                    stamps.add(observed);
+                }
+            }
+            if (chunk == null) continue;
             chunks.add(chunk);
-            stamps.add(new ChunkStamp(chunkKey(chunkX, chunkZ), chunk, filled));
-            allFilled &= filled;
+            stamps.add(new ChunkStamp(key, chunk, filled));
         }
+        if (matching) return null;
+        List<ChunkStamp> encounterOrder = List.copyOf(stamps);
         stamps.sort(Comparator.comparingLong(ChunkStamp::key));
-        return new LoadedChunks(List.copyOf(chunks), List.copyOf(stamps), allFilled);
+        return new LoadedChunks(List.copyOf(chunks), List.copyOf(stamps), encounterOrder, allFilled);
     }
 
     static boolean sameChunkSnapshot(List<ChunkStamp> first, List<ChunkStamp> second) {
@@ -252,6 +287,7 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     static record ChunkStamp(long key, Object identity, boolean filled) {
     }
 
-    private record LoadedChunks(List<ChunkSchematic> chunks, List<ChunkStamp> stamps, boolean allFilled) {
+    private record LoadedChunks(List<ChunkSchematic> chunks, List<ChunkStamp> stamps,
+                                List<ChunkStamp> encounterOrder, boolean allFilled) {
     }
 }

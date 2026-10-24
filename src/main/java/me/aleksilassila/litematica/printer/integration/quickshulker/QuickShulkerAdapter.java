@@ -44,7 +44,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public MaterialReservation request(MaterialRequest request) {
-        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()
+                || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             return new MaterialReservation(request.token(), MaterialReservation.State.PENDING);
         }
         if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
@@ -152,7 +153,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void tick() {
-        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()
+                || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             if (!this.acquireResources()) return;
             if (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
                     || !Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.cancelDrain();
@@ -217,7 +219,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private boolean prepareConfirmationAdvance() {
-        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) {
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()
+                || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             this.cancelDisabledDrain();
             this.requests.tickCancellation();
             return false;
@@ -245,7 +248,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         this.requests.resetRuntime();
         this.attemptedToken = 0L;
         this.externalRequestActive = false;
-        if (this.requests.isCancelling() || this.orderedStorage.isDraining()) this.acquireResources();
+        if (this.requests.isCancelling() || this.orderedStorage.isDraining()
+                || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) this.acquireResources();
         else this.releaseResources();
     }
 

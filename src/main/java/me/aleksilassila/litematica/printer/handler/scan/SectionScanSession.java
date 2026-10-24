@@ -45,7 +45,7 @@ final class SectionScanSession {
     private long cursorRevision;
     private long exhaustedUntilTick = Long.MIN_VALUE;
     private final PriorityQueue<ScanDirtyPosition> dirtyPositions = new PriorityQueue<>();
-    private final LongSet dirtyPositionKeys = new LongOpenHashSet();
+    private final LongSet dirtyPositionKeys = new DirtyPositionKeys();
     private boolean paused;
     private boolean closed;
     private ScanHandle scanHandle;
@@ -420,6 +420,21 @@ final class SectionScanSession {
     record Candidate(BlockPos pos, byte flags) {
         boolean acceptedByFlags(ScanIntent intent) {
             return intent.acceptsByFlags(this.flags);
+        }
+    }
+
+    /** Reuse the active burst's table; release its peak capacity on pass reset or close. */
+    private static final class DirtyPositionKeys extends LongOpenHashSet {
+        @Override
+        protected void rehash(int newSize) {
+            // Removing a batch must not shrink the table that the next update batch will grow again.
+            if (newSize > this.n) super.rehash(newSize);
+        }
+
+        @Override
+        public void clear() {
+            super.clear();
+            if (this.n > this.minN) super.rehash(this.minN);
         }
     }
 

@@ -70,7 +70,8 @@ Dependency versions must match the Minecraft version being launched.
 
 ### Inventory integrations
 
-- Container sync: bind **Sync Containers**, enable the master work switch, select an empty main-hand slot and point at a template chest, barrel or shulker box. Matching containers in the Litematica area selection are filled slot by slot; double chests count as one container. Move within normal interaction range of each target.
+- Container sync: bind **Sync Containers**, enable the master work switch, select an empty main-hand slot and point at a template chest, barrel, shulker box, hopper, dispenser, dropper or crafter. Containers of the same type and capacity in the Litematica area selection are filled slot by slot; double chests count as one container. Move within normal interaction range of each target.
+- Crafters synchronize items only, preserving each target's disabled slots. A template item that conflicts with a disabled target slot pauses the task. The recipe result preview is excluded. Available from 1.20.4 when crafters are enabled in the world.
 - Materials come from your inventory; surplus returns there. Missing items or storage space pauses the task; press the hotkey to retry after resolving it. Pressing the hotkey while running or disabling the master switch cancels after the current transfer settles. Main hand, armor, offhand and protected hotbar slots are excluded. Remote retrieval integrations are not required.
 - If the server forcibly closes a container during transfer, synchronization waits for a full inventory confirmation before pausing. The server handles the carried stack; vanilla may drop items that cannot fit in your inventory.
 

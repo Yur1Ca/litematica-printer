@@ -90,6 +90,11 @@ val Project.placeholderProps: Map<String, Any?>
         "fabric_api_version" to fabricApiVersion,
         "minecraft_dependency" to mcDependency,
         "compatibility_level" to mixinJavaVersion,
+        "crafter_client_mixins" to if (mcVersionInt >= 12004) {
+            "\"MixinCrafterScreen\","
+        } else {
+            ""
+        },
         "beacon_client_mixins" to if (mcVersionInt < 260200) {
             "\"printer.mc.BeaconBlockEntityAccessor\",\n" +
                     "    \"printer.mc.BeaconButtonAccessor\",\n" +

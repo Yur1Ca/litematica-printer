@@ -47,6 +47,10 @@ public final class ContainerSyncController implements RuntimeComponent {
     private int resyncRevision;
     private boolean resyncRequested, resyncNeedsAttention;
     private ContainerSyncTransfer transfer;
+    private ContainerSyncLayout layout;
+    private int slotStatesSeen, openingContentRevision;
+    private List<ItemStack> openingContents;
+    private ItemStack openingCursor;
     private List<ItemStack> template;
     private final LinkedHashSet<BlockPos> remaining = new LinkedHashSet<>();
     private Set<BlockPos> highlights;
@@ -75,11 +79,12 @@ public final class ContainerSyncController implements RuntimeComponent {
                 || !(client.hitResult instanceof BlockHitResult hit)) { message("select"); return; }
         var state = client.level.getBlockState(hit.getBlockPos());
         block = state.getBlock();
-        if (!(block instanceof ChestBlock || block instanceof BarrelBlock || block instanceof ShulkerBoxBlock)) {
+        layout = ContainerSyncLayout.of(state);
+        if (layout == null) {
             message("unsupported"); return;
         }
         reference = canonical(hit.getBlockPos());
-        size = block instanceof ChestBlock && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE ? 54 : 27;
+        size = layout.size;
         selection = runtime.litematica().createSelectionBoxes();
         if (selection.isEmpty()) { message("selection"); return; }
         if (!acquire()) { message("busy"); return; }
@@ -140,6 +145,10 @@ public final class ContainerSyncController implements RuntimeComponent {
             // sent yet, and a late initial snapshot for the lost menu can no longer be used.
             if (phase == Phase.CONTENT && client.player.containerMenu.containerId != candidate) {
                 pause("changed"); return;
+            }
+            if (phase == Phase.CONTENT && cancelling && openingContents != null) {
+                content(candidate, openingContentRevision, openingContents, openingCursor);
+                return;
             }
             // Time alone cannot prove that a queued open was rejected. Keep ownership until its barrier reply.
             if (now() - requestedAt > 10000) message("waiting");
@@ -202,8 +211,8 @@ public final class ContainerSyncController implements RuntimeComponent {
     }
 
     private int containerSize(BlockPos pos) {
-        var state = client.level.getBlockState(pos);
-        return state.getBlock() instanceof ChestBlock && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE ? 54 : 27;
+        var targetLayout = ContainerSyncLayout.of(client.level.getBlockState(pos));
+        return targetLayout == null ? 0 : targetLayout.size;
     }
 
     private boolean reachable(BlockPos pos) {
@@ -213,9 +222,9 @@ public final class ContainerSyncController implements RuntimeComponent {
 
     public void opened(int id, MenuType<?> type) {
         if (phase != Phase.OPENING || !sameWorld()) return;
-        boolean accepted = block instanceof ShulkerBoxBlock ? type == MenuType.SHULKER_BOX
-                : type == (size == 54 ? MenuType.GENERIC_9x6 : MenuType.GENERIC_9x3);
-        if (!accepted) { pause("changed"); return; }
+        layout = ContainerSyncLayout.of(block, size);
+        if (layout == null || layout.size != size || type != layout.type) { pause("changed"); return; }
+        slotStatesSeen = 0; openingContents = null; openingCursor = null;
         candidate = id; phase = Phase.CONTENT;
         me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log("container-sync opened menu=" + id);
     }
@@ -241,23 +250,33 @@ public final class ContainerSyncController implements RuntimeComponent {
             return;
         }
         if (phase == Phase.TRANSFER && client.player.containerMenu == menu && menu.containerId == id) {
-            if (ContainerSyncTransfer.newerRevision(revision, sentRevision)) transfer.observe(menu, items, carried);
+            var editable = layout.contents(items);
+            if (editable != null && ContainerSyncTransfer.newerRevision(revision, sentRevision)) transfer.observe(menu, editable, carried);
             return;
         }
         if (phase != Phase.CONTENT || candidate != id || client.player.containerMenu.containerId != id) return;
         menu = client.player.containerMenu;
-        if (items.size() != size + 36 || menu.slots.size() != items.size() || !carried.isEmpty()) {
+        var editable = layout.contents(items);
+        if (editable == null || menu.slots.size() != items.size() || !carried.isEmpty()) {
             pause("changed"); return;
         }
         // Explicit slot ownership prevents modded menus from masquerading as ordinary storage.
-        for (int i = 0; i < items.size(); i++) {
-            boolean playerSlot = menu.getSlot(i).container == client.player.getInventory();
-            if (playerSlot != (i >= size)) { pause("unsupported"); return; }
-        }
+        if (!layout.acceptsSlots(menu, client.player.getInventory())) { pause("unsupported"); return; }
         if (cancelling) { closeOwned(); discard(); message("cancelled"); return; }
+        // Initial slot data follows the content packet; an all-enabled client default is not confirmation.
+        if (layout.crafter && slotStatesSeen != 511) {
+            openingContents = ContainerSyncPlan.copy(items); openingCursor = carried.copy();
+            openingContentRevision = revision;
+            return;
+        }
+        openingContents = null; openingCursor = null;
         if (template == null) {
-            template = ContainerSyncPlan.copy(items.subList(0, size));
+            template = ContainerSyncPlan.copy(editable.subList(0, size));
             closeOwned(); phase = Phase.READY; return;
+        }
+        int disabledSlots = layout.disabledSlots(menu);
+        for (int slot = 0; slot < size; slot++) {
+            if ((disabledSlots & (1 << slot)) != 0 && !template.get(slot).isEmpty()) { pause("disabled_slot"); return; }
         }
         var rules = new ContainerSyncPlan.Rules() {
             public boolean movable(int slot) {
@@ -276,13 +295,14 @@ public final class ContainerSyncController implements RuntimeComponent {
                 return targetSlot.mayPlace(stack) ? targetSlot.getMaxStackSize(stack) : 0;
             }
         };
-        var plan = ContainerSyncPlan.create(template, items, rules);
+        var plan = ContainerSyncPlan.create(template, editable, rules);
         if (plan.problem() != null) {
             pause(plan.problem() == ContainerSyncPlan.Problem.MISSING_ITEMS ? "missing"
                     : plan.problem() == ContainerSyncPlan.Problem.NO_SPACE ? "space" : "unsupported");
             return;
         }
         final AbstractContainerMenu owned = menu;
+        final ContainerSyncLayout ownedLayout = layout;
         transfer = new ContainerSyncTransfer(new ContainerSyncTransfer.Port() {
             public Object context() { return sameWorld() && client.player != null && client.player.containerMenu == owned ? owned : null; }
             public boolean acquire() { return ContainerSyncController.this.acquire(); }
@@ -294,7 +314,8 @@ public final class ContainerSyncController implements RuntimeComponent {
             }
             public void refresh() { sentRevision = owned.getStateId(); QuickShulkerClicks.requestFullSync(owned); }
             public boolean unchanged(List<ItemStack> expected, ItemStack cursor) {
-                return ContainerSyncPlan.matches(expected, owned.slots.stream().map(slot -> slot.getItem()).toList())
+                return ownedLayout.disabledSlots(owned) == disabledSlots
+                        && ContainerSyncPlan.matches(expected, ownedLayout.contents(owned.slots.stream().map(slot -> slot.getItem()).toList()))
                         && ItemStack.matches(cursor, owned.getCarried());
             }
         }, plan);
@@ -302,14 +323,37 @@ public final class ContainerSyncController implements RuntimeComponent {
         message("progress", remaining.size());
     }
 
+    /** Called after vanilla applies server container data, including while WORK is disabled. */
+    public void data(int id, int slot) {
+        if (phase != Phase.CONTENT || !sameWorld() || layout == null || !layout.crafter
+                || client.player == null || candidate != id || client.player.containerMenu.containerId != id
+                || slot < 0 || slot >= 9) return;
+        slotStatesSeen |= 1 << slot;
+        if (slotStatesSeen != 511 || openingContents == null) return;
+        var items = openingContents;
+        var carried = openingCursor;
+        if (!ContainerSyncPlan.matches(layout.contents(items), layout.contents(menu.slots.stream().map(s -> s.getItem()).toList()))
+                || !ItemStack.matches(carried, menu.getCarried())) { pause("changed"); return; }
+        content(id, openingContentRevision, items, carried);
+    }
+
     /** Manual clicks/close request cancellation; an in-flight cursor must be settled first. */
     public boolean guardManualInput() {
+        return guardManualInput(true);
+    }
+
+    /** A screen may predict state before forwarding the same click to the game-mode guard. */
+    public boolean guardManualInputBeforePrediction() {
+        return guardManualInput(false);
+    }
+
+    private boolean guardManualInput(boolean consumeRecovery) {
         if (closing || !sameWorld() || client.player == null) return false;
         if (phase == Phase.RESYNC) {
             cancel();
             if (!resyncNeedsAttention || resyncMenu != client.player.containerMenu || !resyncRequested) return true;
             // Let one manual recovery click through, then request its full confirmation on the next tick.
-            resyncRequested = false; resyncNeedsAttention = false;
+            if (consumeRecovery) { resyncRequested = false; resyncNeedsAttention = false; }
             return false;
         }
         if (phase == Phase.TRANSFER && client.player.containerMenu == menu && !transfer.finished()) {
@@ -349,6 +393,7 @@ public final class ContainerSyncController implements RuntimeComponent {
             try { client.player.closeContainer(); } finally { closing = false; }
         }
         menu = null; candidate = -1;
+        openingContents = null; openingCursor = null; slotStatesSeen = 0;
     }
 
     private void pause(String reason) {
@@ -363,6 +408,7 @@ public final class ContainerSyncController implements RuntimeComponent {
 
     private void discard() {
         transfer = null; menu = null; candidate = -1; template = null;
+        openingContents = null; openingCursor = null; slotStatesSeen = 0;
         resyncMenu = null; resyncRequested = false; resyncNeedsAttention = false;
         remaining.clear(); if (highlights != null) highlights.clear();
         phase = Phase.IDLE; cancelling = false; scanPaused = false;

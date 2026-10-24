@@ -12,6 +12,7 @@
   "client": [
     "MixinClientPacketListener",
     "MixinContainerScreenGuard",
+    ${crafter_client_mixins}
     "MixinMinecraftManualUse",
     "MixinMinecraftMiningInput",
     "MixinMinecraftPickBlock",

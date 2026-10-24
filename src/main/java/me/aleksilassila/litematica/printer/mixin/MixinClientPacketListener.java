@@ -96,6 +96,14 @@ public abstract class MixinClientPacketListener {
         QuickShulkerBridge.onSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
     }
 
+    //#if MC >= 12004
+    @Inject(at = @At("TAIL"), method = "handleContainerSetData")
+    private void printer$trackContainerSyncData(net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
+        RuntimeAccess.get().containerSync().data(packet.getContainerId(), packet.getId());
+    }
+    //#endif
+
     @Inject(at = @At("TAIL"), method = "handleContainerClose")
     private void printer$invalidateRecoveryMenu(net.minecraft.network.protocol.game.ClientboundContainerClosePacket packet, CallbackInfo ci) {
         if ((Object) this != Minecraft.getInstance().getConnection()) return;

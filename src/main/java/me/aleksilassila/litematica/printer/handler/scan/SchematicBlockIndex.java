@@ -9,6 +9,7 @@ import fi.dy.masa.litematica.world.WorldSchematic;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +31,7 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
     private static final int SECTION_SIZE = 16;
 
     private final SectionPositionIndex nonAirPositions = new SectionPositionIndex();
+    private final SchematicSectionSnapshots sectionSnapshots = new SchematicSectionSnapshots();
     private WorldSchematic indexedSchematic;
     private List<ChunkStamp> indexedChunks = List.of();
     private State state = State.STALE;
@@ -79,6 +81,7 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
                     || this.state != State.WAITING
                     || !sameChunkSnapshot(this.indexedChunks, loadedChunks.stamps());
             this.nonAirPositions.clear();
+            this.sectionSnapshots.clear();
             this.indexedSchematic = schematic;
             this.indexedChunks = loadedChunks.stamps();
             this.state = State.WAITING;
@@ -107,6 +110,7 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         boolean changed = this.indexedSchematic != schematic || this.state != State.WAITING
                 || !sameChunkSnapshot(this.indexedChunks, loadedChunks.stamps());
         this.nonAirPositions.clear();
+        this.sectionSnapshots.clear();
         this.indexedSchematic = schematic;
         this.indexedChunks = loadedChunks.stamps();
         this.state = State.WAITING;
@@ -122,50 +126,69 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         return this.nonAirPositions.forEachInRange(boxes, region, consumer);
     }
 
+    SchematicPositionQuery unresolvedPrintQuery(SectionSnapshotStore snapshots) {
+        return (boxes, region, consumer) -> this.nonAirPositions.forEachInRange(
+                boxes, region, snapshots::excludedPrintPositions, consumer);
+    }
+
     void clear() {
         this.nonAirPositions.clear();
+        this.sectionSnapshots.clear();
         this.indexedSchematic = null;
         this.indexedChunks = List.of();
         this.state = State.STALE;
     }
 
     private void build(WorldSchematic schematic, LoadedChunks loadedChunks) {
+        boolean reuse = this.state == State.READY && this.indexedSchematic == schematic;
         this.state = State.BUILDING;
-        this.nonAirPositions.clear();
+        if (!reuse) {
+            this.nonAirPositions.clear();
+            this.sectionSnapshots.clear();
+        }
         this.indexedSchematic = schematic;
 
         int bottomY = schematic.getMinY();
-        for (ChunkSchematic chunk : loadedChunks.chunks()) {
-            ChunkPos chunkPos = chunk.getPos();
-            //#if MC >= 260100
-            int chunkX = chunkPos.x();
-            int chunkZ = chunkPos.z();
-            //#else
-            //$$ int chunkX = chunkPos.x;
-            //$$ int chunkZ = chunkPos.z;
-            //#endif
-            LevelChunkSection[] sections = chunk.getSections();
-            for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-                LevelChunkSection section = sections[sectionIndex];
-                if (section == null || section.hasOnlyAir()) {
-                    continue;
-                }
-                int sectionBaseY = bottomY + (sectionIndex << 4);
-                for (int y = 0; y < SECTION_SIZE; y++) {
-                    for (int z = 0; z < SECTION_SIZE; z++) {
-                        for (int x = 0; x < SECTION_SIZE; x++) {
-                            if (!section.getBlockState(x, y, z).isAir()) {
-                                this.nonAirPositions.add(BlockPos.asLong(
-                                        (chunkX << 4) + x,
-                                        sectionBaseY + y,
-                                        (chunkZ << 4) + z
-                                ));
+        LongOpenHashSet retainedSections = new LongOpenHashSet();
+        try (var comparison = this.sectionSnapshots.compare()) {
+            for (ChunkSchematic chunk : loadedChunks.chunks()) {
+                ChunkPos chunkPos = chunk.getPos();
+                //#if MC >= 260100
+                int chunkX = chunkPos.x();
+                int chunkZ = chunkPos.z();
+                //#else
+                //$$ int chunkX = chunkPos.x;
+                //$$ int chunkZ = chunkPos.z;
+                //#endif
+                LevelChunkSection[] sections = chunk.getSections();
+                for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+                    LevelChunkSection section = sections[sectionIndex];
+                    if (section == null || section.hasOnlyAir()) {
+                        continue;
+                    }
+                    int sectionBaseY = bottomY + (sectionIndex << 4);
+                    long sectionKey = ScanGeometry.sectionKey(chunkX, sectionBaseY >> 4, chunkZ);
+                    retainedSections.add(sectionKey);
+                    if (comparison.unchanged(sectionKey, section)) continue;
+                    this.nonAirPositions.removeSection(sectionKey);
+                    for (int y = 0; y < SECTION_SIZE; y++) {
+                        for (int z = 0; z < SECTION_SIZE; z++) {
+                            for (int x = 0; x < SECTION_SIZE; x++) {
+                                if (!section.getBlockState(x, y, z).isAir()) {
+                                    this.nonAirPositions.add(BlockPos.asLong(
+                                            (chunkX << 4) + x,
+                                            sectionBaseY + y,
+                                            (chunkZ << 4) + z
+                                    ));
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        this.nonAirPositions.retainSections(retainedSections);
+        this.sectionSnapshots.retainSections(retainedSections);
         this.indexedChunks = loadedChunks.stamps();
         this.state = State.READY;
     }

@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import java.util.List;
 import java.util.function.LongConsumer;
+import java.util.function.LongFunction;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 
@@ -14,6 +15,8 @@ final class SectionPositionIndex implements SchematicPositionQuery {
     // position directly, allocating a set only when the section actually needs more entries.
     private final Long2LongOpenHashMap firstPositions = new Long2LongOpenHashMap();
     private final Long2ObjectOpenHashMap<LongOpenHashSet> additionalPositions = new Long2ObjectOpenHashMap<>();
+    // A section bitmap costs 64 longs; do not allocate one for sparse singleton sections.
+    private final Long2ObjectOpenHashMap<long[]> densePositions = new Long2ObjectOpenHashMap<>();
 
     void add(long position) {
         int x = BlockPos.getX(position) >> 4;
@@ -25,21 +28,59 @@ final class SectionPositionIndex implements SchematicPositionQuery {
             return;
         }
         if (this.firstPositions.get(key) == position) return;
+        long[] dense = this.densePositions.get(key);
+        if (dense != null) {
+            addBit(dense, position);
+            return;
+        }
         LongOpenHashSet additional = this.additionalPositions.get(key);
         if (additional == null) {
             additional = new LongOpenHashSet(2);
             this.additionalPositions.put(key, additional);
         }
         additional.add(position);
+        if (additional.size() >= Long.SIZE) {
+            dense = new long[Long.SIZE];
+            addBit(dense, this.firstPositions.get(key));
+            var iterator = additional.iterator();
+            while (iterator.hasNext()) addBit(dense, iterator.nextLong());
+            this.densePositions.put(key, dense);
+            this.additionalPositions.remove(key);
+        }
     }
 
     void clear() {
         this.firstPositions.clear();
         this.additionalPositions.clear();
+        this.densePositions.clear();
+    }
+
+    void removeSection(long key) {
+        this.firstPositions.remove(key);
+        this.additionalPositions.remove(key);
+        this.densePositions.remove(key);
+    }
+
+    void retainSections(it.unimi.dsi.fastutil.longs.LongSet sections) {
+        var iterator = this.firstPositions.long2LongEntrySet().fastIterator();
+        while (iterator.hasNext()) {
+            long key = iterator.next().getLongKey();
+            if (!sections.contains(key)) {
+                iterator.remove();
+                this.additionalPositions.remove(key);
+                this.densePositions.remove(key);
+            }
+        }
     }
 
     @Override
     public long forEachInRange(List<PrinterBox> boxes, ScanRegion region, LongConsumer consumer) {
+        return this.forEachInRange(boxes, region, null, consumer);
+    }
+
+    /** Exclusion masks are borrowed only for this synchronous visit; never retained or modified. */
+    long forEachInRange(List<PrinterBox> boxes, ScanRegion region,
+                        LongFunction<long[]> exclusions, LongConsumer consumer) {
         if (this.firstPositions.isEmpty() || boxes.isEmpty()) return 0;
         SectionBounds bounds = SectionBounds.intersect(boxes, region);
         if (bounds == null) return 0;
@@ -56,7 +97,7 @@ final class SectionPositionIndex implements SchematicPositionQuery {
                             // A query outside packed-coordinate limits must not alias a valid key.
                             if ((BlockPos.getX(first) >> 4) == x && (BlockPos.getY(first) >> 4) == y
                                     && (BlockPos.getZ(first) >> 4) == z && intersects(x, y, z, boxes)) {
-                                visited += this.visit(key, first, consumer);
+                                visited += this.visit(key, first, exclusions, consumer);
                             }
                         }
                     }
@@ -71,7 +112,7 @@ final class SectionPositionIndex implements SchematicPositionQuery {
                 int y = BlockPos.getY(first) >> 4;
                 int z = BlockPos.getZ(first) >> 4;
                 if (bounds.contains(x, y, z) && intersects(x, y, z, boxes)) {
-                    visited += this.visit(entry.getLongKey(), first, consumer);
+                    visited += this.visit(entry.getLongKey(), first, exclusions, consumer);
                 }
             }
         }
@@ -90,13 +131,56 @@ final class SectionPositionIndex implements SchematicPositionQuery {
         return false;
     }
 
-    private long visit(long key, long first, LongConsumer consumer) {
-        consumer.accept(first);
+    private long visit(long key, long first, LongFunction<long[]> exclusions, LongConsumer consumer) {
+        long[] excluded = exclusions == null ? null : exclusions.apply(key);
+        long[] dense = this.densePositions.get(key);
+        if (dense != null) {
+            int x = BlockPos.getX(first) & ~15;
+            int y = BlockPos.getY(first) & ~15;
+            int z = BlockPos.getZ(first) & ~15;
+            long visited = 0;
+            for (int word = 0; word < dense.length; word++) {
+                long positions = dense[word] & (excluded == null ? -1L : ~excluded[word]);
+                while (positions != 0L) {
+                    int index = (word << 6) + Long.numberOfTrailingZeros(positions);
+                    positions &= positions - 1;
+                    consumer.accept(BlockPos.asLong(x + (index & 15), y + (index >>> 8), z + ((index >>> 4) & 15)));
+                    visited++;
+                }
+            }
+            return visited;
+        }
+        long visited = 0;
+        if (!excluded(excluded, first)) {
+            consumer.accept(first);
+            visited++;
+        }
         LongOpenHashSet additional = this.additionalPositions.get(key);
-        if (additional == null) return 1;
+        if (additional == null) return visited;
         var iterator = additional.iterator();
-        while (iterator.hasNext()) consumer.accept(iterator.nextLong());
-        return 1L + additional.size();
+        while (iterator.hasNext()) {
+            long position = iterator.nextLong();
+            if (!excluded(excluded, position)) {
+                consumer.accept(position);
+                visited++;
+            }
+        }
+        return visited;
+    }
+
+    private static int localIndex(long position) {
+        return (BlockPos.getY(position) & 15) << 8 | (BlockPos.getZ(position) & 15) << 4 | BlockPos.getX(position) & 15;
+    }
+
+    private static void addBit(long[] bits, long position) {
+        int index = localIndex(position);
+        bits[index >>> 6] |= 1L << (index & 63);
+    }
+
+    private static boolean excluded(long[] bits, long position) {
+        if (bits == null) return false;
+        int index = localIndex(position);
+        return (bits[index >>> 6] & 1L << (index & 63)) != 0;
     }
 
     private record SectionBounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {

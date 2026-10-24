@@ -40,6 +40,7 @@ final class SectionScanSession {
     private final LongSupplier generationSequence;
     private final SchematicBlockIndex schematicIndex;
     private final ScanOrderShadow shadow;
+    private final SchematicPositionQuery printCandidates;
     private long sourceRevision;
     private long cursorRevision;
     private long exhaustedUntilTick = Long.MIN_VALUE;
@@ -70,6 +71,14 @@ final class SectionScanSession {
     SectionScanSession(ScanRegion region, List<PrinterBox> sourceBoxes, ScanIntent intent,
                        ScanMetricsAccumulator metrics, RuntimeEpoch epoch, LongSupplier snapshotRevision,
                        LongSupplier generationSequence, SchematicBlockIndex schematicIndex, ScanOrderShadow shadow) {
+        this(region, sourceBoxes, intent, metrics, epoch, snapshotRevision, generationSequence,
+                schematicIndex, shadow, schematicIndex);
+    }
+
+    SectionScanSession(ScanRegion region, List<PrinterBox> sourceBoxes, ScanIntent intent,
+                       ScanMetricsAccumulator metrics, RuntimeEpoch epoch, LongSupplier snapshotRevision,
+                       LongSupplier generationSequence, SchematicBlockIndex schematicIndex, ScanOrderShadow shadow,
+                       SchematicPositionQuery printCandidates) {
         this.region = region;
         this.sourceBoxes = List.copyOf(sourceBoxes);
         this.intent = intent;
@@ -79,6 +88,7 @@ final class SectionScanSession {
         this.generationSequence = generationSequence;
         this.schematicIndex = schematicIndex;
         this.shadow = shadow;
+        this.printCandidates = printCandidates;
         this.scanHandle = this.createScanHandle();
         this.distanceCursor = this.createDistanceCursor();
     }
@@ -163,7 +173,7 @@ final class SectionScanSession {
                     && !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue()
                     && this.schematicIndex != null
                     && this.schematicIndex.isReady()) {
-                return new IndexedPositionCursor(this.schematicIndex, this.sourceBoxes, this.region,
+                return new IndexedPositionCursor(this.printCandidates, this.sourceBoxes, this.region,
                         this.metrics.timing, this.metrics.owner, this.shadow, this.scanHandle);
             }
             return new SynchronousPositionCursor(

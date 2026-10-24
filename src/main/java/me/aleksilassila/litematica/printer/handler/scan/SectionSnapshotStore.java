@@ -9,7 +9,8 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
  *
  * <p>The scanner only consumes classification flags. Retaining two 4096-entry BlockState arrays
  * per visited section made large schematic selections retain hundreds of megabytes, so this
- * store keeps one byte per observed position and intent plus an observed bitset.</p>
+ * store keeps one byte per position and intent plus a known-zero bitset. A nonzero flag
+ * already proves observation; the bitset distinguishes observed zero from unknown.</p>
  */
 final class SectionSnapshotStore {
     private static final Direction[] DIRECTIONS = Direction.values();
@@ -58,6 +59,12 @@ final class SectionSnapshotStore {
         return this.sections.size();
     }
 
+    /** Borrowed, client-thread-only mask: only observed zero flags may be excluded from PRINT. */
+    long[] excludedPrintPositions(long sectionKey) {
+        MutableSection section = this.sections.get(sectionKey);
+        return section == null ? null : section.knownZero[ScanIntent.PRINT.ordinal()];
+    }
+
     private MutableSection section(BlockPos pos) {
         long key = ScanGeometry.sectionKey(
                 ScanGeometry.sectionCoord(pos.getX()),
@@ -101,31 +108,34 @@ final class SectionSnapshotStore {
         private static final int CACHE_SLOTS = ScanIntent.values().length + 1;
         private static final int OBSERVED_WORDS = SECTION_VOLUME / Long.SIZE;
         private final byte[][] flags = new byte[CACHE_SLOTS][];
-        private final long[][] observed = new long[CACHE_SLOTS][];
+        private final long[][] knownZero = new long[CACHE_SLOTS][];
 
         private void ensureSlot(int slot) {
             if (this.flags[slot] == null) {
                 this.flags[slot] = new byte[SECTION_VOLUME];
-                this.observed[slot] = new long[OBSERVED_WORDS];
+                this.knownZero[slot] = new long[OBSERVED_WORDS];
             }
         }
 
         private void clearSlot(int slot) {
             this.flags[slot] = null;
-            this.observed[slot] = null;
+            this.knownZero[slot] = null;
         }
 
         private boolean isObserved(int slot, int index) {
-            if (this.observed[slot] == null) return false;
+            if (this.flags[slot] == null) return false;
+            if (this.flags[slot][index] != 0) return true;
             long bit = 1L << (index & 63);
             int word = index >>> 6;
-            return (this.observed[slot][word] & bit) != 0L;
+            return (this.knownZero[slot][word] & bit) != 0L;
         }
 
         private void put(int slot, int index, byte value) {
             this.ensureSlot(slot);
             this.flags[slot][index] = value;
-            this.observed[slot][index >>> 6] |= 1L << (index & 63);
+            long bit = 1L << (index & 63);
+            if (value == 0) this.knownZero[slot][index >>> 6] |= bit;
+            else this.knownZero[slot][index >>> 6] &= ~bit;
         }
 
         private byte flags(int slot, int index) {
@@ -136,8 +146,8 @@ final class SectionSnapshotStore {
             long clearMask = ~(1L << (index & 63));
             int word = index >>> 6;
             for (int slot = 0; slot < CACHE_SLOTS; slot++) {
-                if (this.observed[slot] != null) {
-                    this.observed[slot][word] &= clearMask;
+                if (this.knownZero[slot] != null) {
+                    this.knownZero[slot][word] &= clearMask;
                     this.flags[slot][index] = 0;
                 }
             }

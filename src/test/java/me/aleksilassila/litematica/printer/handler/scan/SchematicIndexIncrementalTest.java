@@ -51,6 +51,8 @@ class SchematicIndexIncrementalTest {
 
         chunks.put(key(0, 0), chunk(0, 0, 4, replacement));
         assertTrue(index.ensureBuilt(world));
+        assertEquals(0, retained.reads, "An unchanged retained section must not be re-enumerated");
+        assertEquals(4096, replacement.reads);
         var query = region(0, 0, 0, 512);
         assertCursorEquals(reference(List.of(new BlockPos(-16, 0, -16), new BlockPos(-1, 15, -1),
                         new BlockPos(2, 0, 0)), ALL, query), new IndexedPositionCursor(index, ALL, query));
@@ -70,11 +72,13 @@ class SchematicIndexIncrementalTest {
         retained.reads = 0;
         chunks.put(key(0, -1), chunk(0, -1, 23, added));
         assertTrue(index.ensureBuilt(world));
+        assertEquals(0, retained.reads);
         assertCursorEquals(List.of(new BlockPos(-16, -64, 0), new BlockPos(15, 319, -1)),
                 new IndexedPositionCursor(index, ALL, region(0, 0, 0, 512)));
         added.reads = 0;
         chunks.remove(key(-1, 0));
         assertTrue(index.ensureBuilt(world));
+        assertEquals(0, added.reads);
         assertCursorEquals(List.of(new BlockPos(15, 319, -1)),
                 new IndexedPositionCursor(index, ALL, region(0, 0, 0, 512)));
         chunks.clear();

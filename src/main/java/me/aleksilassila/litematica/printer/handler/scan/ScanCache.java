@@ -45,7 +45,7 @@ public final class ScanCache {
     private ScanCache(DirtyRegionTracker dirtyRegions, RuntimeTiming timing) {
         this.dirtyRegions = dirtyRegions;
         this.timing = timing;
-        this.sessions = new ScanSessionStore(this.schematicIndex, timing);
+        this.sessions = new ScanSessionStore(this.schematicIndex, timing, this.snapshots);
     }
 
     public RuntimeTiming timing() { return this.timing; }

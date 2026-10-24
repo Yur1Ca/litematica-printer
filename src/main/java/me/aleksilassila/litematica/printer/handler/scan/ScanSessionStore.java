@@ -22,6 +22,7 @@ final class ScanSessionStore implements AutoCloseable {
     private final SchematicBlockIndex schematicIndex;
     private final RuntimeTiming timing;
     private final ScanOrderShadow shadow;
+    private final SchematicPositionQuery printCandidates;
     private long shadowSuperseded;
     private long shadowOverwritten;
 
@@ -35,9 +36,20 @@ final class ScanSessionStore implements AutoCloseable {
     }
 
     ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing, ScanOrderShadow shadow) {
+        this(schematicIndex, timing, shadow, schematicIndex);
+    }
+
+    ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing, SectionSnapshotStore snapshots) {
+        this(schematicIndex, timing, timing.enabled() && Boolean.getBoolean("litematica.printer.scanShadow")
+                ? new ScanOrderShadow() : null, schematicIndex.unresolvedPrintQuery(snapshots));
+    }
+
+    private ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing,
+                             ScanOrderShadow shadow, SchematicPositionQuery printCandidates) {
         this.schematicIndex = schematicIndex;
         this.timing = timing;
         this.shadow = shadow;
+        this.printCandidates = printCandidates;
     }
 
     void collectComparisons() {
@@ -148,7 +160,8 @@ final class ScanSessionStore implements AutoCloseable {
                     snapshotRevision,
                     generationSequence,
                     this.schematicIndex,
-                    this.shadow
+                    this.shadow,
+                    this.printCandidates
             );
             this.sessions.put(key, session);
         } else {

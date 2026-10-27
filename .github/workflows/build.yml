@@ -32,6 +32,14 @@ on:
       - 'gradlew'
       - 'gradlew.bat'
   workflow_dispatch:
+    inputs:
+      validation:
+        description: Test scope (all versions are always compiled and packaged)
+        type: choice
+        default: full
+        options:
+          - full
+          - main
 
 env:
   IS_THIS_RELEASE: false
@@ -49,7 +57,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -58,26 +66,47 @@ jobs:
         uses: actions/setup-java@v5
         with:
           java-version: '25'
-          distribution: 'microsoft'
+          # Hosted Ubuntu runners already cache Temurin; avoid downloading a second JDK.
+          distribution: 'temurin'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          # Loom's Minecraft archives belong to the dependency-keyed cache below,
+          # not the Gradle User Home entry saved for every new commit.
+          gradle-home-cache-excludes: caches/fabric-loom
 
-      - name: Cache Loom workspace
+      - name: Cache Loom dependencies and workspace
         uses: actions/cache@v5
         with:
           path: |
+            ~/.gradle/caches/fabric-loom
             ./.gradle/loom-cache
             ./libs
-          key: ${{ runner.os }}-loom-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-loom-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/src/**', 'versions/mainProject', 'versions/mapping-*.txt') }}
           restore-keys: |
-            ${{ runner.os }}-loom-
+            ${{ runner.os }}-${{ runner.arch }}-loom-v2-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
 
       - name: Build fabricWrapper subproject
-        run: ./gradlew :fabricWrapper:build -x jacocoTestCoverageVerification --stacktrace --console=plain
+        shell: bash
+        env:
+          CI_VALIDATION: ${{ github.event_name == 'push' && 'main' || inputs.validation || 'full' }}
+        run: >-
+          ./gradlew :fabricWrapper:build -x jacocoTestCoverageVerification
+          --init-script .github/scripts/ci-build.init.gradle "-PciValidation=$CI_VALIDATION"
+          --stacktrace --console=plain --profile
+
+      - name: Capture Gradle timing report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-profile
+          path: build/reports/profile/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Delete wrapper sources jar
         run: |

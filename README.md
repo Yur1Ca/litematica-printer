@@ -146,6 +146,8 @@ Build outputs:
 
 The first build downloads Minecraft and mod dependencies and may require a working connection to their Maven repositories.
 
+Push builds compile and package every supported version, but run tests only for the main development version in `versions/mainProject`. Pull requests keep the full test matrix; releases retain all checks for the selected version set. Manual runs of the `build` workflow default to `full`, with `main` also available. The local build command above still runs all checks. Runs of the `build` workflow upload a `gradle-profile` artifact with task timings; compare it with the Actions step timings to distinguish cache restoration from compilation and tests.
+
 ## Acknowledgements
 
 - [bunny_i](https://github.com/bunnyi116) for broad support and contributions to the project.

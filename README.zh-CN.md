@@ -150,6 +150,8 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 首次构建会下载 Minecraft 和模组依赖，需要能够正常访问对应 Maven 仓库。在中国大陆网络环境下，如果下载失败，请检查网络或代理配置。
 
+日常 push 的 Actions 会编译并打包全部支持版本，只运行 `versions/mainProject` 指定的主开发版本测试；PR 保留全版本测试，正式发布保留所选版本集合的完整验证。手动运行 `build` 工作流默认选择 `full`，也可选择 `main`。上述本地构建命令仍执行完整验证。`build` 工作流的 `gradle-profile` 产物记录各任务耗时，结合 Actions 步骤耗时可区分缓存恢复与编译、测试开销。
+
 ## 感谢
 
 - [bunny_i](https://github.com/bunnyi116)：为项目提供了广泛的支持和贡献。

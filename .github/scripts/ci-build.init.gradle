@@ -1,0 +1,30 @@
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.testing.Test
+
+// Explicitly applied by CI only. Ordinary local/release builds retain their full checks.
+def validation = gradle.startParameter.projectProperties.getOrDefault('ciValidation', 'full')
+if (!(validation in ['main', 'full'])) {
+    throw new GradleException("ciValidation must be 'main' or 'full', got '${validation}'")
+}
+
+if (validation == 'main') {
+    gradle.projectsEvaluated { build ->
+        // Init scripts also run for buildSrc; change only this repository's root build.
+        if (build.parent != null) return
+
+        def mainVersion = build.rootProject.file('versions/mainProject').text.trim()
+        def mainProject = build.rootProject.findProject(":${mainVersion}")
+        if (mainProject == null || !(mainProject.tasks.findByName('test') instanceof Test)) {
+            throw new GradleException("Main test project '${mainVersion}' is missing")
+        }
+
+        // Exclude the test tasks themselves so their test-only preprocessing and compilation
+        // do not run. All production compile/remap/package and architecture checks remain.
+        def excluded = new LinkedHashSet<String>(build.startParameter.excludedTaskNames)
+        build.rootProject.subprojects.findAll { it != mainProject && it.name != 'fabricWrapper' }.each { project ->
+            project.tasks.withType(Test).each { test -> excluded.add(test.path) }
+        }
+        build.startParameter.setExcludedTaskNames(excluded)
+        build.rootProject.logger.lifecycle("CI validation: all production versions, tests for ${mainVersion}")
+    }
+}

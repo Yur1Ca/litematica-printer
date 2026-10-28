@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.guide.guides;
 
-import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.guide.Guide;
@@ -11,6 +10,13 @@ import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import net.minecraft.world.level.block.ComposterBlock;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+//#if MC >= 260300
+//$$ import net.minecraft.core.component.DataComponents;
+//$$ import net.minecraft.core.registries.BuiltInRegistries;
+//#else
+import net.minecraft.world.level.ItemLike;
+import java.util.Arrays;
+//#endif
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,9 +25,6 @@ import java.util.List;
  * 堆肥桶
  */
 public class ComposterGuide extends Guide {
-    private static List<String> compostWhitelistCache = new ArrayList<>();
-    private static Item[] whitelistItemsCache = new Item[0];
-
     public ComposterGuide(SchematicBlockContext context) {
         super(context);
     }
@@ -38,11 +41,14 @@ public class ComposterGuide extends Guide {
 
         if (currentLevel >= requiredLevel) return Result.PASS;
 
+        // Resolve only when a composter needs filling. Components and whitelist tags can
+        // change on reconnect/reload, so neither an early empty result nor old matches persist.
+        Item[] compostableItems = getCompostableItems();
+        if (compostableItems.length == 0) return Result.SKIP;
         List<String> whitelist = Configs.Print.FILL_COMPOSTER_WHITELIST.getStrings();
-        if (!whitelist.equals(compostWhitelistCache)) {
-            compostWhitelistCache = new ArrayList<>(whitelist);
+        if (!whitelist.isEmpty()) {
             List<Item> whitelistItems = new ArrayList<>();
-            for (Item item : Reference.COMPOSTABLE_ITEMS) {
+            for (Item item : compostableItems) {
                 for (String rule : whitelist) {
                     if (FilterUtils.matchName(rule, new ItemStack(item))) {
                         whitelistItems.add(item);
@@ -50,13 +56,28 @@ public class ComposterGuide extends Guide {
                     }
                 }
             }
-            whitelistItemsCache = whitelistItems.toArray(Item[]::new);
+            if (!whitelistItems.isEmpty()) {
+                return Result.success(new ClickAction().setItems(whitelistItems.toArray(Item[]::new)));
+            }
         }
+        return Result.success(new ClickAction().setItems(compostableItems));
+    }
 
-        Item[] finalItems = whitelistItemsCache.length > 0 ? whitelistItemsCache : Reference.COMPOSTABLE_ITEMS;
-        if (finalItems.length > 0) {
-            return Result.success(new ClickAction().setItems(finalItems));
-        }
-        return Result.SKIP;
+    private static Item[] getCompostableItems() {
+        //#if MC >= 260300
+        //$$ List<Item> items = new ArrayList<>();
+        //$$ var holders = BuiltInRegistries.ITEM.listElements().iterator();
+        //$$ while (holders.hasNext()) {
+        //$$     var holder = holders.next();
+        //$$     // Check readiness explicitly; do not swallow component/linkage errors or use
+        //$$     // a partial candidate list while server data is still being bound.
+        //$$     if (!holder.areComponentsBound()) return new Item[0];
+        //$$     if (holder.components().has(DataComponents.COMPOSTABLE)) items.add(holder.value());
+        //$$ }
+        //$$ return items.toArray(Item[]::new);
+        //#else
+        return Arrays.stream(ComposterBlock.COMPOSTABLES.keySet().toArray(ItemLike[]::new))
+                .map(ItemLike::asItem).toArray(Item[]::new);
+        //#endif
     }
 }

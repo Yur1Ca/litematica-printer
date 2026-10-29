@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
+import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.TweakerooUtils;
@@ -25,6 +26,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.function.BooleanSupplier;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -37,6 +39,7 @@ public final class InteractionUtils implements RuntimeComponent {
     private static final UsageRestrictionCache BREAK_RESTRICTION_CACHE = new UsageRestrictionCache();
 
     private final BreakQueueState breakState = new BreakQueueState();
+    private final Map<BlockPos, GuardedBreak> guardedBreaks = new HashMap<>();
 
     public InteractionUtils() {
     }
@@ -86,6 +89,17 @@ public final class InteractionUtils implements RuntimeComponent {
         this.breakState.add(pos);
     }
 
+    /** Optional request validation and execution observation; ordinary queued breaks are unchanged. */
+    public boolean add(BlockPos pos, BooleanSupplier stillNeeded, Runnable onStarted) {
+        if (!this.breakState.add(pos)) return false;
+        this.guardedBreaks.put(pos.immutable(), new GuardedBreak(stillNeeded, onStarted));
+        return true;
+    }
+
+    public boolean isBreakPending(BlockPos pos) {
+        return this.breakState.isPending(pos) || this.isPendingDelayedDestroy(pos);
+    }
+
     public void add(SchematicBlockContext ctx) {
         if (ctx == null) return;
         this.add(ctx.blockPos);
@@ -93,13 +107,17 @@ public final class InteractionUtils implements RuntimeComponent {
 
     public void preprocess() {
         this.breakState.tickMarkers();
-        this.breakState.clearIfDisabled(ConfigUtils.isEnable());
+        if (!ConfigUtils.isEnable()) this.cancelPlannedWork();
     }
 
-    public void cancelPlannedWork() { this.breakState.cancelPlannedWork(); }
+    public void cancelPlannedWork() {
+        this.breakState.cancelPlannedWork();
+        this.guardedBreaks.clear();
+    }
 
     public void resetRuntime() {
         this.breakState.reset();
+        this.guardedBreaks.clear();
     }
 
     @Override public void onEpochChanged(RuntimeEvent.EpochChanged event) { this.resetRuntime(); }
@@ -133,10 +151,14 @@ public final class InteractionUtils implements RuntimeComponent {
                 if (pos == null) {
                     continue;
                 }
-                if (!ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
+                GuardedBreak guarded = this.guardedBreaks.get(pos);
+                if ((guarded != null && !guarded.stillNeeded.getAsBoolean())
+                        || !ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
+                    this.guardedBreaks.remove(pos);
                     continue;
                 }
                 BlockBreakResult result = continueDestroyBlock(pos, Direction.DOWN);
+                this.observeBreakResult(pos, result);
                 if (result == BlockBreakResult.IN_PROGRESS) {
                     this.breakState.activePos(pos);
                     break;
@@ -150,13 +172,25 @@ public final class InteractionUtils implements RuntimeComponent {
             }
         } else {
             BlockPos activePos = this.breakState.activePos();
+            GuardedBreak guarded = this.guardedBreaks.get(activePos);
+            if (guarded != null && !guarded.stillNeeded.getAsBoolean()) {
+                this.guardedBreaks.remove(activePos);
+                if (client.gameMode instanceof MiningInteractionPort port
+                        && port.isDestroying() && activePos.equals(port.destroyPos())) {
+                    client.gameMode.stopDestroyBlock();
+                }
+                this.breakState.clearActive();
+                return;
+            }
             // 检查当前目标是否仍可破坏（如冰挖掘后生成水/流体，流体不可破坏）
             if (!canBreakBlock(activePos)) {
+                this.guardedBreaks.remove(activePos);
                 this.breakState.clearActive();
                 onTick();
                 return;
             }
             BlockBreakResult result = continueDestroyBlock(activePos, Direction.DOWN);
+            this.observeBreakResult(activePos, result);
             if (result != BlockBreakResult.IN_PROGRESS) {
                 if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
                     this.markRecentlyBroken(activePos);
@@ -167,6 +201,32 @@ public final class InteractionUtils implements RuntimeComponent {
                 this.breakState.clearActive();
                 onTick();
             }
+        }
+    }
+
+    private void observeBreakResult(BlockPos pos, BlockBreakResult result) {
+        GuardedBreak guarded = this.guardedBreaks.get(pos);
+        if (guarded == null) return;
+        // IN_PROGRESS also covers waiting for a tool switch, before START_DESTROY was sent.
+        boolean miningStarted = result == BlockBreakResult.IN_PROGRESS
+                && client.gameMode instanceof MiningInteractionPort port
+                && port.isDestroying() && pos.equals(port.destroyPos());
+        if (!guarded.started && (miningStarted
+                || result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT)) {
+            guarded.started = true;
+            guarded.onStarted.run();
+        }
+        if (result != BlockBreakResult.IN_PROGRESS) this.guardedBreaks.remove(pos);
+    }
+
+    private static final class GuardedBreak {
+        private final BooleanSupplier stillNeeded;
+        private final Runnable onStarted;
+        private boolean started;
+
+        private GuardedBreak(BooleanSupplier stillNeeded, Runnable onStarted) {
+            this.stillNeeded = stillNeeded;
+            this.onStarted = onStarted;
         }
     }
 

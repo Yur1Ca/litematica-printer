@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.feature.print.PrintPlanner;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
 import me.aleksilassila.litematica.printer.guide.Guides;
+import me.aleksilassila.litematica.printer.guide.guides.RailGuide;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
@@ -150,6 +151,7 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     protected void onRuntimeReset() {
+        RailGuide.clearRepairState();
         this.action = null;
         this.printTaskAction = null;
         this.ctx = null;

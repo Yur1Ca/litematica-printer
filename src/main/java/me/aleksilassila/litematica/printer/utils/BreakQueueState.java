@@ -20,16 +20,22 @@ final class BreakQueueState {
     private boolean forceDelayedDestroy;
     private int externalDestroyLockTicks;
 
-    void add(BlockPos pos) {
-        if (pos == null) return;
+    boolean add(BlockPos pos) {
+        if (pos == null) return false;
         BlockPos queuedPos = pos.immutable();
         if (queuedPos.equals(this.activePos)
                 || this.recentlyBroken.containsKey(queuedPos)
                 || this.pendingBroken.containsKey(queuedPos)
                 || !this.queuedBreaks.add(queuedPos)) {
-            return;
+            return false;
         }
         this.breakQueue.add(queuedPos);
+        return true;
+    }
+
+    boolean isPending(BlockPos pos) {
+        return pos != null && (pos.equals(this.activePos) || this.queuedBreaks.contains(pos)
+                || this.isRecentlyBroken(pos));
     }
 
     BlockPos pollQueued() {

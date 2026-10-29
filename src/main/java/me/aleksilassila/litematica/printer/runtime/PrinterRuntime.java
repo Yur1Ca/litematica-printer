@@ -274,6 +274,7 @@ public final class PrinterRuntime {
             long miningStart = this.timing.start();
             try {
                 this.interactionUtils.preprocess();
+                RailGuide.tickRepairState(client.level, this.litematica.schematicWorld());
                 this.interactionUtils.onTick();
             } finally {
                 this.timing.finish("runtime", Stage.MINING_TICK, miningStart);

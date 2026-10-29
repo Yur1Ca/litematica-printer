@@ -166,7 +166,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 核心 - 显示执行过程中实际缺少的材料
         public static final ConfigBoolean MISSING_MATERIAL_HUD = bool("missingMaterialHud")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         public static final ConfigInteger RENDER_HUD_X = integer("renderHudX")
@@ -245,12 +245,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         //#if MC >= 12111
         // 虚空仓库补货：缺料时向服务端的 carpet-Neko-Addition 要一组材料
         public static final ConfigBoolean VOID_WAREHOUSE_RESTOCK = bool("voidWarehouseRestock")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         // 虚空仓库库存：材料列表里的「已有数量」把仓库库存也算进去
         public static final ConfigBoolean VOID_WAREHOUSE_MATERIAL_LIST = bool("voidWarehouseMaterialList")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
         //#endif
 
@@ -321,7 +321,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 快捷潜影盒 - 冷却时间
         public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
-                .defaultValue(1)
+                .defaultValue(5)
                 .range(0, 20)
                 .build();
 
@@ -479,12 +479,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 打印目标排序
         public static final ConfigBoolean PRINT_SORT_TARGETS = bool("printSortTargets")
-                .defaultValue(false)
+                .defaultValue(true)
                 .build();
 
         // 放置面排序
         public static final ConfigBoolean PRINT_SORT_SIDES = bool("printSortSides")
-                .defaultValue(false)
+                .defaultValue(true)
                 .build();
 
         // 铁轨形态修复

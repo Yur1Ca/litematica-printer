@@ -238,6 +238,8 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
     /** 上一次落盘的时刻（tick）与当时的账本指纹，用来避免每 30 秒都白写一次。 */
     private long lastSnapshotTick = Long.MIN_VALUE;
     private long lastSnapshotSignature = 0L;
+    private String lastSnapshotWorld;
+    private String lastSnapshotDimension;
 
     private int activeNonce;
     private long activeSince;
@@ -266,7 +268,7 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
      *
      * <p>整个组件只有这里碰配置项：「记账」与「判定」都不看它，只有「发不发包」看。
      * 这样开关就只是一个纯粹的阀门 —— 打开的那一瞬间，账本与背包现状都是现成的，
-     * 下一次 tick 立刻按新状态干活；关掉的那一瞬间，在飞的请求被丢弃、之后一包不发。</p>
+     * 下一次 tick 按新状态干活；关闭后不再发新请求，但已发请求仍需结算回执。</p>
      */
     private static boolean isEnabled() {
         return Configs.Special.VOID_WAREHOUSE_RETURN.getBooleanValue();
@@ -338,30 +340,40 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
     public void onEpochChanged(RuntimeEvent.EpochChanged event) {
         String reason = event.reason();
         if (dropsLedger(reason)) {
+            long now = this.client.level == null ? this.lastSnapshotTick : this.client.level.getGameTime();
+            pollAck(now);
+            abandonInFlight();
             // 🔴 先把账本落盘再清。背包不会跟着清：不清盘的话，这一退一进之间
             // 身上那二十几格仓库材料就变成「认不出的死重」，永久占着格子（见 LedgerStore 类注释）。
             saveSnapshot();
             clear();
             this.restorePending = true;
         } else {
-            // 同一个世界里的暂停：账本原样留着，只把在飞的请求丢掉。
-            // 账本会不会失真由每 tick 的 reconcile() 按背包实际持有量夹住，不需要在这里清。
-            cancelInFlight();
+            // A same-session pause cannot cancel a request already sent to the server.
+            // Retain its receipt so returned credit cannot migrate to personal stock.
             this.rejectedUntilTick = Long.MIN_VALUE;
         }
         this.lastEnabled = null;
     }
 
-    /** 把当前账本写进快照文件（空账本不写，免得把上一份好快照冲掉）。 */
+    /** Persist settled empty ledgers too, but never overwrite a snapshot before restoration. */
     private void saveSnapshot() {
-        if (this.injected.isEmpty()) {
+        if (this.restorePending) {
             return;
         }
         Minecraft client = this.client;
-        long gameTime = client.level == null ? 0L : client.level.getGameTime();
+        long gameTime = this.lastSnapshotTick;
+        if (client.player != null && client.level != null) {
+            this.lastSnapshotWorld = WorldIdentity.worldId(client);
+            this.lastSnapshotDimension = WorldIdentity.dimensionId(client);
+            gameTime = client.level.getGameTime();
+        }
+        if (this.lastSnapshotWorld == null) {
+            return;
+        }
         VoidWarehouseLedgerStore.save(
-                WorldIdentity.worldId(client),
-                WorldIdentity.dimensionId(client),
+                this.lastSnapshotWorld,
+                this.lastSnapshotDimension,
                 gameTime,
                 new LinkedHashMap<>(this.injected));
         this.lastSnapshotSignature = signature();
@@ -387,7 +399,12 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
      * 每 {@link #SNAPSHOT_INTERVAL_TICKS} 写一次（内容没变就跳过），代价是每 30 秒一个小 JSON。</p>
      */
     private void maybeSaveSnapshot(long now) {
-        if (this.injected.isEmpty()) {
+        if (this.restorePending) {
+            return;
+        }
+        if (this.injected.isEmpty() && this.lastSnapshotSignature != 0L) {
+            // Settlement must invalidate the old snapshot before another disconnect or crash.
+            saveSnapshot();
             return;
         }
         if (this.lastSnapshotTick != Long.MIN_VALUE && now - this.lastSnapshotTick < SNAPSHOT_INTERVAL_TICKS) {
@@ -450,6 +467,10 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
             Reference.LOGGER.info("[虚空仓库] 接着上次的账：认回 {} 种 / {} 件余料（丢弃 {} 条对不上的）",
                     adoptedKinds, adoptedCount, dropped);
         }
+        if (dropped > 0) {
+            // Rejected entries must not become valid again when personal stock is added later.
+            saveSnapshot();
+        }
     }
 
     /** 换世界/断线：账本作废（那是上一份背包的事）。 */
@@ -462,6 +483,26 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         this.lastRequestTick = Long.MIN_VALUE;
         this.rejectedUntilTick = Long.MIN_VALUE;
         this.stuckWarnedUntilTick = Long.MIN_VALUE;
+        this.lastSnapshotWorld = null;
+        this.lastSnapshotDimension = null;
+        this.lastSnapshotTick = Long.MIN_VALUE;
+        this.lastSnapshotSignature = 0L;
+    }
+
+    /** An unconfirmed server mutation cannot leave reusable credit for later personal stock. */
+    private void abandonInFlight() {
+        boolean hadBatch = this.inFlight != null;
+        if (hadBatch) {
+            int count = 0;
+            for (int amount : this.inFlight.values()) {
+                count += amount;
+            }
+            deduct(count);
+        }
+        cancelInFlight();
+        if (hadBatch) {
+            saveSnapshot();
+        }
     }
 
     /** 丢弃在飞的那一批，但不动账本。 */
@@ -475,10 +516,9 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
     /** 每客户端 tick 调一次。 */
     public void tick() {
         if (this.client.player == null || this.client.level == null) {
-            // 这一刻没有玩家：在飞的请求作废，但**账本留着**。
-            // 真正的「换了一份背包」由 disconnect / local_player_init 的 epoch 事件负责清；
-            // 这里的 null 往往只是退世界过程中的过渡帧，清掉反而会丢掉还没退的余料。
-            cancelInFlight();
+            // World teardown can precede disconnect. Retire only the uncertain batch,
+            // persisting it against the last known world while retaining other materials.
+            abandonInFlight();
             this.lastEnabled = null;
             return;
         }
@@ -495,7 +535,14 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
                 logSwitch(false);
             }
             this.lastEnabled = false;
-            cancelInFlight();
+            long now = this.client.level.getGameTime();
+            // Disabling returns stops new requests, not inventory accounting.
+            // Settle an available receipt before reconciling the synced inventory.
+            if (pollAck(now)) {
+                return;
+            }
+            reconcile(now);
+            maybeSaveSnapshot(now);
             return;
         }
         if (!Boolean.TRUE.equals(this.lastEnabled)) {
@@ -506,7 +553,7 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         if (!VoidWarehouseReturnNetwork.isSupported()) {
             // 对面没装带这条通道的服务端模组：发也发不出去，把在飞的清掉就完事。
             // 账本同样留着 —— 换服回来还能接着用。
-            cancelInFlight();
+            abandonInFlight();
             return;
         }
 
@@ -637,9 +684,9 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
             return false;
         }
         if (now - this.activeSince > ACK_TIMEOUT_TICKS) {
-            // 丢包或对面没回：放弃这笔，账交给 reconcile 慢慢收敛（服务端若真的收下了，
-            // 下一 tick 背包同步一到，件数自然掉下去）
-            cancelInFlight();
+            // The batch may already have been removed server-side. Do not reuse its credit
+            // after a timeout; this can leave unreturned warehouse stock, but never sends it twice.
+            abandonInFlight();
             return false;
         }
         int status = VoidWarehouseReturnNetwork.statusOf(this.activeNonce);
@@ -813,12 +860,14 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
                 if (skip.contains(item)) {
                     continue;
                 }
+                // PrinterTakeService delivers the item's default component stack.
+                ItemStack sample = new ItemStack(item);
                 for (int slot = from; slot >= to && slots.size() < wanted; slot--) {
                     if (slot == selected) {
                         continue;
                     }
                     ItemStack stack = inventory.getItem(slot);
-                    if (stack.isEmpty() || stack.getItem() != item) {
+                    if (stack.isEmpty() || !ItemStack.isSameItemSameComponents(stack, sample)) {
                         continue;
                     }
                     Integer left = budget.get(item);
@@ -896,12 +945,13 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         return batch;
     }
 
-    private static int countHeld(Inventory inventory, Item item) {
+    static int countHeld(Inventory inventory, Item item) {
         int size = Math.min(MAIN_INVENTORY_SLOTS, inventory.getContainerSize());
         int total = 0;
+        ItemStack sample = new ItemStack(item);
         for (int slot = 0; slot < size; slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (!stack.isEmpty() && stack.getItem() == item) {
+            if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, sample)) {
                 total += stack.getCount();
             }
         }
@@ -995,7 +1045,8 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
                 continue;
             }
             Integer pending = this.injected.get(stack.getItem());
-            if (pending != null && pending > 0) {
+            if (pending != null && pending > 0
+                    && ItemStack.isSameItemSameComponents(stack, new ItemStack(stack.getItem()))) {
                 count++;
             }
         }

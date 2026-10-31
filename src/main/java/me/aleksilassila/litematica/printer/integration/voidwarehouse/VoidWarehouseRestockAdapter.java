@@ -59,9 +59,6 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     private static final long FAILED_COOLDOWN_TICKS = 100L;
     private static final String LEASE_OWNER = "void_warehouse";
 
-    /** 主背包 + 快捷栏 = 36 格，与服务端发货／返还的口径一致。 */
-    private static final int MAIN_INVENTORY_SLOTS = 36;
-
     private final Minecraft client = Minecraft.getInstance();
     private final ActionPort actionBroker;
     private final VoidWarehouseRestockPort network;
@@ -166,14 +163,21 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         if (!acquireResources()) {
             return pending(request);
         }
+        int status = this.network.statusOf(this.activeNonce);
         Item availableItem = findAvailableItem(request);
         if (availableItem != null) {
-            recordDelivery(availableItem);
+            if (this.returnController != null && status == PrinterTakeResultPayload.NONE) {
+                // Inventory arrival alone cannot identify its source. Keep ownership until
+                // this request is confirmed, including inventory-before-receipt delivery.
+                return pending(request);
+            }
+            if (status == PrinterTakeResultPayload.OK) {
+                recordDelivery(availableItem);
+            }
             selectCompletedPickBlockItem(request, availableItem);
             finish();
             return MaterialReservation.available(request, availableItem);
         }
-        int status = this.network.statusOf(this.activeNonce);
         if (status == PrinterTakeResultPayload.NONE) {
             // 还没等到回执，继续等；真超时由 coordinator 负责
             return pending(request);
@@ -353,16 +357,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         if (this.client.player == null) {
             return 0;
         }
-        net.minecraft.world.entity.player.Inventory inventory = this.client.player.getInventory();
-        int size = Math.min(MAIN_INVENTORY_SLOTS, inventory.getContainerSize());
-        int total = 0;
-        for (int slot = 0; slot < size; slot++) {
-            ItemStack stack = inventory.getItem(slot);
-            if (!stack.isEmpty() && stack.getItem() == item) {
-                total += stack.getCount();
-            }
-        }
-        return total;
+        return VoidWarehouseReturnController.countHeld(this.client.player.getInventory(), item);
     }
 
     private long gameTick() {

@@ -69,10 +69,10 @@ final class VoidWarehouseLedgerStore {
     }
 
     /**
-     * 把账本写下去。空账本不写 —— 否则启动时那次 {@code disconnect} 会把上一份好快照冲掉。
+     * Save an empty ledger as a tombstone; the controller guards sessions not yet restored.
      */
     static void save(String world, String dimension, long gameTime, Map<Item, Integer> ledger) {
-        if (ledger == null || ledger.isEmpty()) {
+        if (ledger == null) {
             return;
         }
         try {
@@ -87,9 +87,6 @@ final class VoidWarehouseLedgerStore {
                     continue;
                 }
                 items.addProperty(key.toString(), entry.getValue());
-            }
-            if (items.isEmpty()) {
-                return;
             }
             JsonObject root = new JsonObject();
             root.addProperty("version", VERSION);

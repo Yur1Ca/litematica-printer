@@ -551,9 +551,12 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         this.lastEnabled = true;
 
         if (!VoidWarehouseReturnNetwork.isSupported()) {
-            // 对面没装带这条通道的服务端模组：发也发不出去，把在飞的清掉就完事。
-            // 账本同样留着 —— 换服回来还能接着用。
+            // Older servers can support take without return. Keep their ledger current
+            // so an upgrade cannot revive credit for materials consumed in this session.
             abandonInFlight();
+            long now = this.client.level.getGameTime();
+            reconcile(now);
+            maybeSaveSnapshot(now);
             return;
         }
 

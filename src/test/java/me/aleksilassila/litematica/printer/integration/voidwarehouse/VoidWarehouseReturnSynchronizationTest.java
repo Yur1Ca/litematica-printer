@@ -233,6 +233,27 @@ public class VoidWarehouseReturnSynchronizationTest {
             assertEquals(64, f.restored().pendingCount());
         }
     }
+    @Test void aServerWithoutReturnSupportStillRetiresConsumedCreditBeforeReconnect() throws Exception {
+        try (var f = new Fixture()) {
+            f.controller.recordTaken(Items.STONE, 64);
+            f.player.inv.setItem(35, new ItemStack(Items.STONE, 64));
+            Object controller = copyState(f, f.controller);
+            Transport.supported = false;
+            tick(controller);
+            f.player.inv.setItem(35, ItemStack.EMPTY);
+            tick(controller);
+            assertEquals(0, balance(controller));
+            f.player.inv.setItem(35, new ItemStack(Items.STONE, 64));
+            tick(controller);
+            ((me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent) controller)
+                    .onEpochChanged(new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.EpochChanged(
+                            me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL,
+                            me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL.next(), "disconnect"));
+            var restored = f.restored();
+            assertEquals(0, restored.pendingCount());
+            assertEquals(List.of(), capture(f, restored));
+        }
+    }
 }
 
 //#endif

@@ -44,6 +44,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
 - [Take It Out](https://modrinth.com/mod/takeitout)，仅用于受支持的 1.21.x 和 26.x 版本
 - [Chest Tracker](https://github.com/ponuing/ChestTracker)，仅用于有对应版本构建的 1.21.4+ 和 26.x 版本
+- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition)，服务端虚空仓库联动，打印机在 1.21.11 及以上版本支持
 
 所有前置模组都需要选择与当前 Minecraft 版本匹配的版本。
 
@@ -78,6 +79,8 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 - Quick Shulker 自动取料与有序存回。
 - 在受支持版本中使用 Take It Out 远程取物。
 - 在受支持版本中，仅从明确加入当前 Litematica 投影选区缓存的 Chest Tracker 容器远程取物。
+- 虚空仓库：缺料时从服务端仓库补货，并可将仓库库存计入材料列表的“已有数量”。需要服务端安装对应版本的 [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition)，同时开启 `voidWarehouse` 和 `voidWarehouseRestock` 两条 Carpet 规则。
+- 在打印机设置中按需开启“虚空仓库补货”和“材料列表计入虚空仓库库存”，两项默认关闭。
 - 切换材料时锁定放置，尽量避免使用上一个快捷栏物品错放。
 
 打印机还包含大量原版方块的专用放置逻辑，包括楼梯、门、活版门、漏斗、箱子、拉杆、红石粉、藤蔓、垂落植物、砂轮、合成器和多种方向方块。

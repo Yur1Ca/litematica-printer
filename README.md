@@ -44,6 +44,7 @@ Optional integrations:
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
 - [Take It Out](https://modrinth.com/mod/takeitout), on supported 1.21.x and 26.x versions
 - [Chest Tracker](https://github.com/ponuing/ChestTracker), on versions with a matching upstream build
+- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), a server-side Void Warehouse integration supported by the printer on 1.21.11 and later
 
 Dependency versions must match the Minecraft version being launched.
 
@@ -78,6 +79,8 @@ Dependency versions must match the Minecraft version being launched.
 - Quick Shulker material retrieval and ordered return.
 - Take It Out remote material retrieval on supported versions.
 - Chest Tracker retrieval from containers explicitly cached inside the active Litematica selection on supported versions.
+- Void Warehouse: retrieve missing materials from the server warehouse and optionally include its stock in the material list's available counts. The server needs a matching version of [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), with both the `voidWarehouse` and `voidWarehouseRestock` Carpet rules enabled.
+- Enable `voidWarehouseRestock` and `voidWarehouseMaterialList` in the printer settings as needed. Both options are disabled by default.
 - Material switching safeguards intended to prevent placement with the previous hotbar item.
 
 The printer also contains special placement logic for many vanilla blocks, including stairs, doors, trapdoors, hoppers, chests, levers, redstone wire, vines, hanging plants, grindstones, crafters, flower clusters, and other directional blocks.

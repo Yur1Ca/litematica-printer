@@ -80,7 +80,8 @@ Dependency versions must match the Minecraft version being launched.
 - Take It Out remote material retrieval on supported versions.
 - Chest Tracker retrieval from containers explicitly cached inside the active Litematica selection on supported versions.
 - Void Warehouse: retrieve missing materials from the server warehouse and optionally include its stock in the material list's available counts. The server needs a matching version of [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), with both the `voidWarehouse` and `voidWarehouseRestock` Carpet rules enabled.
-- Enable `voidWarehouseRestock` and `voidWarehouseMaterialList` in the printer settings as needed. Both options are disabled by default.
+- Void Warehouse leftovers: restocking hands out whole stacks, so unused remainders are returned to the warehouse in bulk - once printing stops, and while printing whenever 3 or fewer inventory slots are free. Only items the warehouse actually supplied are returned; your own stacks are never touched.
+- Enable `voidWarehouseRestock`, `voidWarehouseMaterialList` and `voidWarehouseReturn` in the printer settings as needed. All three options are disabled by default.
 - Material switching safeguards intended to prevent placement with the previous hotbar item.
 
 The printer also contains special placement logic for many vanilla blocks, including stairs, doors, trapdoors, hoppers, chests, levers, redstone wire, vines, hanging plants, grindstones, crafters, flower clusters, and other directional blocks.

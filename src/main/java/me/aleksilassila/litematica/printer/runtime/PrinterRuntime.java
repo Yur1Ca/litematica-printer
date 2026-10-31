@@ -37,6 +37,7 @@ import me.aleksilassila.litematica.printer.interaction.StrippableBlockPort;
 import me.aleksilassila.litematica.printer.integration.inventory.StrippableBlockAdapter;
 //#if MC >= 12111
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseRestockAdapter;
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseReturnController;
 //#endif
 import net.minecraft.client.Minecraft;
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -82,6 +83,10 @@ public final class PrinterRuntime {
     private final ToolSwitchService toolSwitchService;
     private final StrippableBlockPort strippableBlocks;
     private final me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncController containerSync;
+    //#if MC >= 12111
+    /** 虚空仓库返还：补货多给的整组材料用不完时退回去，避免材料种类多时背包被占满。 */
+    private final VoidWarehouseReturnController warehouseReturn;
+    //#endif
 
     public PrinterRuntime() {
         Minecraft client = Minecraft.getInstance();
@@ -122,6 +127,17 @@ public final class PrinterRuntime {
         this.scope.register(this.chestTrackerAdapter);
         this.containerSync = new me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncController(this);
         this.scope.register(this.containerSync);
+        //#if MC >= 12111
+        // 必须晚于 inventorySwitchGuard（两个 supplier 都会用到它）。
+        // 独立组件而不是塞进 containerSync：那条路要开潜影盒、占容器与主手租约，
+        // 这条只发一个包、什么都不占，时序上不相容，混在一起只会互相踩状态。
+        this.warehouseReturn = new VoidWarehouseReturnController(
+                client,
+                this::isPrinterWorkingForWarehouse,
+                this.inventorySwitchGuard::isWaiting,
+                this::warehouseRequestedItems);
+        this.scope.register(this.warehouseReturn);
+        //#endif
         this.modules = new FeatureModuleSet(this);
     }
 
@@ -235,7 +251,9 @@ public final class PrinterRuntime {
             providers.add(new PlayerInventoryProvider(Minecraft.getInstance()));
             providers.add(new TakeItOutAdapter(this.actionBroker));
             //#if MC >= 12111
-            providers.add(new VoidWarehouseRestockAdapter(this.actionBroker));
+            VoidWarehouseRestockAdapter warehouseRestock = new VoidWarehouseRestockAdapter(this.actionBroker);
+            warehouseRestock.attachReturnController(this.warehouseReturn);
+            providers.add(warehouseRestock);
             //#endif
             providers.add(this.quickShulkerAdapter);
             providers.add(this.chestTrackerAdapter);
@@ -244,6 +262,32 @@ public final class PrinterRuntime {
         }
         return this.materialRequests;
     }
+
+    //#if MC >= 12111
+    /**
+     * 打印机现在算不算「在干活」。
+     *
+     * <p>判据只有工作总开关：打印中途会有一段时间不请求任何材料（一组建材能打几十个方块），
+     * 用「最近有没有请求」当判据会把还要用的材料退回去，形成「退 → 要 → 退」的空转。
+     * 关掉总开关（收工）才是最可靠的「这些余料不会再用」信号。</p>
+     */
+    private boolean isPrinterWorkingForWarehouse() {
+        return Configs.Core.WORK_SWITCH.getBooleanValue();
+    }
+
+    /**
+     * 当前材料请求正在要的物品。
+     *
+     * <p>退还时要避开它们：打印机对同一种材料是「用完 → 再要一组」的循环，
+     * 在它正等这一种时把剩下的半组退回去，就是死循环。</p>
+     */
+    private List<net.minecraft.world.item.Item> warehouseRequestedItems() {
+        if (this.materialRequests == null) {
+            return List.of();
+        }
+        return this.materialRequests.activeItems();
+    }
+    //#endif
 
     public void tick(Minecraft client) {
         long tickStart = this.diagnostics.tickStarted();
@@ -280,6 +324,10 @@ public final class PrinterRuntime {
                 this.timing.finish("runtime", Stage.MINING_TICK, miningStart);
             }
             this.modules.tick();
+            //#if MC >= 12111
+            // 放在最后：这一 tick 的取料/放置都已结算，看到的是背包的最终状态。
+            this.warehouseReturn.tick();
+            //#endif
         } finally {
             this.diagnostics.tickCompleted(this.epoch, tickStart);
         }

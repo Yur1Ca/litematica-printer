@@ -18,7 +18,9 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 把服务端 carpet-Neko-Addition 的虚空仓库接进打印机的补货责任链。
@@ -67,6 +69,22 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     private MaterialRequest lastFailedRequest;
     private long lastFailedTick = Long.MIN_VALUE;
 
+    /**
+     * 返还控制器：到货时往它账上记一笔，等背包吃紧或收工时退回去。
+     *
+     * <p>允许为 {@code null}（单测、自检这类没有运行时的场合）：那时补货照旧，
+     * 只是不记返还账。</p>
+     */
+    private VoidWarehouseReturnController returnController;
+
+    /**
+     * 发请求那一刻，候选物品在背包里的件数；到货后拿它算「仓库到底给了多少」。
+     *
+     * <p>为什么不记「哪一格」：服务端塞货时会先合并到已有的同类堆、再找空格，
+     * 落在哪一格由它自己决定，客户端事后无从推断；件数是唯一稳定的口径。</p>
+     */
+    private final Map<Item, Integer> heldBefore = new HashMap<>();
+
     public VoidWarehouseRestockAdapter(ActionPort actionBroker) {
         this(actionBroker, new VoidWarehouseRestockPort() {
             @Override public boolean isSupported() { return VoidWarehouseRestockNetwork.isSupported(); }
@@ -79,6 +97,16 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     public VoidWarehouseRestockAdapter(ActionPort actionBroker, VoidWarehouseRestockPort network) {
         this.actionBroker = actionBroker;
         this.network = network;
+    }
+
+    /**
+     * 挂上返还控制器（{@code PrinterRuntime} 装配时调一次）。
+     *
+     * <p>用 setter 而不是加构造参数，是为了不破坏上游已有的两参构造与
+     * {@link VoidWarehouseRestockPort} 这层间接 —— 那个构造是给单测用的。</p>
+     */
+    public void attachReturnController(VoidWarehouseReturnController controller) {
+        this.returnController = controller;
     }
 
     @Override
@@ -107,6 +135,8 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
             finish();
             return unavailable(request);
         }
+        // 发货前的件数快照：到货后靠它算净增量（服务端塞不下的部分会回滚）
+        rememberHeldBefore(request);
         int nonce = this.network.requestTake(candidates);
         if (nonce == 0) {
             finish();
@@ -133,13 +163,21 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         if (!acquireResources()) {
             return pending(request);
         }
+        int status = this.network.statusOf(this.activeNonce);
         Item availableItem = findAvailableItem(request);
         if (availableItem != null) {
+            if (this.returnController != null && status == PrinterTakeResultPayload.NONE) {
+                // Inventory arrival alone cannot identify its source. Keep ownership until
+                // this request is confirmed, including inventory-before-receipt delivery.
+                return pending(request);
+            }
+            if (status == PrinterTakeResultPayload.OK) {
+                recordDelivery(availableItem);
+            }
             selectCompletedPickBlockItem(request, availableItem);
             finish();
             return MaterialReservation.available(request, availableItem);
         }
-        int status = this.network.statusOf(this.activeNonce);
         if (status == PrinterTakeResultPayload.NONE) {
             // 还没等到回执，继续等；真超时由 coordinator 负责
             return pending(request);
@@ -213,6 +251,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         this.actionBroker.releaseOwner(LEASE_OWNER);
         this.activeRequest = null;
         this.activeNonce = 0;
+        this.heldBefore.clear();
         this.network.forget();
     }
 
@@ -270,6 +309,55 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
             return;
         }
         candidates.add(id);
+    }
+
+    /**
+     * 发货前把候选物品的件数记下来（见 {@link #heldBefore}）。
+     */
+    private void rememberHeldBefore(MaterialRequest request) {
+        this.heldBefore.clear();
+        if (this.returnController == null) {
+            return;
+        }
+        for (Item item : request.acceptedItems()) {
+            if (item != null) {
+                this.heldBefore.put(item, countHeld(item));
+            }
+        }
+    }
+
+    /**
+     * 到货了：把「实际增加的件数」记进返还账，并把这件物品标成「刚到手」。
+     *
+     * <p>取净增量而不是「请求里写的一组」：背包只塞得下一部分时服务端会回滚剩下的，
+     * 那时实际到手的可能只有十几个 —— 按 64 记账会让返还时把背包里原本就有的同种物品
+     * 也算成仓库给的，等于把玩家的存货退回仓库。</p>
+     *
+     * <p>🔴 {@code markDelivered} 不能省：它是整条链上唯一知道「这批材料是刚发给打印机的」
+     * 的地方。打印机拿到整组后往往只放掉三五个就换下一种，那段「请求已完成、材料还没用完」
+     * 的窗口里 {@code activeItems()} 是空的，控制器自己分不清「余料」与「马上要用的料」，
+     * 于是刚发到手就退回、下一 tick 再要，形成「退 → 要 → 退」的空转。</p>
+     */
+    private void recordDelivery(Item item) {
+        if (this.returnController == null) {
+            return;
+        }
+        int before = this.heldBefore.getOrDefault(item, 0);
+        int now = countHeld(item);
+        int delivered = now - before;
+        if (delivered > 0) {
+            this.returnController.recordTaken(item, delivered);
+            this.returnController.markDelivered(item);
+        }
+        this.heldBefore.put(item, now);
+    }
+
+    /** 主背包 + 快捷栏里某种物品的件数（与服务端的 36 格口径一致）。 */
+    private int countHeld(Item item) {
+        if (this.client.player == null) {
+            return 0;
+        }
+        return VoidWarehouseReturnController.countHeld(this.client.player.getInventory(), item);
     }
 
     private long gameTick() {

@@ -172,7 +172,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
                 return pending(request);
             }
             if (status == PrinterTakeResultPayload.OK) {
-                recordDelivery(availableItem);
+                recordDelivery(request, availableItem);
             }
             selectCompletedPickBlockItem(request, availableItem);
             finish();
@@ -338,18 +338,42 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
      * 的窗口里 {@code activeItems()} 是空的，控制器自己分不清「余料」与「马上要用的料」，
      * 于是刚发到手就退回、下一 tick 再要，形成「退 → 要 → 退」的空转。</p>
      */
-    private void recordDelivery(Item item) {
+    private void recordDelivery(MaterialRequest request, Item item) {
         if (this.returnController == null) {
             return;
         }
         int before = this.heldBefore.getOrDefault(item, 0);
         int now = countHeld(item);
+        // 基线无论如何都要推进：它是「这一批到货了多少」的参照，与记不记账无关。
+        // 不推进的话，下一批真打印会把这一批 pick block 的增量一起算成自己的到货量。
+        this.heldBefore.put(item, now);
+        if (!booksAsLeftover(request.source())) {
+            return;
+        }
         int delivered = now - before;
         if (delivered > 0) {
             this.returnController.recordTaken(item, delivered);
             this.returnController.markDelivered(item);
         }
-        this.heldBefore.put(item, now);
+    }
+
+    /**
+     * 这一笔到货要不要记进<b>余料返还</b>的账本。
+     *
+     * <p>🔴 中键 pick block 要的是<b>玩家自己要用的</b>东西，不是打印耗材。记进账本的表现是
+     * 「玩家刚拿到手，关掉界面那一刻立刻被收回仓库」—— 因为
+     * {@code VoidWarehouseReturnController#tick()} 在 {@code containerMenu != inventoryMenu}
+     * （有界面开着）时直接 {@code return} 不发货，所以界面一开就不退、一关就退，
+     * 看起来像「东西凭空没了」。</p>
+     *
+     * <p>另外两个补货适配器（{@code TakeItOutAdapter} / {@code ChestTrackerAdapter}）
+     * 都按 {@code source} 分流，这里必须一致，否则同一个中键在三条补货路线上有三种语义。</p>
+     *
+     * <p>抽成静态方法是为了让这条边界在单测里咬死（{@code VoidWarehouseReturnLedgerTest}）——
+     * 它现在只剩 {@code PICK_BLOCK} 一个例外，靠「跑一遍游戏看看」验证太贵。</p>
+     */
+    static boolean booksAsLeftover(MaterialRequest.Source source) {
+        return source != MaterialRequest.Source.PICK_BLOCK;
     }
 
     /** 主背包 + 快捷栏里某种物品的件数（与服务端的 36 格口径一致）。 */

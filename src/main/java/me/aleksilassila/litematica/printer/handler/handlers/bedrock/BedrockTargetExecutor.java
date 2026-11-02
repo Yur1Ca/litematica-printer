@@ -111,6 +111,7 @@ final class BedrockTargetExecutor {
             String reason,
             ClientLevel level
     ) {
+        BedrockDiagnostics.trace(target, reason == null ? "retired" : "retired:" + reason);
         if (target.getStatus() == BedrockTarget.Status.FAILED
                 || target.getStatus() == BedrockTarget.Status.STUCK) {
             int delay = this.networkSync.retryDelayTicks(FAILURE_RETRY_COOLDOWN_TICKS);

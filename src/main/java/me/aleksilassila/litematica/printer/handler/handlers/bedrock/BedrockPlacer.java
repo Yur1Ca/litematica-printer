@@ -60,6 +60,10 @@ public final class BedrockPlacer {
         }
     }
 
+    boolean hasPendingPistonRetry(BlockPos pistonPos) {
+        return pistonPos != null && this.pendingPistonRetries.containsKey(pistonPos);
+    }
+
     private void clearPendingPistonLook(BlockPos pistonPos) {
         if (this.pendingHorizontalPistonPlacements.remove(pistonPos) != null) {
             NetworkUtils.clearScopedLookOverride();

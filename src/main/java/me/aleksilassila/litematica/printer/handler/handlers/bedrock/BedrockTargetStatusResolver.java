@@ -38,6 +38,7 @@ final class BedrockTargetStatusResolver {
         void incrementStuckTicks();
         int postExecuteSyncTimeoutTicks();
         void recordNetworkTimeout();
+        boolean hasPendingPistonRetry();
         void resetPostExecuteAttempt(BedrockTarget.Status recoveryStatus);
     }
 
@@ -74,7 +75,8 @@ final class BedrockTargetStatusResolver {
             }
             return BedrockTarget.Status.STUCK;
         }
-        if (this.host.hasTried() && this.shouldRestartAfterPostExecuteCollapse()) {
+        if (this.host.hasTried() && !this.host.hasPendingPistonRetry()
+                && this.shouldRestartAfterPostExecuteCollapse()) {
             if (applyRecovery) this.host.resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
             return BedrockTarget.Status.UNINITIALIZED;
         }
@@ -107,6 +109,13 @@ final class BedrockTargetStatusResolver {
         }
         if (this.shouldWaitForPostExecuteAirTransition()) {
             if (applyRecovery) this.host.incrementStuckTicks();
+            return BedrockTarget.Status.NEEDS_WAITING;
+        }
+        // Air or an old unextended piston can be an intermediate server update.
+        // Keep this attempt alive until its reverse placement settles; restarting
+        // here cancels the very retry that is still waiting for its RTT deadline.
+        // The confirmation timeout above remains the bound on this wait.
+        if (this.host.hasTried() && this.host.hasPendingPistonRetry()) {
             return BedrockTarget.Status.NEEDS_WAITING;
         }
         if (!this.host.hasTried()

@@ -245,13 +245,19 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     @Override
-    public void recordNetworkAttempt() { if (this.networkSync != null) this.networkSync.beginAttempt(this.bedrockPos, this.getMachineFootprint()); }
+    public void recordNetworkAttempt() {
+        if (this.networkSync != null) this.networkSync.beginAttempt(this.bedrockPos, this.getMachineFootprint());
+        BedrockDiagnostics.trace(this, "dispatched");
+    }
 
     @Override
     public int postExecuteSyncTimeoutTicks() { return this.networkSync == null ? BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS : this.networkSync.confirmationTimeoutTicks(); }
 
     @Override
     public void recordNetworkTimeout() { if (this.networkSync != null) this.networkSync.recordTimeout(this.bedrockPos); }
+
+    @Override
+    public boolean hasPendingPistonRetry() { return this.placer.hasPendingPistonRetry(this.pistonPos); }
 
     @Override
     public boolean canBuildInitialMachine() {
@@ -270,6 +276,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
 
     @Override
     public void resetPostExecuteAttempt(Status recoveryStatus) {
+        BedrockDiagnostics.trace(this, "restart:" + recoveryStatus);
         if (this.networkSync != null) {
             this.networkSync.recordRetry(this.bedrockPos);
         }

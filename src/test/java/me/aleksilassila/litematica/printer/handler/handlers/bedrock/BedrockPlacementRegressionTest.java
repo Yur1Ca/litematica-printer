@@ -212,6 +212,79 @@ class BedrockPlacementRegressionTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(booleans = {true, false})
+    void currentAttemptKeepsItsReversePlacementWhileServerUpdatesAreIncomplete(boolean oldPistonStillPresent) throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            if (oldPistonStillPresent) {
+                f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState()
+                        .setValue(PistonBaseBlock.FACING, Direction.UP));
+            }
+            BedrockTarget target = f.target();
+            target.setHasTried(true);
+            target.setExecuteTick(0);
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
+
+            for (int tick = 1; tick <= 8; tick++) {
+                f.tick(tick);
+                f.placer.tickPistonRetries();
+                assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.tick(false, false),
+                        "An incomplete server snapshot must not restart the machine before its pending placement settles");
+                assertTrue(target.hasTried());
+            }
+            assertEquals(1, f.mode.hits.size(), "The current attempt must actually reach its delayed reverse placement");
+
+            f.level.blocks.remove(TARGET);
+            f.tick(9);
+            f.placer.tickPistonRetries();
+            assertEquals(BedrockTarget.Status.RETRACTED, target.tick(false, false),
+                    "Confirmed completion must not wait for the remaining retry budget");
+        }
+    }
+
+    @Test void pendingReversePlacementStillRespectsTheExistingAttemptDeadline() throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            var placer = new BedrockPlacer(f.client, new BedrockNetworkSync(f.runtime::currentTick, () -> 40));
+            BedrockTarget target = f.target(TARGET, Direction.UP, placer);
+            target.setHasTried(true);
+            target.setExecuteTick(0);
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
+
+            for (int tick = 1; tick < 56; tick++) {
+                f.tick(tick);
+                placer.tickPistonRetries();
+                assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.tick(false, false));
+            }
+            assertEquals(1, f.mode.hits.size());
+            f.tick(56);
+            placer.tickPistonRetries();
+            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.tick(false, false));
+            assertFalse(target.hasTried(), "Pending placement must not create an unbounded wait");
+            f.tick(80);
+            placer.tickPistonRetries();
+            assertEquals(1, f.mode.hits.size(), "A timed-out attempt must not place into the next machine");
+        }
+    }
+
+    @Test void collapsedAttemptWithoutPendingPlacementKeepsItsExistingRecovery() throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            BedrockTarget target = f.target();
+            target.setHasTried(true);
+            target.setExecuteTick(0);
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            for (int tick = 1; tick <= 4; tick++) {
+                f.tick(tick);
+                target.tick(false, false);
+            }
+            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.getStatus());
+            assertFalse(target.hasTried());
+        }
+    }
+
     @Test void restartingAnAttemptCancelsItsOldDelayedPlacement() throws Exception {
         try (var f = new Fixture()) {
             BedrockTarget target = f.target();
@@ -222,8 +295,7 @@ class BedrockPlacementRegressionTest {
             for (int tick = 0; tick < 4; tick++) state.beginTick(true);
             f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
 
-            // The existing collapse recovery can start a new attempt before an RTT-delayed retry.
-            assertEquals(BedrockTarget.Status.UNINITIALIZED, new BedrockTargetStatusResolver(target).resolve(true));
+            target.resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
             f.tick(8);
             f.placer.tickPistonRetries();
             assertTrue(f.mode.hits.isEmpty(), "The previous attempt must not place into the rebuilt machine");

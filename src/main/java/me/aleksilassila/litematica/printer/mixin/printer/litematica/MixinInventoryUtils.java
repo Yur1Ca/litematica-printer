@@ -17,9 +17,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-// Priority rationale: the unified provider chain must run before Take It Out's default-priority
-// Litematica hook, otherwise Easy Place can dispatch both integrations for one missing item.
-@Mixin(value = WorldUtils.class, priority = 1100)
+// Priority rationale: cancellable HEAD callbacks sharing the first instruction run in ascending mixin
+// priority. Enter the coordinator before Take It Out's default (1000) missing-item cancellation.
+@Mixin(value = WorldUtils.class, priority = 900)
 public class MixinInventoryUtils {
     @Inject(at = @At("HEAD"), method = "doEasyPlaceAction", cancellable = true, remap = false)
     private static void easyPlace(

@@ -50,6 +50,10 @@ public final class QuickShulkerBridge {
     }
 
     private static boolean handleMissingPickBlock(LocalPlayer player, Item item) {
+        return handleMissingPickBlock(player, item, MaterialRequest.Source.PICK_BLOCK);
+    }
+
+    private static boolean handleMissingPickBlock(LocalPlayer player, Item item, MaterialRequest.Source source) {
         Minecraft client = Minecraft.getInstance();
         if (player == null || item == null || item == Items.AIR
                 || client.gameMode == null
@@ -59,22 +63,35 @@ public final class QuickShulkerBridge {
                 )) {
             return false;
         }
-        if (player.containerMenu != player.inventoryMenu
-                || InventoryUtils.playerHasItemInInventory(player, item)) {
+        if (player.containerMenu != player.inventoryMenu) {
+            return source == MaterialRequest.Source.TAKE_IT_OUT_PICK || inventoryOperationPending();
+        }
+        if (InventoryUtils.playerHasItemInInventory(player, item)) {
             // Native selection can change the hotbar even without requesting missing material.
             return inventoryOperationPending();
         }
 
-        if (Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+        if (source == MaterialRequest.Source.PICK_BLOCK && Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
             RuntimeAccess.get().quickShulkerAdapter().allowExternalRequest();
         }
 
-        MaterialReservation reservation = requestItem(item, MaterialRequest.Source.PICK_BLOCK);
-        return PickBlockRequestPolicy.shouldConsume(reservation.state())
+        MaterialReservation reservation = requestItem(item, source);
+        // Do not retry an unavailable TIO-only request through TIO's unguarded native hook.
+        return source == MaterialRequest.Source.TAKE_IT_OUT_PICK
+                || PickBlockRequestPolicy.shouldConsume(reservation.state())
                 || inventoryOperationPending();
     }
 
-    private static boolean inventoryOperationPending() {
+    public static boolean handleTakeItOutPickBlock(LocalPlayer player, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty()) return false;
+        // A foreign input must not poll or replace another source's pending request, even
+        // during a lease-free wait. Runtime ticks remain responsible for its progress.
+        if (RuntimeAccess.get().materialRequests().isBusy()) return true;
+        return handleMissingPickBlock(player, stack.getItem(), MaterialRequest.Source.TAKE_IT_OUT_PICK);
+    }
+
+    /** Guards native selection without turning a foreign input into a material request. */
+    public static boolean inventoryOperationPending() {
         var broker = RuntimeAccess.get().actionBroker();
         return broker.isResourceHeld(ResourceLease.INVENTORY)
                 || broker.isResourceHeld(ResourceLease.CONTAINER)

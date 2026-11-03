@@ -135,6 +135,10 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
     private MaterialReservation advance() {
         while (this.active != null && this.active.providerIndex < this.providers.size()) {
             InventoryProvider provider = this.providers.get(this.active.providerIndex);
+            if (!provider.supports(this.active.request)) {
+                this.active = this.active.nextProvider(this.tick);
+                continue;
+            }
             MaterialReservation result;
             if (this.active.started) {
                 result = provider.status(this.active.request);

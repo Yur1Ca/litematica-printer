@@ -4,6 +4,11 @@ package me.aleksilassila.litematica.printer.integration.inventory;
 public interface InventoryProvider {
     String id();
 
+    /** A third-party automatic pick may use only its own transport, never other sources. */
+    default boolean supports(MaterialRequest request) {
+        return request.source() != MaterialRequest.Source.TAKE_IT_OUT_PICK;
+    }
+
     MaterialReservation request(MaterialRequest request);
 
     /** Polls a request previously accepted by this provider without issuing it again. */

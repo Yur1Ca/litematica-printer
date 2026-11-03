@@ -43,10 +43,12 @@ class VoidWarehouseReturnLedgerTest {
                 VoidWarehouseRestockAdapter.booksAsLeftover(Source.PICK_BLOCK),
                 "pick block 取到的物品是玩家自己要用的，不能记进余料返还账本"
         );
+        assertFalse(VoidWarehouseRestockAdapter.booksAsLeftover(Source.TAKE_IT_OUT_PICK),
+                "TIO 自动取物也属于玩家取物，不能混进仓库余料返还账本");
     }
 
     /**
-     * 除了 pick block，其余来源都是打印耗材，一律照旧记账。
+     * 除了玩家取物，其余来源都是打印耗材，一律照旧记账。
      *
      * <p>反方向兜底：修 bug 时把判定写成「只有 PRINT 才记账」也会让本方法翻红 ——
      * FILL / FLUID / MINE / COVER / BEDROCK 都是打印机的正常要料，漏了它们
@@ -55,7 +57,7 @@ class VoidWarehouseReturnLedgerTest {
     @Test
     void everyPrintingSourceIsBooked() {
         for (Source source : Source.values()) {
-            if (source == Source.PICK_BLOCK) {
+            if (source == Source.PICK_BLOCK || source == Source.TAKE_IT_OUT_PICK) {
                 continue;
             }
             assertTrue(

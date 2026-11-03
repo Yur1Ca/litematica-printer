@@ -44,6 +44,11 @@ public final class TakeItOutAdapter implements InventoryProvider {
     }
 
     @Override
+    public boolean supports(MaterialRequest request) {
+        return true;
+    }
+
+    @Override
     public MaterialReservation request(MaterialRequest request) {
         if (!this.acquireResources()) {
             return pending(request);
@@ -170,7 +175,8 @@ public final class TakeItOutAdapter implements InventoryProvider {
 
     private static void selectCompletedPickBlockItem(MaterialRequest request, Item item) {
         Minecraft client = Minecraft.getInstance();
-        if (request.source() == MaterialRequest.Source.PICK_BLOCK
+        if ((request.source() == MaterialRequest.Source.PICK_BLOCK
+                || request.source() == MaterialRequest.Source.TAKE_IT_OUT_PICK)
                 && client.player != null
                 && client.player.containerMenu == client.player.inventoryMenu) {
             InventoryUtils.setPickedItemToHand(new ItemStack(item), client);

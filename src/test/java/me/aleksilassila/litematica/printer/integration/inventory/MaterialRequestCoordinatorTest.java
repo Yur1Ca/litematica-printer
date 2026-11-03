@@ -160,6 +160,40 @@ class MaterialRequestCoordinatorTest {
         assertFalse(coordinator.isBusy());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = MaterialReservation.State.class,
+            names = {"AVAILABLE", "PENDING", "UNAVAILABLE"})
+    void restrictedAutomaticPickCannotVisitOrdinaryProvidersEvenAfterTimeout(MaterialReservation.State state) {
+        var before = new FakeProvider("ordinary_before", MaterialReservation.State.AVAILABLE);
+        var after = new FakeProvider("ordinary_after", MaterialReservation.State.AVAILABLE);
+        var transport = new FakeProvider("take_it_out", state);
+        InventoryProvider restricted = new InventoryProvider() {
+            @Override public String id() { return transport.id(); }
+            @Override public boolean supports(MaterialRequest request) { return true; }
+            @Override public MaterialReservation request(MaterialRequest request) { return transport.request(request); }
+            @Override public MaterialReservation status(MaterialRequest request) { return transport.status(request); }
+            @Override public void reset() { transport.reset(); }
+        };
+        var coordinator = new MaterialRequestCoordinator(List.of(before, restricted, after));
+
+        assertEquals(state, coordinator.request(Items.STONE, MaterialRequest.Source.TAKE_IT_OUT_PICK).state());
+        for (int tick = 0; tick < 100; tick++) coordinator.tick();
+
+        assertEquals(1, transport.requestCount);
+        assertEquals(0, before.requestCount);
+        assertEquals(0, after.requestCount);
+        assertFalse(coordinator.isBusy());
+    }
+
+    @Test void anUnsupportedAutomaticPickDoesNotAcquireAnOrdinaryProvider() {
+        var provider = new FakeProvider("warehouse", MaterialReservation.State.PENDING);
+        var coordinator = new MaterialRequestCoordinator(List.of(provider));
+        assertEquals(MaterialReservation.State.UNAVAILABLE,
+                coordinator.request(Items.STONE, MaterialRequest.Source.TAKE_IT_OUT_PICK).state());
+        assertFalse(coordinator.isBusy());
+        assertEquals(0, provider.requestCount);
+    }
+
     private static final class FakeProvider implements InventoryProvider {
         private final String id;
         private final MaterialReservation.State state;

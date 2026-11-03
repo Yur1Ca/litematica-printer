@@ -82,6 +82,13 @@ class MaterialAlternativeCooldownRegressionTest {
             assertFalse(broker.isResourceHeld(ResourceLease.INVENTORY));
         }
 
+        void fail(Item item) {
+            assertEquals(MaterialReservation.State.PENDING, chain.request(item, MaterialRequest.Source.PRINT).state());
+            assertEquals(MaterialReservation.State.UNAVAILABLE, chain.request(item, MaterialRequest.Source.PRINT).state());
+            assertFalse(chain.isBusy());
+            assertFalse(broker.isResourceHeld(ResourceLease.INVENTORY));
+        }
+
         void tickChain(int ticks) {
             for (int tick = 0; tick < ticks; tick++) {
                 clock.setGameTime(clock.getGameTime() + 1L);
@@ -137,6 +144,76 @@ class MaterialAlternativeCooldownRegressionTest {
             f.clock.setGameTime(1_100L);
             assertEquals(MaterialReservation.State.PENDING, f.request(items).state());
             assertEquals(2, f.stock.sent.size());
+        }
+    }
+
+    @Test void alternatingUnavailableMaterialsKeepTheirOwnCooldowns() throws Exception {
+        try (var f = new Fixture()) {
+            f.fail(Items.STONE);
+            f.fail(Items.DIRT);
+
+            for (Item item : List.of(Items.STONE, Items.DIRT, Items.STONE, Items.DIRT)) {
+                assertEquals(MaterialReservation.State.UNAVAILABLE,
+                        f.chain.request(item, MaterialRequest.Source.PRINT).state(),
+                        "Another failed material must not discard this requirement's cooldown");
+                assertFalse(f.chain.isBusy());
+                assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
+            }
+            assertEquals(2, f.stock.sent.size(), "Alternating missing materials must not keep pausing the printer");
+        }
+    }
+
+    @Test void eachFailedMaterialExpiresFromItsOwnFailureTick() throws Exception {
+        try (var f = new Fixture()) {
+            f.fail(Items.STONE);
+            f.clock.setGameTime(1_020L);
+            f.fail(Items.DIRT);
+
+            f.clock.setGameTime(1_099L);
+            assertEquals(MaterialReservation.State.UNAVAILABLE,
+                    f.chain.request(Items.STONE, MaterialRequest.Source.PRINT).state());
+            f.clock.setGameTime(1_100L);
+            f.fail(Items.STONE);
+            assertEquals(MaterialReservation.State.UNAVAILABLE,
+                    f.chain.request(Items.DIRT, MaterialRequest.Source.PRINT).state());
+            f.clock.setGameTime(1_120L);
+            f.fail(Items.DIRT);
+            assertEquals(MaterialReservation.State.UNAVAILABLE,
+                    f.chain.request(Items.STONE, MaterialRequest.Source.PRINT).state());
+            assertEquals(4, f.stock.sent.size());
+        }
+    }
+
+    @Test void resettingTheCoordinatorClearsEveryMaterialCooldown() throws Exception {
+        try (var f = new Fixture()) {
+            f.fail(Items.STONE);
+            f.fail(Items.DIRT);
+
+            f.chain.reset();
+
+            f.fail(Items.STONE);
+            f.fail(Items.DIRT);
+            assertEquals(4, f.stock.sent.size());
+        }
+    }
+
+    @Test void successfulOtherMaterialDoesNotClearExistingFailures() throws Exception {
+        try (var f = new Fixture()) {
+            f.fail(Items.STONE);
+            f.fail(Items.DIRT);
+            f.stock.stock.add("minecraft:cobblestone");
+            assertEquals(MaterialReservation.State.PENDING,
+                    f.chain.request(Items.COBBLESTONE, MaterialRequest.Source.PRINT).state());
+            f.player.inventory.setItem(10, new ItemStack(Items.COBBLESTONE, 64));
+            assertEquals(MaterialReservation.State.AVAILABLE,
+                    f.chain.request(Items.COBBLESTONE, MaterialRequest.Source.PRINT).state());
+
+            for (Item item : List.of(Items.STONE, Items.DIRT)) {
+                assertEquals(MaterialReservation.State.UNAVAILABLE,
+                        f.chain.request(item, MaterialRequest.Source.PRINT).state());
+            }
+            assertEquals(3, f.stock.sent.size());
+            assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
         }
     }
 

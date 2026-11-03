@@ -66,8 +66,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     private MaterialRequest activeRequest;
     private int activeNonce;
 
-    private MaterialRequest lastFailedRequest;
-    private long lastFailedTick = Long.MIN_VALUE;
+    private final Map<FailedRequirement, Long> failedAt = new HashMap<>();
 
     /**
      * 返还控制器：到货时往它账上记一笔，等背包吃紧或收工时退回去。
@@ -209,8 +208,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     @Override
     public void reset() {
         finish();
-        this.lastFailedRequest = null;
-        this.lastFailedTick = Long.MIN_VALUE;
+        this.failedAt.clear();
     }
 
     /**
@@ -233,18 +231,20 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
     private boolean failedRecently(MaterialRequest request) {
         // Tokens and callers may change while the material requirement stays the same.
         // A different candidate list or stack constraint must be allowed to query the warehouse.
-        if (this.lastFailedRequest == null
-                || request.preferredItem() != this.lastFailedRequest.preferredItem()
-                || !request.acceptedItems().equals(this.lastFailedRequest.acceptedItems())
-                || request.emptyShulkerOnly() != this.lastFailedRequest.emptyShulkerOnly()) {
-            return false;
-        }
-        return gameTick() - this.lastFailedTick < FAILED_COOLDOWN_TICKS;
+        long now = gameTick();
+        this.failedAt.values().removeIf(tick -> now - tick >= FAILED_COOLDOWN_TICKS);
+        return this.failedAt.containsKey(FailedRequirement.of(request));
     }
 
     private void rememberFailure(MaterialRequest request) {
-        this.lastFailedRequest = request;
-        this.lastFailedTick = gameTick();
+        // Alternating missing materials must not evict each other's failure cooldown.
+        this.failedAt.put(FailedRequirement.of(request), gameTick());
+    }
+
+    private record FailedRequirement(Item preferredItem, List<Item> acceptedItems, boolean emptyShulkerOnly) {
+        static FailedRequirement of(MaterialRequest request) {
+            return new FailedRequirement(request.preferredItem(), request.acceptedItems(), request.emptyShulkerOnly());
+        }
     }
 
     private void finish() {
@@ -370,10 +370,11 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
      * 都按 {@code source} 分流，这里必须一致，否则同一个中键在三条补货路线上有三种语义。</p>
      *
      * <p>抽成静态方法是为了让这条边界在单测里咬死（{@code VoidWarehouseReturnLedgerTest}）——
-     * 它现在只剩 {@code PICK_BLOCK} 一个例外，靠「跑一遍游戏看看」验证太贵。</p>
+     * 玩家取物来源不属于打印耗材，包括受限的 TIO 自动取物。</p>
      */
     static boolean booksAsLeftover(MaterialRequest.Source source) {
-        return source != MaterialRequest.Source.PICK_BLOCK;
+        return source != MaterialRequest.Source.PICK_BLOCK
+                && source != MaterialRequest.Source.TAKE_IT_OUT_PICK;
     }
 
     /** 主背包 + 快捷栏里某种物品的件数（与服务端的 36 格口径一致）。 */

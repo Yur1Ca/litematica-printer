@@ -27,6 +27,10 @@ public final class BedrockController {
         engine().tick();
     }
 
+    public static boolean prepareMaterials() {
+        return engine().prepareMaterials(RuntimeAccess.get().materialRequests());
+    }
+
     public static boolean hasActiveWork() {
         return engine().hasActiveWork();
     }

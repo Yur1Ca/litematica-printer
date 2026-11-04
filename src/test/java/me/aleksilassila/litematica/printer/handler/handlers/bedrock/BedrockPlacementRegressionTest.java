@@ -400,7 +400,7 @@ class BedrockPlacementRegressionTest {
                     (pos, ticks) -> fail("Completed targets do not need a cooldown"),
                     f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8));
 
-            executor.process(f.level, 0, false, new LinkedHashSet<>(), side);
+            executor.process(f.level, 0, false, new LinkedHashSet<>(), side, true);
             assertTrue(targets.isEmpty());
             assertFalse(side.hasPendingHorizontalLook());
             assertNull(NetworkUtils.getScopedLookOverride());

@@ -264,7 +264,8 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
 
     private Item findAvailableItem(MaterialRequest request) {
         for (Item item : request.acceptedItems()) {
-            if (InventoryUtils.playerHasItemInInventory(this.client.player, item, request::acceptsStack)) {
+            if (InventoryUtils.playerHasItemInInventory(this.client.player, item,
+                    request::acceptsStack, request.minimumCount())) {
                 return item;
             }
         }

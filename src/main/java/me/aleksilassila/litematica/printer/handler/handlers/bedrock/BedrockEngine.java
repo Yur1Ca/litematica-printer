@@ -5,6 +5,9 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialReservation;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -29,6 +32,7 @@ public final class BedrockEngine implements RuntimeComponent {
     private final LongSupplier tickClock;
     private long lastProcessedTick = Long.MIN_VALUE;
     private int submissionBudget;
+    private boolean awaitingSupplies;
 
     public BedrockEngine(
             Minecraft client,
@@ -85,6 +89,7 @@ public final class BedrockEngine implements RuntimeComponent {
         this.criticalExecutor.reset();
         this.throughputScheduler.reset();
         this.submissionBudget = 0;
+        this.awaitingSupplies = false;
         this.lastProcessedTick = Long.MIN_VALUE;
         HudStatsManager.getRuntime().resetMode(HudStatsManager.Mode.BEDROCK);
     }
@@ -99,6 +104,26 @@ public final class BedrockEngine implements RuntimeComponent {
             this.networkSync.onServerBlockUpdate(pos);
             this.cleanup.onServerBlockUpdate(pos);
         }
+    }
+
+    /** Called only at the feature's inventory-safe boundary, never inside a critical bundle. */
+    public boolean prepareMaterials(MaterialRequestCoordinator requests) {
+        if (this.client.level == null || this.client.player == null) return false;
+        BedrockSupplies.Requirement missing = BedrockSupplies.missing(this.client.level, this.targets);
+        this.awaitingSupplies = missing != null || requests.isBusy();
+        // Background provider ticks own completion, including a cancelled operation's recovery.
+        if (requests.isBusy()) return false;
+        if (missing == null) return true;
+        // Waiting for the whole registry to empty would deadlock an unexecuted machine on
+        // the very materials it needs to finish. Only dispatched attempts must settle first.
+        if (this.placer.hasPendingPistonRetries() || BedrockSupplies.hasDispatchedAttempt(this.targets)) {
+            return true;
+        }
+        this.placer.clearHorizontalLookState();
+        MaterialReservation reservation = requests.request(
+                missing.item(), missing.minimumCount(), MaterialRequest.Source.BEDROCK);
+        // No provider owns a pending request: let cleanup drain while new machines stay paused.
+        return reservation.state() == MaterialReservation.State.UNAVAILABLE && !this.cleanup.isEmpty();
     }
 
     public void tick() {
@@ -125,21 +150,21 @@ public final class BedrockEngine implements RuntimeComponent {
         );
         boolean submissionWindowOpen = allocation.total() > 0;
         int throughput = this.admission.configuredThroughput();
-        this.submissionBudget = submissionWindowOpen ? throughput : 0;
+        this.submissionBudget = submissionWindowOpen && !this.awaitingSupplies ? throughput : 0;
         this.admission.setSubmissionBudget(this.submissionBudget);
         int continuationTotal = throughput;
         int continuationCritical = (continuationTotal + 1) / 2;
         int continuationPreparation = continuationTotal - continuationCritical;
         Set<BedrockTarget> processedTargets = new LinkedHashSet<>();
-        BedrockTarget sideLookTarget = this.targets.findSideLookTarget();
+        BedrockTarget sideLookTarget = this.awaitingSupplies ? null : this.targets.findSideLookTarget();
         int unusedFastLaneBudget = this.targetExecutor.process(
-                level, continuationCritical, true, processedTargets, sideLookTarget);
+                level, continuationCritical, true, processedTargets, sideLookTarget, !this.awaitingSupplies);
         int preparationBudget = continuationPreparation + unusedFastLaneBudget;
         int unusedBudget = this.targetExecutor.process(
-                level, preparationBudget, false, processedTargets, sideLookTarget);
+                level, preparationBudget, false, processedTargets, sideLookTarget, !this.awaitingSupplies);
         if (unusedBudget > 0) {
             unusedBudget = this.targetExecutor.process(
-                    level, unusedBudget, true, processedTargets, sideLookTarget);
+                    level, unusedBudget, true, processedTargets, sideLookTarget, !this.awaitingSupplies);
         }
         this.throughputScheduler.consume(allocation, unusedBudget);
         this.cleanup.process(this.targets::isReserved, this.admission.cleanupLimitPerTick());
@@ -159,15 +184,15 @@ public final class BedrockEngine implements RuntimeComponent {
     }
 
     public boolean canScanForTargets() {
-        return this.admission.canScanForTargets();
+        return !this.awaitingSupplies && this.admission.canScanForTargets();
     }
 
     boolean canSubmitInCurrentWindow() {
-        return this.submissionBudget > 0;
+        return !this.awaitingSupplies && this.submissionBudget > 0;
     }
 
     public boolean canAccept(BlockPos pos) {
-        return this.admission.canAccept(pos);
+        return !this.awaitingSupplies && this.admission.canAccept(pos);
     }
 
     public boolean isPositionOnRetryCooldown(BlockPos pos) {
@@ -191,7 +216,7 @@ public final class BedrockEngine implements RuntimeComponent {
     }
 
     public boolean submit(BlockPos pos) {
-        return this.admission.submit(pos);
+        return !this.awaitingSupplies && this.admission.submit(pos);
     }
 
     boolean isPositionReservedByOtherTarget(BlockPos pos, BedrockTarget self) {

@@ -41,7 +41,8 @@ final class BedrockTargetExecutor {
             int executeBudget,
             boolean priorityOnly,
             Set<BedrockTarget> processedTargets,
-            BedrockTarget sideLookTarget
+            BedrockTarget sideLookTarget,
+            boolean allowPreparation
     ) {
         Iterator<BedrockTarget> iterator = this.targets.iterator();
         while (iterator.hasNext()) {
@@ -56,6 +57,7 @@ final class BedrockTargetExecutor {
             if (processedTargets.contains(target)) {
                 continue;
             }
+            if (!allowPreparation && !target.hasTried()) continue;
             BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
             if (outOfRangePos != null) {
                 target.refreshStatusOnly();
@@ -71,7 +73,9 @@ final class BedrockTargetExecutor {
             boolean activeStatus = BedrockSchedulingPolicy.countsTowardsActiveCap(target.getStatus());
             boolean hadBudget = activeStatus && executeBudget > 0;
             BedrockTarget.Status status;
-            if (hadBudget) {
+            if (!allowPreparation && (hadBudget || !activeStatus)) {
+                status = target.settleDispatchedAttempt(hadBudget);
+            } else if (hadBudget) {
                 status = target.tick(true, true);
             } else if (activeStatus) {
                 status = target.refreshStatusOnly();

@@ -70,6 +70,12 @@ public class InventoryUtils {
 
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item,
                                                     java.util.function.Predicate<ItemStack> predicate) {
+        return playerHasItemInInventory(playerEntity, item, predicate, 1);
+    }
+
+    public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item,
+                                                    java.util.function.Predicate<ItemStack> predicate,
+                                                    int minimumCount) {
         if (playerEntity == null || item == null) {
             return false;
         }
@@ -77,9 +83,11 @@ public class InventoryUtils {
             return true;
         }
         Inventory inventory = playerEntity.getInventory();
+        int count = 0;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             if (inventory.getItem(slot).is(item) && predicate.test(inventory.getItem(slot))) {
-                return true;
+                count += inventory.getItem(slot).getCount();
+                if (count >= minimumCount) return true;
             }
         }
         return false;

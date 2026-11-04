@@ -169,8 +169,9 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
         return this.state.status();
     }
 
-    public Status refreshStatusOnlyAndAdvance() {
-        this.state.advanceStatusOnly();
+    /** Preserve the existing observation/recovery clock while preparing to hand inventory over. */
+    Status settleDispatchedAttempt(boolean hadBudget) {
+        this.state.beginTick(hadBudget);
         this.lifecycle.updateStatus();
         return this.state.status();
     }
@@ -246,6 +247,8 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
 
     @Override
     public void recordNetworkAttempt() {
+        // An in-flight reverse placement can replace this anchor after the bedrock is gone.
+        this.footprint.recordTemporary(this.bedrockPos);
         if (this.networkSync != null) this.networkSync.beginAttempt(this.bedrockPos, this.getMachineFootprint());
         BedrockDiagnostics.trace(this, "dispatched");
     }

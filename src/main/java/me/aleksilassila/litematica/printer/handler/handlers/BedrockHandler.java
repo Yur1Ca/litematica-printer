@@ -47,15 +47,22 @@ public class BedrockHandler extends FeatureModuleBase {
             MessageUtils.setOverlayMessage(I18n.BEDROCK_CREATIVE_MODE.getName());
             return false;
         }
+        if (!this.canAdvanceController()
+                || player.containerMenu != player.inventoryMenu
+                || !player.containerMenu.getCarried().isEmpty()
+                || me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
+            return false;
+        }
+        boolean prepared = BedrockController.prepareMaterials();
         String warning = BedrockInventory.warningMessage();
         if (warning != null) {
             MessageUtils.setOverlayMessage(me.aleksilassila.litematica.printer.utils.minecraft.StringUtils.translatable(warning));
-            if (!BedrockController.hasActiveWork()) {
+            if (prepared && !BedrockController.hasActiveWork()) {
                 BedrockController.clearHorizontalLookState();
                 return false;
             }
         }
-        return true;
+        return prepared;
     }
 
     @Override

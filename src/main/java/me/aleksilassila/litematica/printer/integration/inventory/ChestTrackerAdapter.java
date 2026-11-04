@@ -114,7 +114,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         LocalPlayer player = this.client.player;
         if (player == null || this.client.level == null) return unavailable(request);
         for (Item item : request.acceptedItems()) {
-            if (InventoryUtils.playerHasItemInInventory(player, item, request::acceptsStack)) {
+            if (InventoryUtils.playerHasItemInInventory(player, item, request::acceptsStack, request.minimumCount())) {
                 return MaterialReservation.available(request, item);
             }
         }
@@ -153,7 +153,8 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         if (this.transfer != null || this.openingMenu != null || this.phase == Phase.WAITING_CONTENT
                 || waitForRestoreContent(this.phase) || this.cancelling) return pending(request);
         for (Item item : request.acceptedItems()) {
-            if (InventoryUtils.playerHasItemInInventory(this.client.player, item, request::acceptsStack)) {
+            if (InventoryUtils.playerHasItemInInventory(this.client.player, item,
+                    request::acceptsStack, request.minimumCount())) {
                 if (this.nestedReturn.hasSource() && !this.nestedReturn.isRestoring()) {
                     beginNestedRestore();
                     if (this.activeRequest != null) return pending(request);
@@ -533,7 +534,8 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
     private void finishAvailable(boolean closeOwnedMenu) {
         if (this.activeRequest != null) {
             for (Item item : this.activeRequest.acceptedItems()) {
-                if (InventoryUtils.playerHasItemInInventory(this.client.player, item, this.activeRequest::acceptsStack)) {
+                if (InventoryUtils.playerHasItemInInventory(this.client.player, item,
+                        this.activeRequest::acceptsStack, this.activeRequest.minimumCount())) {
                     this.completedReservation = MaterialReservation.available(this.activeRequest, item);
                     break;
                 }
@@ -687,6 +689,14 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     private boolean hasRequestedItem() {
         if (this.client.player == null || this.requestedItem == null) return false;
+        if (this.activeRequest != null && (this.activeRequest.minimumCount() > 1
+                || this.activeRequest.source() == MaterialRequest.Source.BEDROCK)) {
+            for (Item item : this.activeRequest.acceptedItems()) {
+                if (InventoryUtils.playerHasItemInInventory(this.client.player, item,
+                        this::matches, this.activeRequest.minimumCount())) return true;
+            }
+            return false;
+        }
         for (int slot = 0; slot < Math.min(36, this.client.player.getInventory().getContainerSize()); slot++) {
             ItemStack stack = this.client.player.getInventory().getItem(slot);
             if (matches(stack)) {

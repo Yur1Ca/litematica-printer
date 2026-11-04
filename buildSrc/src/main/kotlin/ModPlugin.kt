@@ -116,6 +116,9 @@ abstract class ModPlugin : Plugin<Project> {
 
     private fun Project.configureTestWorkers() {
         tasks.withType<Test>().configureEach {
+            // Bedrock fixtures swap the cached final CLIENT via Unsafe. Keep this tiny reader
+            // interpreted so JIT constant folding cannot retain a previous test's inventory.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory::count")
             // Java 25 warns when legacy Guava/JOML code uses Unsafe. Keep the
             // compatibility access enabled only on runtimes that support this
             // switch; older Java versions must not receive an unknown option.

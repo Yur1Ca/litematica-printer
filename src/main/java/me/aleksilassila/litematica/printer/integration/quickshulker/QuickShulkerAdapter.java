@@ -295,7 +295,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     private static Item findAvailableItem(MaterialRequest request) {
         for (Item item : request.acceptedItems()) {
-            if (InventoryUtils.playerHasItemInInventory(Minecraft.getInstance().player, item, request::acceptsStack)) {
+            if (InventoryUtils.playerHasItemInInventory(Minecraft.getInstance().player, item,
+                    request::acceptsStack, request.minimumCount())) {
                 return item;
             }
         }

@@ -28,10 +28,14 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
     }
 
     public MaterialReservation request(Item item, MaterialRequest.Source source) {
+        return this.request(item, 1, source);
+    }
+
+    public MaterialReservation request(Item item, int minimumCount, MaterialRequest.Source source) {
         if (item == null) {
             throw new IllegalArgumentException("item must not be null");
         }
-        return this.request(List.of(item), item, source);
+        return this.request(List.of(item), item, minimumCount, source, false);
     }
 
     public MaterialReservation request(Item[] acceptedItems, MaterialRequest.Source source) {
@@ -46,20 +50,20 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
             Item preferredItem,
             MaterialRequest.Source source
     ) {
-        return request(acceptedItems, preferredItem, source, false);
+        return request(acceptedItems, preferredItem, 1, source, false);
     }
 
     public MaterialReservation requestEmptyShulker(Item item) {
-        return request(List.of(item), item, MaterialRequest.Source.PRINT, true);
+        return request(List.of(item), item, 1, MaterialRequest.Source.PRINT, true);
     }
 
-    private MaterialReservation request(List<Item> acceptedItems, Item preferredItem,
+    private MaterialReservation request(List<Item> acceptedItems, Item preferredItem, int minimumCount,
                                         MaterialRequest.Source source, boolean emptyShulkerOnly) {
         MaterialRequest requested = new MaterialRequest(
                 this.nextToken,
                 acceptedItems,
                 preferredItem,
-                1,
+                minimumCount,
                 source,
                 emptyShulkerOnly
         );
@@ -74,7 +78,7 @@ public final class MaterialRequestCoordinator implements RuntimeComponent {
                     this.nextToken++,
                     acceptedItems,
                     preferredItem,
-                    1,
+                    minimumCount,
                     source,
                     emptyShulkerOnly
             );

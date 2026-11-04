@@ -26,7 +26,9 @@ public final class PlayerInventoryProvider implements InventoryProvider {
             return unavailable(request);
         }
         Inventory inventory = player.getInventory();
-        int size = Math.min(36, inventory.getContainerSize());
+        // Bedrock placement uses the offhand directly; other callers keep their original slots.
+        int size = request.source() == MaterialRequest.Source.BEDROCK
+                ? inventory.getContainerSize() : Math.min(36, inventory.getContainerSize());
         for (Item acceptedItem : request.acceptedItems()) {
             int count = 0;
             for (int slot = 0; slot < size; slot++) {

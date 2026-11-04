@@ -60,6 +60,10 @@ public final class BedrockPlacer {
         }
     }
 
+    boolean hasPendingPistonRetries() {
+        return !this.pendingPistonRetries.isEmpty();
+    }
+
     boolean hasPendingPistonRetry(BlockPos pistonPos) {
         return pistonPos != null && this.pendingPistonRetries.containsKey(pistonPos);
     }

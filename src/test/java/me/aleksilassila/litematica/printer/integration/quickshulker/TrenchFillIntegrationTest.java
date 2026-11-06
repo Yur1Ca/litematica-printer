@@ -30,6 +30,8 @@ import org.junit.jupiter.api.*;
 import java.lang.reflect.Proxy;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import static me.aleksilassila.litematica.printer.integration.quickshulker.CancelledSwapLifecycleTest.*;
 import static me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerPacketContractTest.allocate;
@@ -37,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Real trench execution and material selection, with only the world/network boundary replaced. */
 class TrenchFillIntegrationTest {
-    private static final BlockPos TARGET = new BlockPos(0, 1, 0);
+    static final BlockPos TARGET = new BlockPos(0, 1, 0);
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 
     static class TrenchPlayer extends Player {
@@ -50,8 +52,10 @@ class TrenchFillIntegrationTest {
     static class TrenchLevel extends QuickShulkerPacketContractTest.AuditLevel {
         long tick;
         BlockState targetState;
+        Map<BlockPos, BlockState> states;
         @Override public long getGameTime() { return tick; }
         @Override public BlockState getBlockState(BlockPos pos) {
+            if (states != null && states.containsKey(pos)) return states.get(pos);
             return pos.equals(TARGET) ? targetState
                     : pos.equals(TARGET.below()) ? Blocks.SOUL_SAND.defaultBlockState() : Blocks.AIR.defaultBlockState();
         }
@@ -80,6 +84,10 @@ class TrenchFillIntegrationTest {
         final PlacementRateController rate = new PlacementRateController(null);
         final List<MaterialRequest> requests = new ArrayList<>();
         final List<Item[]> queued = new ArrayList<>();
+        final ActionPort actions;
+        Consumer<ActionPort.SendResult> completionListener;
+        boolean queuePresent;
+        int queueCalls;
         ActionPort.SendResult result = ActionPort.SendResult.SENT;
 
         Fixture() throws Exception {
@@ -115,29 +123,51 @@ class TrenchFillIntegrationTest {
             constructor.setAccessible(true);
             state = constructor.newInstance();
             set(handler, MineHandler.class, "trenchFill", state);
+            addTarget(level.tick);
             set(handler, FeatureModuleBase.class, "level", level);
             set(handler, FeatureModuleBase.class, "player", player);
             set(handler, FeatureModuleBase.class, "placementRateController", rate);
             set(handler, FeatureModuleBase.class, "hudStats", new HudStatsManager(client, () -> level.tick, null));
             set(handler, FeatureModuleBase.class, "missingMaterials", new MissingMaterialTracker());
-            var actions = (ActionPort) Proxy.newProxyInstance(ActionPort.class.getClassLoader(), new Class<?>[]{ActionPort.class}, (p,m,a) -> {
+            actions = (ActionPort) Proxy.newProxyInstance(ActionPort.class.getClassLoader(), new Class<?>[]{ActionPort.class}, (p,m,a) -> {
                 if (m.getName().equals("queueClick")) {
+                    queueCalls++;
+                    if (queuePresent) return false;
                     assertEquals(TARGET.below(), a[0]);
                     assertEquals(Direction.UP, a[1]);
                     queued.add(((Item[]) a[5]).clone());
+                    queuePresent = true;
                     return true;
                 }
-                if (m.getName().equals("sendQueue")) return result;
+                if (m.getName().equals("setQueueCompletionListener")) {
+                    if (!queuePresent) return false;
+                    @SuppressWarnings("unchecked")
+                    var listener = (Consumer<ActionPort.SendResult>) a[0];
+                    completionListener = listener;
+                    return true;
+                }
+                if (m.getName().equals("sendQueue")) {
+                    if (!queuePresent) return ActionPort.SendResult.NO_QUEUED_ACTION;
+                    if (!result.isWaiting()) finishQueue(result);
+                    return result;
+                }
+                if (m.getName().equals("cancelQueue")) {
+                    finishQueue(ActionPort.SendResult.NO_QUEUED_ACTION);
+                    return null;
+                }
                 return m.getReturnType() == boolean.class ? false : null;
             });
             set(handler, FeatureModuleBase.class, "actionBroker", actions);
         }
 
         boolean execute() throws Exception {
+            return execute(TARGET, new AtomicReference<>(false));
+        }
+
+        boolean execute(BlockPos pos, AtomicReference<Boolean> skip) throws Exception {
             var method = MineHandler.class.getDeclaredMethod("executeTrenchFill", BlockPos.class, AtomicReference.class);
             method.setAccessible(true);
-            var skip = new AtomicReference<>(false);
-            method.invoke(handler, TARGET, skip);
+            method.invoke(handler, pos, skip);
             return skip.get();
         }
 
@@ -145,6 +175,65 @@ class TrenchFillIntegrationTest {
             var method = state.getClass().getDeclaredMethod("canAttempt", BlockPos.class, long.class);
             method.setAccessible(true);
             return (boolean) method.invoke(state, TARGET, tick);
+        }
+
+        ActionPort.SendResult completeWaiting(ActionPort.SendResult completion) {
+            assertTrue(queuePresent, "The turn-delayed action must still own its queue");
+            result = completion;
+            return actions.sendQueue(player);
+        }
+
+        private void finishQueue(ActionPort.SendResult completion) {
+            var listener = completionListener;
+            completionListener = null;
+            queuePresent = false;
+            if (listener != null) listener.accept(completion);
+        }
+
+        void addTarget(long tick) throws Exception {
+            var update = state.getClass().getDeclaredMethod("updateTargets", List.class, Set.class,
+                    Set.class, long.class, Predicate.class);
+            update.setAccessible(true);
+            update.invoke(state, List.of(), Set.of(TARGET), Set.of(), tick, (Predicate<BlockPos>) pos -> true);
+        }
+
+        void clearTargets() throws Exception {
+            var clear = state.getClass().getDeclaredMethod("clear");
+            clear.setAccessible(true);
+            clear.invoke(state);
+        }
+
+        void blockUpdated(boolean stillFluid) throws Exception {
+            var update = state.getClass().getDeclaredMethod("onBlockUpdated", BlockPos.class, boolean.class);
+            update.setAccessible(true);
+            update.invoke(state, TARGET, stillFluid);
+        }
+
+        void beginTick(long tick) throws Exception {
+            var begin = state.getClass().getDeclaredMethod("beginTick", long.class);
+            begin.setAccessible(true);
+            begin.invoke(state, tick);
+        }
+
+        int sentThisTick() throws Exception {
+            var count = state.getClass().getDeclaredMethod("sentThisTick");
+            count.setAccessible(true);
+            return (int) count.invoke(state);
+        }
+
+        boolean canSend(long tick, int interval, int limit) throws Exception {
+            var send = state.getClass().getDeclaredMethod("canSend", long.class, int.class, int.class, boolean.class);
+            send.setAccessible(true);
+            return (boolean) send.invoke(state, tick, interval, limit, true);
+        }
+
+        TrenchLevel changeWorld(long tick) throws Exception {
+            var next = allocate(TrenchLevel.class);
+            next.tick = tick;
+            next.targetState = Blocks.LAVA.defaultBlockState();
+            client.level = next;
+            set(handler, FeatureModuleBase.class, "level", next);
+            return next;
         }
 
         @SuppressWarnings("removal")

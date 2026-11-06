@@ -56,6 +56,7 @@ public class MineHandler extends FeatureModuleBase {
     private final TrenchFillState trenchFill = new TrenchFillState();
     private List<String> trenchFillFilters;
     private Item[] trenchFillItems = new Item[0];
+    private boolean trenchSupportBlockedThisTick;
     @Nullable
     private BlockPos activeMinePos;
 
@@ -172,9 +173,10 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected void preprocess() {
+        this.trenchSupportBlockedThisTick = false;
         this.analyzer.beginTick();
         this.toolSession.beginTick();
-        this.trenchFill.beginTick();
+        this.trenchFill.beginTick(this.level.getGameTime());
         this.refreshTrenchFillTargets();
         this.continueActiveMineTarget();
     }
@@ -197,8 +199,14 @@ public class MineHandler extends FeatureModuleBase {
         this.trenchFill.clear();
         this.trenchFillFilters = null;
         this.trenchFillItems = new Item[0];
+        this.trenchSupportBlockedThisTick = false;
         this.analyzer.reset();
         this.toolSession.reset();
+    }
+
+    @Override
+    protected void onInventoryAvailabilityChanged() {
+        this.trenchFill.onMaterialsAvailable();
     }
 
     @Override
@@ -244,6 +252,11 @@ public class MineHandler extends FeatureModuleBase {
             this.executeTrenchWaterloggedBreak(blockPos, skipIteration);
             return;
         }
+        if (this.trenchSupportBlockedThisTick) {
+            this.setIterationConsumedEffectiveExecution(false);
+            skipIteration.set(true);
+            return;
+        }
         MineBreakExecutor.Target target = this.analyzer.analyze(blockPos, this.candidateStates.remove(blockPos));
         if (target == null) {
             this.setIterationConsumedEffectiveExecution(false);
@@ -255,7 +268,8 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected void stopIteration(boolean interrupt) {
-        if (this.actionBroker.isWaitingForLook() || this.activeMinePos != null || this.candidates.isEmpty()) {
+        if (this.trenchSupportBlockedThisTick || this.actionBroker.isWaitingForLook()
+                || this.activeMinePos != null || this.candidates.isEmpty()) {
             return;
         }
         List<MineBreakExecutor.Target> orderedCandidates = this.refreshCandidateTargets();
@@ -459,6 +473,13 @@ public class MineHandler extends FeatureModuleBase {
             skipIteration.set(true);
             return;
         }
+        if (this.player.containerMenu != this.player.inventoryMenu) {
+            this.hudStats.recordStatus(HudStatsManager.Mode.MINE, HudStatus.WAITING_ITEM_SYNC);
+            this.deferTrenchFill(pos, now + 1L);
+            this.setIterationConsumedEffectiveExecution(false);
+            skipIteration.set(true);
+            return;
+        }
         this.refreshTrenchFillMaterials();
         if (this.trenchFillItems.length == 0) {
             this.hudStats.recordStatus(HudStatsManager.Mode.MINE,
@@ -468,9 +489,22 @@ public class MineHandler extends FeatureModuleBase {
             return;
         }
         if (!InventoryUtils.switchToItems(this.player, this.trenchFillItems, MaterialRequest.Source.MINE)) {
-            this.hudStats.recordStatus(HudStatsManager.Mode.MINE, HudStatus.MISSING_FILL_MATERIAL);
-            this.missingMaterials.recordMissing(this.trenchFillItems, null, null, now);
-            this.deferTrenchFill(pos, now + 20L);
+            boolean materialPresent = false;
+            for (Item item : this.trenchFillItems) {
+                if (InventoryUtils.playerHasItemInInventory(this.player, item)) {
+                    materialPresent = true;
+                    break;
+                }
+            }
+            if (materialPresent) {
+                this.hudStats.recordStatus(HudStatsManager.Mode.MINE, HudStatus.WAITING_ITEM_SYNC);
+                this.deferTrenchFill(pos, now + 1L);
+            } else {
+                this.hudStats.recordStatus(HudStatsManager.Mode.MINE, HudStatus.MISSING_FILL_MATERIAL);
+                this.missingMaterials.recordMissing(this.trenchFillItems, null, null, now);
+                this.trenchFill.deferForMaterial(pos, now + 20L);
+            }
+            this.setIterationConsumedEffectiveExecution(false);
             skipIteration.set(true);
             return;
         }
@@ -478,7 +512,8 @@ public class MineHandler extends FeatureModuleBase {
         Direction supportDirection = this.findTrenchSupport(pos);
         if (supportDirection == null) {
             this.deferTrenchFill(pos, now + 10L);
-            skipIteration.set(true);
+            this.trenchSupportBlockedThisTick = true;
+            this.setIterationConsumedEffectiveExecution(false);
             return;
         }
         if (!this.actionBroker.queueClick(
@@ -493,18 +528,28 @@ public class MineHandler extends FeatureModuleBase {
             skipIteration.set(true);
             return;
         }
+        var queuedLevel = this.level;
+        var queuedPlayer = this.player;
+        BlockPos queuedPos = pos.immutable();
+        Object attempt = this.trenchFill.reserveQueued(queuedPos, now);
+        if (!this.actionBroker.setQueueCompletionListener(completion -> {
+            if (this.level != queuedLevel || this.player != queuedPlayer) return;
+            long completedAt = queuedLevel.getGameTime();
+            if (this.trenchFill.completeQueued(queuedPos, attempt, completedAt, completion.isSent())
+                    && completion.isSent()) {
+                this.placementRateController.recordSent(completedAt);
+            }
+        })) {
+            this.trenchFill.completeQueued(queuedPos, attempt, now, false);
+            this.actionBroker.cancelQueue();
+            this.setIterationConsumedEffectiveExecution(false);
+            skipIteration.set(true);
+            return;
+        }
         this.actionBroker.setLook(new PlayerLook(supportDirection.getOpposite()));
         this.actionBroker.setWaitForHorizontalLook(false);
         ActionPort.SendResult result = this.actionBroker.sendQueue(this.player);
-        if (result.isSent() || result.isWaiting()) {
-            this.trenchFill.markInFlight(pos, now, result.isSent());
-            if (result.isSent()) {
-                this.placementRateController.recordSent(now);
-            } else {
-                skipIteration.set(true);
-            }
-        } else {
-            this.deferTrenchFill(pos, now + 2L);
+        if (!result.isSent()) {
             skipIteration.set(true);
         }
     }

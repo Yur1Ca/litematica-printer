@@ -18,7 +18,7 @@ class TrenchFillStateTest {
         state.updateTargets(List.of(), Set.of(pos), Set.of(), 10L, ignored -> true);
         state.markInFlight(pos, 10L, true);
         for (long tick = 11L; tick <= 50L; tick++) {
-            state.beginTick();
+            state.beginTick(tick);
             state.updateTargets(List.of(), Set.of(pos), Set.of(), tick, ignored -> true);
             assertTrue(state.hasWork());
             assertFalse(state.canAttempt(pos, tick), "Do not resend while waiting for the world update");
@@ -97,7 +97,7 @@ class TrenchFillStateTest {
         state.markInFlight(new BlockPos(3, 2, 3), 10L, true);
         assertFalse(state.canSend(10L, 2, 3, false));
 
-        state.beginTick();
+        state.beginTick(11L);
         assertFalse(state.canSend(11L, 2, 3, true));
         assertTrue(state.canSend(12L, 2, 3, true));
     }
@@ -113,4 +113,22 @@ class TrenchFillStateTest {
                 pos -> pos.equals(near)));
         assertEquals(List.of(), state.readyWaterloggedTargets(pos -> pos.equals(near)));
     }
+
+    @Test
+    void aQueuedSendBeforePreprocessStillCountsAgainstTheCurrentTickBudget() {
+        TrenchFillState state = new TrenchFillState();
+        BlockPos first = new BlockPos(1, 2, 3);
+        state.markInFlight(first, 100L, true);
+
+        state.beginTick(100L);
+        assertEquals(1, state.sentThisTick(), "The scheduler can send before mine preprocess begins");
+        assertFalse(state.canSend(100L, 0, 1, true));
+        state.beginTick(100L);
+        assertEquals(1, state.sentThisTick(), "Same-tick initialization must be idempotent");
+
+        state.beginTick(101L);
+        assertEquals(0, state.sentThisTick());
+        assertTrue(state.canSend(101L, 0, 1, true));
+    }
+
 }

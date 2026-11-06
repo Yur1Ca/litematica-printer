@@ -170,6 +170,9 @@ public class InventoryUtils {
             setHotbarSlot(sourceSlot, inventory);
             return true;
         }
+        // A window-0 inventory swap is discarded while another menu is active. Do not
+        // change the selected slot or claim success for a click vanilla will ignore.
+        if (player.containerMenu != player.inventoryMenu) return false;
         if (InventoryUtilsAccessor.getPICK_BLOCKABLE_SLOTS().isEmpty()) {
             showMessageWithCooldown(Message.MessageType.WARNING, "litematica.message.warn.pickblock.no_valid_slots_configured");
             return false;
@@ -200,7 +203,7 @@ public class InventoryUtils {
 
     public static boolean swapItemToMainHand(ItemStack stackReference, Minecraft mc) {
         Player player = mc.player;
-        if (player == null) return false;
+        if (player == null || player.containerMenu != player.inventoryMenu) return false;
 
         //#if MC > 12004
         boolean b = areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
@@ -249,6 +252,9 @@ public class InventoryUtils {
         boolean isAlreadyInOffhand = areStacksEqual(stack, getOffhandStack(player));
         if (isAlreadyInOffhand) {
             return true;
+        }
+        if (player.containerMenu != player.inventoryMenu) {
+            return false;
         }
 
         // 2. 创造模式：直接设置副手物品（无需交换）

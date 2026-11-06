@@ -12,13 +12,13 @@ final class VoidWarehousePlacementState<K> {
     private static final int MAX_PENDING = 64;
     private static final int MAX_PER_TICK = 32;
 
-    private record Pending<K>(K target, List<String> candidates, long sentAt) { }
+    record Pending<K>(K target, List<String> candidates, long sentAt) { }
 
     private final Map<Integer, Pending<K>> pending = new HashMap<>();
     private final Map<K, Integer> targets = new HashMap<>();
     private final Map<String, Long> emptyUntil = new HashMap<>();
     private final Map<K, Long> rejectedUntil = new HashMap<>();
-    private final Map<K, Long> fallbackUntil = new HashMap<>();
+    private final Map<K, Long> retryUntil = new HashMap<>();
     private int nextPlaceNonce = 1;
     private int nextHelloNonce = 1;
     private int helloNonce;
@@ -104,8 +104,12 @@ final class VoidWarehousePlacementState<K> {
         return targets.containsKey(target);
     }
 
+    Pending<K> pendingRequest(int nonce) {
+        return pending.get(nonce);
+    }
+
     boolean isTargetAvailable(K target, long now) {
-        return target != null && now >= fallbackUntil.getOrDefault(target, 0L);
+        return target != null && now >= retryUntil.getOrDefault(target, 0L);
     }
 
     void receiveResult(int nonce, int status, long now) {
@@ -119,9 +123,10 @@ final class VoidWarehousePlacementState<K> {
         } else if (status == 2) { // EMPTY: only these material candidates failed.
             for (String candidate : request.candidates()) emptyUntil.put(candidate, now + 100);
         } else if (status != 0) {
-            rejectedUntil.put(request.target(), now + 20);
+            long retryAt = now + (status == 6 ? 1 : 20);
+            rejectedUntil.put(request.target(), retryAt);
             if (status == 4) throttledUntil = now + 5;
-            else fallbackUntil.put(request.target(), now + 20);
+            else retryUntil.put(request.target(), retryAt);
         }
     }
 
@@ -138,11 +143,12 @@ final class VoidWarehousePlacementState<K> {
         });
         boolean candidatesReleased = emptyUntil.values().removeIf(until -> now >= until);
         rejectedUntil.values().removeIf(until -> now >= until);
-        boolean targetsReleased = fallbackUntil.values().removeIf(until -> now >= until);
+        boolean targetsReleased = retryUntil.values().removeIf(until -> now >= until);
         if (candidatesReleased || targetsReleased) materialAvailabilityChanged = true;
         if (helloNonce != 0 && now - lastHello >= REQUEST_TIMEOUT) {
             helloNonce = 0;
-            enabled = false;
+            // A missed refresh is not an explicit revocation. Initial sessions remain disabled;
+            // confirmed sessions still get rule/permission checks on every server placement.
             negotiationComplete = true;
         }
     }
@@ -152,7 +158,7 @@ final class VoidWarehousePlacementState<K> {
         targets.clear();
         emptyUntil.clear();
         rejectedUntil.clear();
-        fallbackUntil.clear();
+        retryUntil.clear();
         enabled = false;
         negotiationComplete = false;
         materialAvailabilityChanged = false;

@@ -57,6 +57,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
      * 5 秒足够让「真的去补货」这件事完成。</p>
      */
     private static final long FAILED_COOLDOWN_TICKS = 100L;
+    private static final long INVENTORY_SYNC_GRACE_TICKS = 5L;
     private static final String LEASE_OWNER = "void_warehouse";
 
     private final Minecraft client = Minecraft.getInstance();
@@ -65,6 +66,11 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
 
     private MaterialRequest activeRequest;
     private int activeNonce;
+    private Object requestPlayer;
+    private Object requestLevel;
+    private Object requestConnection;
+    private long firstSuccessfulReceiptTick = Long.MIN_VALUE;
+    private boolean inventorySyncRequested;
 
     private final Map<FailedRequirement, Long> failedAt = new HashMap<>();
 
@@ -89,6 +95,7 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
             @Override public boolean isSupported() { return VoidWarehouseRestockNetwork.isSupported(); }
             @Override public int requestTake(List<String> candidates) { return VoidWarehouseRestockNetwork.requestTake(candidates); }
             @Override public int statusOf(int nonce) { return VoidWarehouseRestockNetwork.statusOf(nonce); }
+            @Override public void requestInventorySync() { VoidWarehouseRestockNetwork.requestInventorySync(); }
             @Override public void forget() { VoidWarehouseRestockNetwork.forget(); }
         });
     }
@@ -136,6 +143,11 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         }
         // 发货前的件数快照：到货后靠它算净增量（服务端塞不下的部分会回滚）
         rememberHeldBefore(request);
+        this.requestPlayer = this.client.player;
+        this.requestLevel = this.client.level;
+        this.requestConnection = this.client.getConnection();
+        this.firstSuccessfulReceiptTick = Long.MIN_VALUE;
+        this.inventorySyncRequested = false;
         int nonce = this.network.requestTake(candidates);
         if (nonce == 0) {
             finish();
@@ -182,7 +194,9 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
             return pending(request);
         }
         if (status == PrinterTakeResultPayload.OK) {
-            // 服务端说给了，但背包同步还没到。继续轮询背包，直到超时为止。
+            // Consume + refill of a one-item stack can match the server's old slot snapshot.
+            // If that suppressed its normal delta, recover with one authoritative full snapshot.
+            recoverMissingInventory();
             return pending(request);
         }
         rememberFailure(request);
@@ -251,8 +265,33 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         this.actionBroker.releaseOwner(LEASE_OWNER);
         this.activeRequest = null;
         this.activeNonce = 0;
+        this.requestPlayer = null;
+        this.requestLevel = null;
+        this.requestConnection = null;
+        this.firstSuccessfulReceiptTick = Long.MIN_VALUE;
+        this.inventorySyncRequested = false;
         this.heldBefore.clear();
         this.network.forget();
+    }
+
+    private void recoverMissingInventory() {
+        if (this.inventorySyncRequested || this.client.player != this.requestPlayer
+                || this.client.level != this.requestLevel || this.client.getConnection() != this.requestConnection) {
+            return;
+        }
+        long now = gameTick();
+        if (this.firstSuccessfulReceiptTick == Long.MIN_VALUE || now < this.firstSuccessfulReceiptTick) {
+            this.firstSuccessfulReceiptTick = now;
+            return;
+        }
+        if (now - this.firstSuccessfulReceiptTick < INVENTORY_SYNC_GRACE_TICKS
+                || this.client.player.containerMenu != this.client.player.inventoryMenu
+                || !this.client.player.inventoryMenu.getCarried().isEmpty()) {
+            return;
+        }
+        // status() already owns INVENTORY/CONTAINER/MAIN_HAND. Never retry the take or predict its slot.
+        this.inventorySyncRequested = true;
+        this.network.requestInventorySync();
     }
 
     private boolean acquireResources() {

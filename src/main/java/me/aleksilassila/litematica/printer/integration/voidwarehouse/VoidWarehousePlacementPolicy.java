@@ -15,6 +15,16 @@ import org.jetbrains.annotations.Nullable;
 public final class VoidWarehousePlacementPolicy {
     private VoidWarehousePlacementPolicy() { }
 
+    public enum Route { INVENTORY, DIRECT, WAIT, MATERIAL_UNAVAILABLE }
+
+    /** Once supported, temporary stock and request backoff never order a legacy inventory stack. */
+    public static Route route(boolean warehouseSupported, boolean materialAvailable,
+                              boolean targetAvailable, boolean requestAvailable) {
+        if (!warehouseSupported) return Route.INVENTORY;
+        if (!materialAvailable) return Route.MATERIAL_UNAVAILABLE;
+        return targetAvailable && requestAvailable ? Route.DIRECT : Route.WAIT;
+    }
+
     public static boolean supports(Action action, @Nullable Item[] items, @Nullable Vec3 precisionHit) {
         return !(action instanceof ClickAction)
                 && action.getClickRepeatCount() == 1

@@ -27,6 +27,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ContainerSynchronizer;
+import net.minecraft.world.inventory.RemoteSlot;
 import net.minecraft.world.item.component.ItemContainerContents;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -47,11 +51,13 @@ class VoidWarehouseRestockRegressionTest {
 
     static class Network implements VoidWarehouseRestockPort {
         int sends;
+        int syncs;
         int status = PrinterTakeResultPayload.NONE;
         @Override public boolean isSupported() { return true; }
-        @Override public int requestTake(List<String> candidates) { sends++; return sends; }
+        @Override public int requestTake(List<String> candidates) { status = PrinterTakeResultPayload.NONE; sends++; return sends; }
         @Override public int statusOf(int nonce) { return status; }
         @Override public void forget() { status = PrinterTakeResultPayload.NONE; }
+        public void requestInventorySync() { syncs++; }
     }
 
     static class Fixture extends TakeItOutRequestOwnershipTest.Fixture {
@@ -69,11 +75,168 @@ class VoidWarehouseRestockRegressionTest {
             return (InventoryProvider) warehouseType.getConstructor(ActionPort.class).newInstance(broker);
         }
         void advance(int ticks) { for (int i = 0; i < ticks; i++) materials.tick(); }
+        void advanceGameTicks(int ticks) {
+            for (int i = 0; i < ticks; i++) {
+                clock.setGameTime(clock.getGameTime() + 1L);
+                materials.tick();
+            }
+        }
         void assertHeld() {
             for (var resource : List.of(ResourceLease.INVENTORY, ResourceLease.CONTAINER, ResourceLease.MAIN_HAND)) {
                 assertTrue(broker.isResourceHeld(resource));
                 assertFalse(broker.isResourceHeldByOther(resource, "void_warehouse"));
             }
+        }
+    }
+
+    @Test void successfulBedRestockRecoversTheMissingSnapshotOnceAndStillWaitsForRealInventory() throws Exception {
+        try (var f = new Fixture()) {
+            assertEquals(MaterialReservation.State.PENDING,
+                    f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT).state());
+            f.advanceGameTicks(20);
+            assertEquals(0, f.network.syncs, "No receipt does not authorize inventory recovery");
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.materials.tick();
+            f.advanceGameTicks(4);
+            assertEquals(0, f.network.syncs, "Allow the normal inventory update to arrive first");
+            f.advanceGameTicks(1);
+            assertEquals(1, f.network.syncs);
+            f.assertHeld();
+            assertTrue(f.materials.isBusy(), "The resync request is not a real bed stack");
+            assertFalse(InventoryUtils.playerHasItemInInventory(f.player, Items.WHITE_BED));
+            f.advanceGameTicks(20);
+            assertEquals(1, f.network.syncs, "One take nonce must not flood snapshot requests");
+            assertEquals(1, f.network.sends, "Snapshot recovery must not withdraw a second bed");
+            f.player.inventory.setItem(10, new ItemStack(Items.WHITE_BED));
+            f.advanceGameTicks(1);
+            assertFalse(f.materials.isBusy());
+            assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
+            assertEquals(0, f.next.calls);
+            assertEquals(1, f.network.sends);
+        }
+    }
+
+    @Test void inventoryArrivingWithTheReceiptNeedsNoRecoveryRequest() throws Exception {
+        try (var f = new Fixture()) {
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.player.inventory.setItem(10, new ItemStack(Items.WHITE_BED));
+            f.advanceGameTicks(20);
+            assertFalse(f.materials.isBusy());
+            assertEquals(0, f.network.syncs);
+            assertEquals(1, f.network.sends);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(ints = {-1, 1, 2, 3, 4, 5})
+    void missingOrNegativeReceiptsNeverRequestInventoryRecovery(int status) throws Exception {
+        try (var f = new Fixture()) {
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            f.network.status = status;
+            f.advanceGameTicks(20);
+            assertEquals(0, f.network.syncs);
+            assertEquals(1, f.network.sends);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"menu", "cursor", "owner"})
+    void recoveryWaitsForThePlayerInventoryCursorAndResourceOwner(String blocker) throws Exception {
+        try (var f = new Fixture()) {
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.materials.tick();
+            if (blocker.equals("menu")) f.player.containerMenu = f.menu;
+            if (blocker.equals("cursor")) f.player.inventoryMenu.setCarried(new ItemStack(Items.DIAMOND));
+            if (blocker.equals("owner")) {
+                f.broker.releaseOwner("void_warehouse");
+                assertTrue(f.broker.tryAcquire("container_sync", EnumSet.of(ResourceLease.INVENTORY,
+                        ResourceLease.CONTAINER, ResourceLease.MAIN_HAND), 0L));
+            }
+            f.advanceGameTicks(10);
+            assertEquals(0, f.network.syncs);
+            assertEquals(1, f.network.sends);
+            assertTrue(f.materials.isBusy());
+            if (blocker.equals("cursor")) assertEquals(Items.DIAMOND, f.player.inventoryMenu.getCarried().getItem());
+            f.player.containerMenu = f.player.inventoryMenu;
+            f.player.inventoryMenu.setCarried(ItemStack.EMPTY);
+            f.broker.releaseOwner("container_sync");
+            f.advanceGameTicks(1);
+            assertEquals(1, f.network.syncs, "Recovery may start once the original inventory is safe again");
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"connection", "level"})
+    void changedSessionsNeverRecoverTheOldRequest(String changed) throws Exception {
+        try (var f = new Fixture()) {
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.materials.tick();
+            if (changed.equals("connection")) {
+                set(f.player, LocalPlayer.class, "connection",
+                        QuickShulkerPacketContractTest.allocate(CancelledSwapLifecycleTest.Connection.class));
+            } else {
+                f.client.level = QuickShulkerPacketContractTest.allocate(ClientLevel.class);
+            }
+            f.advanceGameTicks(10);
+            assertEquals(0, f.network.syncs);
+            assertEquals(1, f.network.sends);
+        }
+    }
+
+    @Test void resetCancelsRecoveryAndANewTakeNonceGetsItsOwnSingleAttempt() throws Exception {
+        try (var f = new Fixture()) {
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.materials.tick();
+            f.advanceGameTicks(5);
+            assertEquals(1, f.network.syncs);
+            f.materials.reset();
+            f.network.status = PrinterTakeResultPayload.OK; // A late old receipt is not active work.
+            f.advanceGameTicks(10);
+            assertEquals(1, f.network.syncs);
+            f.materials.request(Items.WHITE_BED, MaterialRequest.Source.PRINT);
+            assertEquals(2, f.network.sends);
+            f.network.status = PrinterTakeResultPayload.OK;
+            f.materials.tick();
+            f.advanceGameTicks(4);
+            assertEquals(1, f.network.syncs);
+            f.advanceGameTicks(1);
+            assertEquals(2, f.network.syncs);
+        }
+    }
+
+    @Test void consumingAndRestockingOneBedBeforeBroadcastCanHideItsSlotDelta() throws Exception {
+        try (var f = new Fixture()) {
+            class Synchronizer implements ContainerSynchronizer {
+                int fullSnapshots;
+                int slotChanges;
+                List<ItemStack> lastSnapshot;
+                @Override public void sendInitialData(AbstractContainerMenu menu, List<ItemStack> items, ItemStack carried, int[] data) {
+                    fullSnapshots++;
+                    lastSnapshot = items;
+                }
+                @Override public void sendSlotChange(AbstractContainerMenu menu, int slot, ItemStack stack) { slotChanges++; }
+                @Override public void sendCarriedChange(AbstractContainerMenu menu, ItemStack stack) { }
+                @Override public void sendDataChange(AbstractContainerMenu menu, int id, int value) { }
+                @Override public RemoteSlot createSlot() { return new RemoteSlot.Synchronized(null); }
+            }
+            var sync = new Synchronizer();
+            f.player.inventory.setItem(0, new ItemStack(Items.WHITE_BED));
+            f.player.inventoryMenu.setSynchronizer(sync);
+            assertEquals(1, sync.fullSnapshots);
+            f.player.inventory.setItem(0, ItemStack.EMPTY);
+            f.player.inventory.setItem(0, new ItemStack(Items.WHITE_BED));
+            f.player.inventoryMenu.broadcastChanges();
+            assertEquals(0, sync.slotChanges, "The old and final one-bed snapshots are equal despite the client having predicted consumption");
+            f.player.inventoryMenu.broadcastFullState();
+            assertEquals(2, sync.fullSnapshots);
+            assertEquals(1, sync.lastSnapshot.stream().filter(stack -> stack.is(Items.WHITE_BED)).mapToInt(ItemStack::getCount).sum());
+            var before = sync.lastSnapshot.stream().map(ItemStack::copy).toList();
+            f.player.inventoryMenu.clicked(-1, 0, ContainerInput.PICKUP, f.player);
+            for (int slot = 0; slot < before.size(); slot++) {
+                assertTrue(ItemStack.matches(before.get(slot), f.player.inventoryMenu.getSlot(slot).getItem()));
+            }
+            assertTrue(f.player.inventoryMenu.getCarried().isEmpty(), "The recovery click never picks up or drops a stack");
         }
     }
 

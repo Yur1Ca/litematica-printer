@@ -46,7 +46,7 @@ class VoidWarehousePlacementStateTest {
     }
 
     @Test
-    void fallbackTargetExpiryWakesMaterialsButThrottleExpiryDoesNot() {
+    void rejectedTargetExpiryWakesMaterialsButThrottleExpiryDoesNot() {
         var state = new VoidWarehousePlacementState<String>();
         enable(state);
         state.consumeMaterialAvailabilityChange();
@@ -136,8 +136,9 @@ class VoidWarehousePlacementStateTest {
         assertFalse(state.isNegotiating(100));
         assertTrue(state.canRequest(STONE, "a", 100));
         state.tick(200);
-        assertFalse(state.isNegotiating(200), "A refresh timeout allows fallback instead of starting another initial wait");
-        assertFalse(state.isEnabled());
+        assertFalse(state.isNegotiating(200), "A periodic refresh timeout must not restart initial negotiation");
+        assertTrue(state.isEnabled(), "A late capability refresh cannot revoke confirmed placement support");
+        assertTrue(state.canRequest(STONE, "a", 200));
     }
 
     @Test
@@ -224,7 +225,7 @@ class VoidWarehousePlacementStateTest {
         enable(state);
         int rejected = state.beginRequest(STONE, "a", 0);
         state.receiveResult(rejected, 3, 1);
-        assertFalse(state.isTargetAvailable("a", 20), "An unsupported click should use the normal path during backoff");
+        assertFalse(state.isTargetAvailable("a", 20), "A rejected target waits before retrying direct placement");
         assertFalse(state.canRequest(STONE, "a", 20));
         assertTrue(state.canRequest(STONE, "b", 1));
         assertTrue(state.canRequest(STONE, "a", 21));
@@ -236,6 +237,20 @@ class VoidWarehousePlacementStateTest {
         assertTrue(state.canRequest(STONE, "c", 26));
         assertFalse(state.canRequest(STONE, "b", 40));
         assertTrue(state.canRequest(STONE, "b", 41));
+    }
+
+    @Test
+    void staleSnapshotOnlyDefersUntilTheNextTickAndKeepsMaterialsAvailable() {
+        var state = new VoidWarehousePlacementState<String>();
+        enable(state);
+        int request = state.beginRequest(STONE, "a", 0);
+        state.receiveResult(request, 6, 1);
+        assertFalse(state.canRequest(STONE, "a", 1));
+        assertTrue(state.isEnabled());
+        assertEquals(STONE, state.eligibleCandidates(STONE, 1));
+        assertTrue(state.canRequest(STONE, "b", 1));
+        assertTrue(state.canRequest(STONE, "a", 2), "A changed snapshot needs observation, not a one-second material fallback");
+        assertTrue(state.isTargetAvailable("a", 2));
     }
 
     @Test

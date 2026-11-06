@@ -107,17 +107,39 @@ public final class PrintPlacementExecutor {
             this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_RETRIEVAL);
             return PrintPlacementResult.deferred(false);
         }
-        warehousePlace = warehouseEligible && VoidWarehousePlacementNetwork.isAvailable()
-                && (hitModifier == null || VoidWarehousePlacementNetwork.isStatePlacementSupported())
-                && VoidWarehousePlacementNetwork.isMaterialAvailable(requiredItems)
-                && VoidWarehousePlacementNetwork.isTargetAvailable(blockPos);
-        if (warehousePlace && !VoidWarehousePlacementNetwork.canRequest(requiredItems, blockPos)) {
-            // Capacity, in-flight targets and server throttle only defer this action. They must
-            // not start a legacy inventory withdrawal while warehouse placement is draining.
-            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.RTT_THROTTLED);
+        boolean warehouseSupported = warehouseEligible && VoidWarehousePlacementNetwork.isAvailable()
+                && (hitModifier == null || VoidWarehousePlacementNetwork.isStatePlacementSupported());
+        boolean warehouseTargetAvailable = warehouseSupported && VoidWarehousePlacementNetwork.isTargetAvailable(blockPos);
+        VoidWarehousePlacementPolicy.Route warehouseRoute = VoidWarehousePlacementPolicy.route(
+                warehouseSupported,
+                warehouseSupported && VoidWarehousePlacementNetwork.isMaterialAvailable(requiredItems),
+                warehouseTargetAvailable,
+                warehouseSupported && VoidWarehousePlacementNetwork.canRequest(requiredItems, blockPos));
+        if (warehouseRoute == VoidWarehousePlacementPolicy.Route.MATERIAL_UNAVAILABLE) {
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.MISSING_MATERIAL);
+            this.missingMaterials.recordMissing(requiredItems, requiredStackPredicate,
+                    action.getRequiredCreativeStack(), context.level.getGameTime());
+            // The candidate cooldown expiry publishes MaterialAvailabilityChanged and wakes this work.
+            return PrintPlacementResult.materialUnavailable(false);
+        }
+        if (warehouseRoute == VoidWarehousePlacementPolicy.Route.WAIT) {
+            // Stock, stale snapshots and rejected clicks must not turn into a legacy stack withdrawal.
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT,
+                    warehouseTargetAvailable ? HudStatus.RTT_THROTTLED : HudStatus.WAITING_RETRIEVAL);
             return PrintPlacementResult.deferred(false);
         }
+        warehousePlace = warehouseRoute == VoidWarehousePlacementPolicy.Route.DIRECT;
+        if (warehouseRoute == VoidWarehousePlacementPolicy.Route.INVENTORY) {
+            VoidWarehousePlacementNetwork.recordInventoryFallback(requiredItems, blockPos,
+                    action.getClass().getSimpleName(), warehouseEligible, hitModifier != null);
+        }
         //#endif
+        if (!warehousePlace && context.client.player.containerMenu != context.client.player.inventoryMenu) {
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_ITEM_SYNC);
+            // Menu closure does not add material. Keep this target retryable instead of
+            // parking it until an unrelated inventory gain or manual item change.
+            return PrintPlacementResult.deferred(false);
+        }
         boolean reserveItems = Configs.Print.PRINT_RESERVE_ITEMS.getBooleanValue();
         int reserveCount = Configs.Print.PRINT_RESERVE_ITEM_COUNT.getIntegerValue();
         boolean itemReady;

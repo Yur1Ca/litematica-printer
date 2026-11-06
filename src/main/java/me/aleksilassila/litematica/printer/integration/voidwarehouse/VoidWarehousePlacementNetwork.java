@@ -33,6 +33,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 //#endif
 
 /** Direct warehouse placement has no inventory mutation or client block prediction. */
@@ -45,6 +48,9 @@ public final class VoidWarehousePlacementNetwork {
     private static Object connection;
     private static Object world;
     private static long tick;
+    private static final Logger LOGGER = LoggerFactory.getLogger("litematica-printer/warehouse-place");
+    private static final Map<String, Long> TRACE_TIMES = new LinkedHashMap<>();
+    private static String lastCapabilities;
 
     public static void init() {
         if (initialized) return;
@@ -135,7 +141,7 @@ public final class VoidWarehousePlacementNetwork {
         return isAvailable() && STATE.canRequest(candidateIds(candidates), target, tick);
     }
 
-    /** Unsupported clicks briefly return to the usual inventory placement path; throttle only defers. */
+    /** Temporary target rejection pauses direct placement without authorizing inventory restocking. */
     public static boolean isTargetAvailable(BlockPos target) {
         return STATE.isTargetAvailable(target, tick);
     }
@@ -150,6 +156,8 @@ public final class VoidWarehousePlacementNetwork {
         try {
             String dimensionId = Minecraft.getInstance().level.dimension().identifier().toString();
             ClientPlayNetworking.send(new PrinterPlacePayload(nonce, ids, immutableTarget, hit, expectedStateId, dimensionId));
+            trace("request", ids, immutableTarget, "mode=ordinary clicked=" + hit.getBlockPos().toShortString()
+                    + " face=" + hit.getDirection());
             return true;
         } catch (RuntimeException disconnected) {
             STATE.cancel(nonce);
@@ -174,6 +182,9 @@ public final class VoidWarehousePlacementNetwork {
             String dimensionId = client.level.dimension().identifier().toString();
             var placement = new PrinterPlacePayload(nonce, plan.candidates(), immutableTarget, physicalHit, expectedStateId, dimensionId);
             ClientPlayNetworking.send(new PrinterPlaceStatePayload(placement, plan.blockId(), plan.properties()));
+            trace("request", plan.candidates(), immutableTarget, "mode=state block=" + plan.blockId()
+                    + " properties=" + plan.properties() + " clicked=" + physicalHit.getBlockPos().toShortString()
+                    + " face=" + physicalHit.getDirection());
             return true;
         } catch (RuntimeException failed) {
             STATE.cancel(nonce);
@@ -220,6 +231,54 @@ public final class VoidWarehousePlacementNetwork {
 
     private static boolean isFinite(Vec3 hit) {
         return hit != null && Double.isFinite(hit.x) && Double.isFinite(hit.y) && Double.isFinite(hit.z);
+    }
+
+    /** Logs the actual legacy route, including unsupported items, without changing that route. */
+    public static void recordInventoryFallback(Item[] candidates, BlockPos target, String actionType,
+                                              boolean eligible, boolean precisionRequired) {
+        if (!Configs.Special.VOID_WAREHOUSE_DIRECT_PLACE.getBooleanValue()) return;
+        List<String> ids = new ArrayList<>();
+        List<String> types = new ArrayList<>();
+        if (candidates != null) for (Item item : candidates) {
+            if (item == null) continue;
+            ids.add(String.valueOf(VoidWarehouseMaterialIds.idOfItem(item)));
+            types.add(item.getClass().getSimpleName());
+        }
+        boolean channels = hasChannels();
+        boolean stateChannel = hasStateChannel();
+        String reason = !eligible ? "unsupported-action-or-item"
+                : !channels ? "direct-channel-missing"
+                : !STATE.isEnabled() ? "rule-disabled-or-negotiation-timeout"
+                : precisionRequired && !stateChannel ? "servux-state-channel-missing" : "inventory-route";
+        trace("inventory:" + reason, ids, target, "action=" + actionType + " itemTypes=" + types
+                + " enabled=" + STATE.isEnabled() + " directChannel=" + channels + " stateChannel=" + stateChannel);
+    }
+
+    private static boolean hasStateChannel() {
+        try { return ClientPlayNetworking.canSend(PrinterPlaceStatePayload.TYPE); }
+        catch (RuntimeException disconnected) { return false; }
+    }
+
+    private static void trace(String event, List<String> items, BlockPos target, String detail) {
+        String key = event + ':' + items;
+        Long previous = TRACE_TIMES.get(key);
+        if (previous != null && tick - previous < 200) return;
+        if (previous == null && TRACE_TIMES.size() >= 128) TRACE_TIMES.remove(TRACE_TIMES.keySet().iterator().next());
+        TRACE_TIMES.put(key, tick);
+        LOGGER.info("[WarehouseDirectPlace] {} items={} target={} {}", event, items, target, detail);
+    }
+
+    private static String statusName(int status) {
+        return switch (status) {
+            case PrinterPlaceResultPayload.OK -> "OK";
+            case PrinterPlaceResultPayload.RULE_OFF -> "RULE_OFF";
+            case PrinterPlaceResultPayload.EMPTY -> "EMPTY";
+            case PrinterPlaceResultPayload.REJECTED -> "REJECTED";
+            case PrinterPlaceResultPayload.THROTTLED -> "THROTTLED";
+            case PrinterPlaceResultPayload.BAD_REQUEST -> "BAD_REQUEST";
+            case PrinterPlaceResultPayload.STALE -> "STALE";
+            default -> "UNKNOWN(" + status + ')';
+        };
     }
 
     public static boolean isPending(BlockPos target) {
@@ -277,12 +336,22 @@ public final class VoidWarehousePlacementNetwork {
     private static void receiveHello(PrinterPlaceHelloResultPayload payload, ClientPlayNetworking.Context context) {
         if (isCurrentReceiver(context)) {
             STATE.receiveHello(payload.nonce(), payload.enabled(), tick);
+            String capabilities = "enabled=" + STATE.isEnabled() + " stateChannel=" + hasStateChannel();
+            if (!capabilities.equals(lastCapabilities)) {
+                LOGGER.info("[WarehouseDirectPlace] capabilities {}", capabilities);
+                lastCapabilities = capabilities;
+            }
             publishMaterialAvailabilityChange();
         }
     }
 
     private static void receiveResult(PrinterPlaceResultPayload payload, ClientPlayNetworking.Context context) {
-        if (isCurrentReceiver(context)) STATE.receiveResult(payload.nonce(), payload.status(), tick);
+        if (isCurrentReceiver(context)) {
+            var request = STATE.pendingRequest(payload.nonce());
+            if (request != null) trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
+                    "nonce=" + payload.nonce());
+            STATE.receiveResult(payload.nonce(), payload.status(), tick);
+        }
     }
 
     private static void publishMaterialAvailabilityChange() {
@@ -292,6 +361,10 @@ public final class VoidWarehousePlacementNetwork {
     }
 
     private static void reset() {
+        if (connection != null || world != null) {
+            TRACE_TIMES.clear();
+            lastCapabilities = null;
+        }
         STATE.reset();
         connection = null;
         world = null;

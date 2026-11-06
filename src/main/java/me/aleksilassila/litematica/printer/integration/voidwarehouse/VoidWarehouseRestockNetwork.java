@@ -3,10 +3,14 @@ package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 //#if MC >= 12111
 import neko.voidwarehouse.restock.PrinterTakePayload;
 import neko.voidwarehouse.restock.PrinterTakeResultPayload;
+import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerClicks;
+import net.minecraft.client.Minecraft;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 客户端一侧的收发管家：把取货包发出去，并把服务端回来的回执记住。
@@ -51,6 +55,8 @@ public final class VoidWarehouseRestockNetwork {
 
     private static volatile int latestNonce = 0;
     private static volatile int latestStatus = PrinterTakeResultPayload.NONE;
+    private static final Logger LOGGER = LoggerFactory.getLogger("litematica-printer/warehouse-restock");
+    private static long lastInventorySyncLog;
 
     private VoidWarehouseRestockNetwork() {
     }
@@ -170,6 +176,28 @@ public final class VoidWarehouseRestockNetwork {
         return latestStatus;
     }
 
+    /** Use vanilla's no-op resync after a confirmed delivery, never manufacture missing inventory. */
+    public static void requestInventorySync() {
+        if (latestNonce <= 0 || latestStatus != PrinterTakeResultPayload.OK || !isSupported()) return;
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.player == null || client.level == null || client.getConnection() == null
+                    || !client.getConnection().getConnection().isConnected()
+                    || client.player.containerMenu != client.player.inventoryMenu
+                    || !client.player.inventoryMenu.getCarried().isEmpty()) {
+                return;
+            }
+            QuickShulkerClicks.requestFullSync(client.player.inventoryMenu);
+            long now = System.nanoTime();
+            if (lastInventorySyncLog == 0L || now - lastInventorySyncLog >= 5_000_000_000L) {
+                lastInventorySyncLog = now;
+                LOGGER.info("[VoidWarehouseRestock] requesting inventory snapshot after delivery nonce={}", latestNonce);
+            }
+        } catch (RuntimeException disconnected) {
+            // World teardown may follow an OK receipt; recovery never starts another withdrawal.
+        }
+    }
+
     /** 丢弃当前回执，用于请求作废或超时收尾。 */
     public static void forget() {
         latestNonce = 0;
@@ -177,7 +205,9 @@ public final class VoidWarehouseRestockNetwork {
     }
 
     private static void receive(PrinterTakeResultPayload payload, ClientPlayNetworking.Context context) {
-        latestNonce = payload.nonce();
+        // Only the active take can complete its receipt. A late reply must not erase a newer OK
+        // or resurrect a cancelled request while the adapter waits for authoritative inventory.
+        if (payload.nonce() <= 0 || payload.nonce() != latestNonce) return;
         latestStatus = payload.status();
     }
 

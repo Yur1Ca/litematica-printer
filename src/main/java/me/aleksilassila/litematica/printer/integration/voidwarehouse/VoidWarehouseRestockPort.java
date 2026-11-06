@@ -8,6 +8,8 @@ public interface VoidWarehouseRestockPort {
     boolean isSupported();
     int requestTake(List<String> candidates);
     int statusOf(int nonce);
+    /** Ask for an authoritative inventory snapshot without moving or predicting a stack. */
+    default void requestInventorySync() { }
     void forget();
 }
 //#endif

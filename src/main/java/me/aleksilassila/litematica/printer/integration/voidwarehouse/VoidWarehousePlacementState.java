@@ -104,6 +104,10 @@ final class VoidWarehousePlacementState<K> {
         return targets.containsKey(target);
     }
 
+    int pendingCount() {
+        return pending.size();
+    }
+
     Pending<K> pendingRequest(int nonce) {
         return pending.get(nonce);
     }

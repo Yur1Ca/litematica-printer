@@ -44,6 +44,7 @@ public final class VoidWarehousePlacementNetwork {
 
     //#if MC >= 12111
     private static final VoidWarehousePlacementState<BlockPos> STATE = new VoidWarehousePlacementState<>();
+    private static final VoidWarehousePlacementDiagnostics DIAGNOSTICS = new VoidWarehousePlacementDiagnostics();
     private static boolean initialized;
     private static Object connection;
     private static Object world;
@@ -102,6 +103,7 @@ public final class VoidWarehousePlacementNetwork {
         tick++;
         if (!ensureSession()) return;
         STATE.tick(tick);
+        logSummary();
         publishMaterialAvailabilityChange();
         int nonce = STATE.beginHello(tick);
         if (nonce == 0) return;
@@ -156,6 +158,7 @@ public final class VoidWarehousePlacementNetwork {
         try {
             String dimensionId = Minecraft.getInstance().level.dimension().identifier().toString();
             ClientPlayNetworking.send(new PrinterPlacePayload(nonce, ids, immutableTarget, hit, expectedStateId, dimensionId));
+            DIAGNOSTICS.recordSent(tick);
             trace("request", ids, immutableTarget, "mode=ordinary clicked=" + hit.getBlockPos().toShortString()
                     + " face=" + hit.getDirection());
             return true;
@@ -180,11 +183,15 @@ public final class VoidWarehousePlacementNetwork {
         Object requestWorld = world;
         try {
             String dimensionId = client.level.dimension().identifier().toString();
-            var placement = new PrinterPlacePayload(nonce, plan.candidates(), immutableTarget, physicalHit, expectedStateId, dimensionId);
+            BlockHitResult reachableHit = VoidWarehousePlacementHit.adjustAirHit(immutableTarget, physicalHit,
+                    client.player.getEyePosition(), client.player.blockInteractionRange() + 1.0);
+            var placement = new PrinterPlacePayload(nonce, plan.candidates(), immutableTarget, reachableHit, expectedStateId, dimensionId);
             ClientPlayNetworking.send(new PrinterPlaceStatePayload(placement, plan.blockId(), plan.properties()));
+            DIAGNOSTICS.recordSent(tick);
             trace("request", plan.candidates(), immutableTarget, "mode=state block=" + plan.blockId()
-                    + " properties=" + plan.properties() + " clicked=" + physicalHit.getBlockPos().toShortString()
-                    + " face=" + physicalHit.getDirection());
+                    + " properties=" + plan.properties() + " clicked=" + reachableHit.getBlockPos().toShortString()
+                    + " face=" + reachableHit.getDirection() + " hit=" + reachableHit.getLocation()
+                    + " adjusted=" + (reachableHit != physicalHit));
             return true;
         } catch (RuntimeException failed) {
             STATE.cancel(nonce);
@@ -311,6 +318,7 @@ public final class VoidWarehousePlacementNetwork {
         }
         if (connection != client.getConnection() || world != client.level) {
             STATE.reset();
+            DIAGNOSTICS.reset(tick);
             connection = client.getConnection();
             world = client.level;
         }
@@ -347,11 +355,25 @@ public final class VoidWarehousePlacementNetwork {
 
     private static void receiveResult(PrinterPlaceResultPayload payload, ClientPlayNetworking.Context context) {
         if (isCurrentReceiver(context)) {
+            // Expire first so late results cannot enter counters after their request timed out.
+            STATE.tick(tick);
             var request = STATE.pendingRequest(payload.nonce());
-            if (request != null) trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
-                    "nonce=" + payload.nonce());
+            if (request != null) {
+                DIAGNOSTICS.recordResult(payload.status(), request.sentAt(), tick);
+                trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
+                        "nonce=" + payload.nonce());
+            }
             STATE.receiveResult(payload.nonce(), payload.status(), tick);
         }
+    }
+
+    private static void logSummary() {
+        var summary = DIAGNOSTICS.poll(tick, STATE.pendingCount());
+        if (summary == null) return;
+        LOGGER.info("[WarehouseDirectPlace] summary ticks={} sent={} OK={} REJECTED={} STALE={} THROTTLED={} EMPTY={} other={} pending={} averageResponseTicks={} maxResponseTicks={}",
+                summary.ticks(), summary.sent(), summary.ok(), summary.rejected(), summary.stale(),
+                summary.throttled(), summary.empty(), summary.other(), summary.pending(),
+                summary.averageResponseTicks(), summary.maxResponseTicks());
     }
 
     private static void publishMaterialAvailabilityChange() {
@@ -366,6 +388,7 @@ public final class VoidWarehousePlacementNetwork {
             lastCapabilities = null;
         }
         STATE.reset();
+        DIAGNOSTICS.reset(tick);
         connection = null;
         world = null;
     }

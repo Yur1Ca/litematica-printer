@@ -2,6 +2,10 @@ package me.aleksilassila.litematica.printer.printer;
 
 import java.util.function.Function;
 import me.aleksilassila.litematica.printer.feature.FeatureActionPolicies;
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementPolicy;
+//#if MC >= 12111
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementNetwork;
+//#endif
 //#if MC > 12100
 import fi.dy.masa.litematica.util.EasyPlaceUtils;
 //#endif
@@ -28,6 +32,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 
 //#if MC > 12105
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
@@ -157,6 +162,26 @@ public class ActionManager {
         return true;
     }
 
+    public boolean setWarehousePlacement(BlockPos target, int expectedStateId) {
+        if (this.queuedClick != null && this.queuedClick.useProtocol) return false;
+        return this.markWarehousePlacement(target, expectedStateId, null);
+    }
+
+    public boolean setWarehouseStatePlacement(BlockPos target, int expectedStateId, BlockState desiredState) {
+        return desiredState != null && this.markWarehousePlacement(target, expectedStateId, desiredState);
+    }
+
+    private boolean markWarehousePlacement(BlockPos target, int expectedStateId, @Nullable BlockState desiredState) {
+        QueuedClick click = this.queuedClick;
+        if (click == null || click.repeatCount != 1 || expectedStateId < 0
+                || click.expectedStackPredicate != null
+                || !VoidWarehousePlacementPolicy.supportsItems(click.expectedItems)) return false;
+        click.warehouseTarget = target.immutable();
+        click.warehouseExpectedStateId = expectedStateId;
+        click.warehouseDesiredState = desiredState;
+        return true;
+    }
+
     public SendResult sendQueue(@Nullable LocalPlayer player) {
         QueuedClick click = this.queuedClick;
         if (click == null) {
@@ -179,10 +204,16 @@ public class ActionManager {
         if (needWaitModifyLook) {
             needWaitModifyLook = false;
         }
-        if (!isHoldingExpectedItem(player, click)) {
+        if (click.warehouseTarget == null && !isHoldingExpectedItem(player, click)) {
             return this.finish(click, SendResult.HELD_ITEM_CHANGED);
         }
-        int reserveAllowance = getReserveAllowance(player, click);
+        if (click.warehouseTarget != null && (click.useProtocol && click.warehouseDesiredState == null
+                || click.expectedStackPredicate != null
+                || !VoidWarehousePlacementPolicy.supportsItems(click.expectedItems))) {
+            return this.finish(click, SendResult.INTERACTION_REJECTED);
+        }
+        int reserveAllowance = click.warehouseTarget == null
+                ? getReserveAllowance(player, click) : Integer.MAX_VALUE;
         if (reserveAllowance <= 0) {
             return this.finish(click, SendResult.RESERVE_LIMIT);
         }
@@ -192,21 +223,32 @@ public class ActionManager {
         } else {
             direction = DirectionUtils.getHorizontalDirection(look.yaw);
         }
-        Vec3 hitVec;
-        if (!click.useProtocol) {
-            Vec3 targetCenter = Vec3.atCenterOf(click.target);
-            Vec3 sideOffset = Vec3.atLowerCornerOf(DirectionUtils.getVector(click.side)).scale(0.5);
-            Vec3 rotatedHitModifier = click.hitModifier.yRot((direction.toYRot() + 90) % 360).scale(0.5);
-            hitVec = targetCenter.add(sideOffset).add(rotatedHitModifier);
-        } else {
-            hitVec = click.hitModifier;
-        }
-        QuickShulkerBridge.onMainHandUse(player);
+        Vec3 targetCenter = Vec3.atCenterOf(click.target);
+        Vec3 sideOffset = Vec3.atLowerCornerOf(DirectionUtils.getVector(click.side)).scale(0.5);
+        Vec3 rotatedHitModifier = click.physicalHitModifier.yRot((direction.toYRot() + 90) % 360).scale(0.5);
+        Vec3 physicalHitVec = targetCenter.add(sideOffset).add(rotatedHitModifier);
+        Vec3 hitVec = click.useProtocol ? click.hitModifier : physicalHitVec;
+        if (click.warehouseTarget == null) QuickShulkerBridge.onMainHandUse(player);
         boolean wasSneak = player.isShiftKeyDown();
         if (click.useShift && !wasSneak) {
             setShift(player, true);
         } else if (!click.useShift && wasSneak) {
             setShift(player, false);
+        }
+        if (click.warehouseTarget != null) {
+            boolean sent;
+            try {
+                // Preserve queue look/sneak ordering, but never predict an inventory-backed use.
+                BlockHitResult physicalHit = new BlockHitResult(physicalHitVec, click.side, click.target, false);
+                sent = click.warehouseDesiredState == null
+                        ? this.sendWarehousePlacement(click.expectedItems, click.warehouseTarget,
+                                physicalHit, click.warehouseExpectedStateId)
+                        : this.sendWarehouseStatePlacement(click.expectedItems, click.warehouseTarget,
+                                physicalHit, click.warehouseExpectedStateId, click.warehouseDesiredState);
+            } finally {
+                restoreShift(player, click, wasSneak);
+            }
+            return this.finish(click, sent ? SendResult.SENT : SendResult.INTERACTION_REJECTED);
         }
         if (!(Reference.MINECRAFT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension)) {
             restoreShift(player, click, wasSneak);
@@ -257,6 +299,24 @@ public class ActionManager {
             restoreShift(player, click, wasSneak);
         }
         return this.finish(click, accepted ? SendResult.SENT : SendResult.INTERACTION_REJECTED);
+    }
+
+    protected boolean sendWarehousePlacement(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) {
+        //#if MC >= 12111
+        return VoidWarehousePlacementNetwork.requestPlace(candidates, target, hit, expectedStateId);
+        //#else
+        //$$ return false;
+        //#endif
+    }
+
+    protected boolean sendWarehouseStatePlacement(Item[] candidates, BlockPos target,
+            BlockHitResult physicalHit, int expectedStateId, BlockState desiredState) {
+        //#if MC >= 12111
+        return VoidWarehousePlacementNetwork.requestStatePlace(
+                candidates, target, physicalHit, expectedStateId, desiredState);
+        //#else
+        //$$ return false;
+        //#endif
     }
 
     private void armTaskAnvilScreenSuppression(QueuedClick click) {

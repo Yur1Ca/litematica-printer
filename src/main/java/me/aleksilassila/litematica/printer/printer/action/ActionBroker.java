@@ -18,6 +18,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -117,6 +118,14 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
 
     public boolean setExpectedStackPredicate(@Nullable Predicate<ItemStack> expectedStackPredicate) {
         return this.delegate.setExpectedStackPredicate(expectedStackPredicate);
+    }
+
+    public boolean setWarehousePlacement(BlockPos target, int expectedStateId) {
+        return this.delegate.setWarehousePlacement(target, expectedStateId);
+    }
+
+    public boolean setWarehouseStatePlacement(BlockPos target, int expectedStateId, BlockState desiredState) {
+        return this.delegate.setWarehouseStatePlacement(target, expectedStateId, desiredState);
     }
 
     public SendResult sendQueue(@Nullable LocalPlayer player) {

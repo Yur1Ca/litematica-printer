@@ -57,6 +57,8 @@ public class PrintHandler extends FeatureModuleBase {
         runtime.events().subscribe(event -> {
             if (event instanceof RuntimeEvent.BlockUpdated update) {
                 this.printTasks.wake(new BlockPos(update.x(), update.y(), update.z()));
+            } else if (event instanceof RuntimeEvent.MaterialAvailabilityChanged) {
+                this.onInventoryAvailabilityChanged();
             }
         });
         this.targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(this.scanEngine), () -> {

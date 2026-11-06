@@ -248,6 +248,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 普通方块直接由服务端扣库放置，不经过玩家背包。
+        public static final ConfigBoolean VOID_WAREHOUSE_DIRECT_PLACE = bool("voidWarehouseDirectPlace")
+                .defaultValue(false)
+                .build();
+
         // 虚空仓库库存：材料列表里的「已有数量」把仓库库存也算进去
         public static final ConfigBoolean VOID_WAREHOUSE_MATERIAL_LIST = bool("voidWarehouseMaterialList")
                 .defaultValue(false)
@@ -270,6 +275,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Placement.STORE_ORDERLY,
                 //#if MC >= 12111
                 VOID_WAREHOUSE_RESTOCK,
+                VOID_WAREHOUSE_DIRECT_PLACE,
                 VOID_WAREHOUSE_RETURN,
                 VOID_WAREHOUSE_MATERIAL_LIST,
                 //#endif

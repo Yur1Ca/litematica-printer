@@ -119,6 +119,9 @@ abstract class ModPlugin : Plugin<Project> {
             // Bedrock fixtures swap the cached final CLIENT via Unsafe. Keep this tiny reader
             // interpreted so JIT constant folding cannot retain a previous test's inventory.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory::count")
+            // Range fixtures also replace a cached final client. A compiled reader can retain
+            // the initial null across fixtures even after Unsafe installs the current client.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils::isWithinWorkInteractedEuclideanRange")
             // Java 25 warns when legacy Guava/JOML code uses Unsafe. Keep the
             // compatibility access enabled only on runtimes that support this
             // switch; older Java versions must not receive an unknown option.

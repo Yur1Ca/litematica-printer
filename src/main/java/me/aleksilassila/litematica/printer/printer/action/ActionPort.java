@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -51,6 +52,11 @@ public interface ActionPort {
     boolean setQueueCompletionListener(@Nullable Consumer<SendResult> completionListener);
 
     boolean setExpectedStackPredicate(@Nullable Predicate<ItemStack> expectedStackPredicate);
+
+    /** Marks an ordinary block placement to use warehouse stock instead of the held stack. */
+    default boolean setWarehousePlacement(BlockPos target, int expectedStateId) { return false; }
+
+    default boolean setWarehouseStatePlacement(BlockPos target, int expectedStateId, BlockState desiredState) { return false; }
 
     SendResult sendQueue(@Nullable LocalPlayer player);
 

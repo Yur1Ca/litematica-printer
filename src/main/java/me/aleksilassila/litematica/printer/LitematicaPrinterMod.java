@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 //#if MC >= 12111
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseMaterialNetwork;
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementNetwork;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseRestockNetwork;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseReturnNetwork;
 //#endif
@@ -27,6 +28,8 @@ public class LitematicaPrinterMod implements ModInitializer, ClientModInitialize
         VoidWarehouseMaterialNetwork.init();
         // 余料返还：三条通道（C2S 请求 + S2C 回执 + S2C 明细），发包由 runtime 的 tick 驱动
         VoidWarehouseReturnNetwork.init();
+        VoidWarehousePlacementNetwork.init();
+        ClientTickEvents.END_CLIENT_TICK.register(client -> VoidWarehousePlacementNetwork.tick());
         //#endif
         PrinterRuntime runtime = new PrinterRuntime();
         RuntimeAccess.install(runtime);

@@ -22,6 +22,11 @@ import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
+//#if MC >= 12111
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementNetwork;
+import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementPolicy;
+import net.minecraft.world.level.block.Block;
+//#endif
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
@@ -93,10 +98,32 @@ public final class PrintPlacementExecutor {
 
         Item[] requiredItems = normalizeRequiredItems(action.getRequiredItems(context.requiredState.getBlock()));
         Predicate<ItemStack> requiredStackPredicate = action.getRequiredStackPredicate();
+        Vec3 hitModifier = this.litematica.usePrecisionPlacement(blockPos, context.requiredState);
+        boolean warehousePlace = false;
+        //#if MC >= 12111
+        boolean warehouseEligible = VoidWarehousePlacementPolicy.supports(action, requiredItems, hitModifier);
+        if (warehouseEligible && VoidWarehousePlacementNetwork.isNegotiating()) {
+            // Do not withdraw a legacy stack while the first capability reply is still on its way.
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_RETRIEVAL);
+            return PrintPlacementResult.deferred(false);
+        }
+        warehousePlace = warehouseEligible && VoidWarehousePlacementNetwork.isAvailable()
+                && (hitModifier == null || VoidWarehousePlacementNetwork.isStatePlacementSupported())
+                && VoidWarehousePlacementNetwork.isMaterialAvailable(requiredItems)
+                && VoidWarehousePlacementNetwork.isTargetAvailable(blockPos);
+        if (warehousePlace && !VoidWarehousePlacementNetwork.canRequest(requiredItems, blockPos)) {
+            // Capacity, in-flight targets and server throttle only defer this action. They must
+            // not start a legacy inventory withdrawal while warehouse placement is draining.
+            this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.RTT_THROTTLED);
+            return PrintPlacementResult.deferred(false);
+        }
+        //#endif
         boolean reserveItems = Configs.Print.PRINT_RESERVE_ITEMS.getBooleanValue();
         int reserveCount = Configs.Print.PRINT_RESERVE_ITEM_COUNT.getIntegerValue();
         boolean itemReady;
-        if (requiredStackPredicate == null) {
+        if (warehousePlace) {
+            itemReady = true;
+        } else if (requiredStackPredicate == null) {
             itemReady = reserveItems
                     ? InventoryUtils.switchToItemsWithReserve(context.client.player, requiredItems, reserveCount)
                     : InventoryUtils.switchToItems(context.client.player, requiredItems);
@@ -169,9 +196,9 @@ public final class PrintPlacementExecutor {
             return PrintPlacementResult.materialUnavailable(false);
         }
         this.missingMaterials.resolve(requiredItems, requiredStackPredicate);
-        if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)
+        if (!warehousePlace && (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)
                 || requiredStackPredicate != null
-                && !requiredStackPredicate.test(context.client.player.getMainHandItem())) {
+                && !requiredStackPredicate.test(context.client.player.getMainHandItem()))) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_ITEM_SYNC);
             return PrintPlacementResult.deferred(true);
         }
@@ -187,7 +214,14 @@ public final class PrintPlacementExecutor {
             return PrintPlacementResult.cancelled(true);
         }
         this.actionBroker.setExpectedStackPredicate(requiredStackPredicate);
-        Vec3 hitModifier = this.litematica.usePrecisionPlacement(blockPos, context.requiredState);
+        //#if MC >= 12111
+        if (warehousePlace && !(hitModifier == null
+                ? this.actionBroker.setWarehousePlacement(blockPos, Block.getId(context.currentState))
+                : this.actionBroker.setWarehouseStatePlacement(blockPos, Block.getId(context.currentState), context.requiredState))) {
+            this.actionBroker.cancelQueue();
+            return PrintPlacementResult.cancelled(false);
+        }
+        //#endif
         if (hitModifier != null) {
             this.actionBroker.useProtocolHitModifier(hitModifier);
         }

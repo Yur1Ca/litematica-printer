@@ -65,7 +65,7 @@ public class InventoryUtils {
     }
 
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item) {
-        return playerHasItemInInventory(playerEntity, item, stack -> true);
+        return playerHasItemInInventory(playerEntity, item, VoidWarehouseTriggerItem::isUsableAsMaterial);
     }
 
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item,
@@ -85,8 +85,9 @@ public class InventoryUtils {
         Inventory inventory = playerEntity.getInventory();
         int count = 0;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            if (inventory.getItem(slot).is(item) && predicate.test(inventory.getItem(slot))) {
-                count += inventory.getItem(slot).getCount();
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.is(item) && predicate.test(stack)) {
+                count += stack.getCount();
                 if (count >= minimumCount) return true;
             }
         }
@@ -100,7 +101,9 @@ public class InventoryUtils {
         if (!playerEntity.containerMenu.equals(playerEntity.inventoryMenu)) return false;
         Inventory inventory = playerEntity.getInventory();
         for (int i = 0; i < inventory.getContainerSize(); i++) {
-            Item inventoryItem = inventory.getItem(i).getItem();
+            ItemStack stack = inventory.getItem(i);
+            if (VoidWarehouseTriggerItem.isTrigger(stack)) continue;
+            Item inventoryItem = stack.getItem();
             for (Item item : items) {
                 if (inventoryItem == item) {
                     return true;
@@ -206,9 +209,9 @@ public class InventoryUtils {
         if (player == null || player.containerMenu != player.inventoryMenu) return false;
 
         //#if MC > 12004
-        boolean b = areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
+        boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
         //#else
-        //$$ boolean b = areStacksEqual(stackReference, player.getMainHandItem());
+        //$$ boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqual(stackReference, player.getMainHandItem());
         //#endif
         if (b) {
             return false;
@@ -226,12 +229,7 @@ public class InventoryUtils {
         return false;
     }
 
-    /**
-     * 获取玩家副手的物品栈（全版本通用，极简实现）
-     *
-     * @param player 玩家实例
-     * @return 副手物品栈
-     */
+    /** 获取玩家副手的物品栈。 */
     public static ItemStack getOffhandStack(Player player) {
         // 直接通过固定槽位40获取，无版本专属字段依赖
         return player.getInventory().getItem(OFFHAND_SLOT_INDEX);
@@ -351,7 +349,7 @@ public class InventoryUtils {
         Inventory inventory = playerEntity.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (!stack.isEmpty() && predicate.test(stack)) {
+            if (!stack.isEmpty() && VoidWarehouseTriggerItem.isUsableAsMaterial(stack) && predicate.test(stack)) {
                 return true;
             }
         }
@@ -363,6 +361,7 @@ public class InventoryUtils {
             return true;
         }
         Item heldItem = player.getMainHandItem().getItem();
+        if (VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem())) return false;
         for (Item item : items) {
             if (heldItem.equals(item)) {
                 return true;

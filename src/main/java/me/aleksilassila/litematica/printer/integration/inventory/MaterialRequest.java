@@ -45,6 +45,9 @@ public record MaterialRequest(
 
     public boolean acceptsStack(net.minecraft.world.item.ItemStack stack) {
         return stack != null && !stack.isEmpty() && accepts(stack.getItem())
+                // Explicit screen retrieval transfers the selected stack without placing it.
+                && (this.source == Source.CHEST_TRACKER_SCREEN
+                    || me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem.isUsableAsMaterial(stack))
                 && (!this.emptyShulkerOnly || isEmptyShulker(stack));
     }
 

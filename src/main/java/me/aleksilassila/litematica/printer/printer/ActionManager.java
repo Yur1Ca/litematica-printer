@@ -15,6 +15,7 @@ import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeEx
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -451,14 +452,23 @@ public class ActionManager {
     }
 
     private static boolean isHoldingExpectedItem(LocalPlayer player, QueuedClick click) {
+        ItemStack mainHand = player.getMainHandItem();
+        // 🔴 最后一米的硬闸：改名成「虚空仓库」的工作台，右键会被服务端接管成「打开仓库界面」，
+        // 方块永远放不下。不管这条点击是谁排的队，一律不许用它右键 —— 否则就是
+        // 「右键 → 弹界面 → 方块没放下 → 下一 tick 再右键」的死循环（玩家按 Esc 也退不掉）。
+        // 这里返回 false 只会让这一击被丢弃（HELD_ITEM_CHANGED），下一次放置会走材料选择，
+        // 那时它已经被判成「不是建材」，于是转去补货要一个干净的工作台。
+        if (VoidWarehouseTriggerItem.isTrigger(mainHand)) {
+            return false;
+        }
         if (click.expectedStackPredicate != null
-                && !click.expectedStackPredicate.test(player.getMainHandItem())) {
+                && !click.expectedStackPredicate.test(mainHand)) {
             return false;
         }
         if (click.expectedItems == null || click.expectedItems.length == 0) {
             return true;
         }
-        Item heldItem = player.getMainHandItem().getItem();
+        Item heldItem = mainHand.getItem();
         for (Item expectedItem : click.expectedItems) {
             if (heldItem.equals(expectedItem)) {
                 return true;

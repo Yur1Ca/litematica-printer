@@ -65,7 +65,7 @@ public class InventoryUtils {
     }
 
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item) {
-        return playerHasItemInInventory(playerEntity, item, stack -> true);
+        return playerHasItemInInventory(playerEntity, item, VoidWarehouseTriggerItem::isUsableAsMaterial);
     }
 
     public static boolean playerHasItemInInventory(LocalPlayer playerEntity, Item item,
@@ -85,8 +85,10 @@ public class InventoryUtils {
         Inventory inventory = playerEntity.getInventory();
         int count = 0;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            if (inventory.getItem(slot).is(item) && predicate.test(inventory.getItem(slot))) {
-                count += inventory.getItem(slot).getCount();
+            ItemStack stack = inventory.getItem(slot);
+            // 触发物（改名的仓库工作台）不算持有该材料：它右键只会开界面，放不下方块
+            if (stack.is(item) && VoidWarehouseTriggerItem.isUsableAsMaterial(stack) && predicate.test(stack)) {
+                count += stack.getCount();
                 if (count >= minimumCount) return true;
             }
         }
@@ -100,7 +102,9 @@ public class InventoryUtils {
         if (!playerEntity.containerMenu.equals(playerEntity.inventoryMenu)) return false;
         Inventory inventory = playerEntity.getInventory();
         for (int i = 0; i < inventory.getContainerSize(); i++) {
-            Item inventoryItem = inventory.getItem(i).getItem();
+            ItemStack stack = inventory.getItem(i);
+            if (VoidWarehouseTriggerItem.isTrigger(stack)) continue;
+            Item inventoryItem = stack.getItem();
             for (Item item : items) {
                 if (inventoryItem == item) {
                     return true;
@@ -203,9 +207,10 @@ public class InventoryUtils {
         if (player == null) return false;
 
         //#if MC > 12004
-        boolean b = areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
+        // 不比较组件 ⇒ 改名的和干净的会被当成同一个，于是永远换不到能放置的那个
+        boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
         //#else
-        //$$ boolean b = areStacksEqual(stackReference, player.getMainHandItem());
+        //$$ boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqual(stackReference, player.getMainHandItem());
         //#endif
         if (b) {
             return false;
@@ -345,7 +350,7 @@ public class InventoryUtils {
         Inventory inventory = playerEntity.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (!stack.isEmpty() && predicate.test(stack)) {
+            if (!stack.isEmpty() && VoidWarehouseTriggerItem.isUsableAsMaterial(stack) && predicate.test(stack)) {
                 return true;
             }
         }
@@ -357,6 +362,8 @@ public class InventoryUtils {
             return true;
         }
         Item heldItem = player.getMainHandItem().getItem();
+        // 手持触发物时不算「已拿着目标方块」，否则会停在这一步等一个永远不会发生的放置
+        if (VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem())) return false;
         for (Item item : items) {
             if (heldItem.equals(item)) {
                 return true;

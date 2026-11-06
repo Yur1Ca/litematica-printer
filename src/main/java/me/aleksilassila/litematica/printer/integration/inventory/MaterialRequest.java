@@ -45,6 +45,10 @@ public record MaterialRequest(
 
     public boolean acceptsStack(net.minecraft.world.item.ItemStack stack) {
         return stack != null && !stack.isEmpty() && accepts(stack.getItem())
+                // 触发物（改名成「虚空仓库」的工作台）不算这个方块的可用材料：
+                // 它右键会被服务端接管去开界面，放不下方块。所有补货来源共用这一道闸，
+                // 于是「身上只有仓库工作台」会被正确判成缺料，转而去仓库要一个干净的。
+                && me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem.isUsableAsMaterial(stack)
                 && (!this.emptyShulkerOnly || isEmptyShulker(stack));
     }
 

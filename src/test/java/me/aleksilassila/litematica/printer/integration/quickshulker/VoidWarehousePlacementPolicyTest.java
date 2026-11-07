@@ -29,6 +29,20 @@ class VoidWarehousePlacementPolicyTest {
         assertFalse(VoidWarehousePlacementPolicy.supports(new Action(), new Item[]{Items.BONE_MEAL}, null));
     }
 
+    @Test void slabMergeClicksPlaceThroughTheWarehouseButNoOtherClickActionDoes() {
+        // The second half of a double slab merges inside the ordinary placement primitive, so the
+        // click is a plain placement on the slab that is already there.
+        assertTrue(VoidWarehousePlacementPolicy.supports(new ClickAction(), new Item[]{Items.OAK_SLAB}, null));
+        assertTrue(VoidWarehousePlacementPolicy.supports(new ClickAction(), new Item[]{Items.POLISHED_BLACKSTONE_SLAB}, null));
+        // A candle is added by the candle block's own use-on hook; item.place() cannot express it.
+        assertFalse(VoidWarehousePlacementPolicy.supports(new ClickAction(), new Item[]{Items.CANDLE}, null));
+        // Tool clicks were never block placements to begin with.
+        assertFalse(VoidWarehousePlacementPolicy.supports(new ClickAction(), new Item[]{Items.IRON_SHOVEL}, null));
+        // One slab among other alternatives must not drag the whole requirement through.
+        assertFalse(VoidWarehousePlacementPolicy.supports(
+                new ClickAction(), new Item[]{Items.OAK_SLAB, Items.CANDLE}, null));
+    }
+
     @Test void componentSensitiveAndSpecialBlockItemsKeepTheirExistingSemantics() {
         assertFalse(VoidWarehousePlacementPolicy.supports(
                 new Action().setRequiredStackPredicate(stack -> true), new Item[]{Items.STONE}, null));

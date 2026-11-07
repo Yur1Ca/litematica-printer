@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,11 +27,24 @@ public final class VoidWarehousePlacementPolicy {
     }
 
     public static boolean supports(Action action, @Nullable Item[] items, @Nullable Vec3 precisionHit) {
-        return !(action instanceof ClickAction)
-                && action.getClickRepeatCount() == 1
+        return action.getClickRepeatCount() == 1
                 && action.getRequiredStackPredicate() == null
                 && (precisionHit == null || isFinite(precisionHit))
-                && supportsItems(items);
+                && supportsItems(items)
+                && (!(action instanceof ClickAction) || mergesInPlace(items));
+    }
+
+    /**
+     * A second slab merges into the double slab inside the ordinary placement primitive:
+     * {@code SlabBlock#canBeReplaced} accepts the click, the context keeps the clicked block as its
+     * position and {@code getStateForPlacement} answers with the double slab. Every other click
+     * action needs the clicked block's own use-on hook, which this protocol never invokes.
+     */
+    private static boolean mergesInPlace(Item[] items) {
+        for (Item item : items) {
+            if (!(((BlockItem) item).getBlock() instanceof SlabBlock)) return false;
+        }
+        return items.length > 0;
     }
 
     private static boolean isFinite(Vec3 hit) {

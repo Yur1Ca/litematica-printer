@@ -12,6 +12,8 @@ public final class ContainerSyncTransfer {
         void click(int slot, int button);
         void refresh();
         boolean unchanged(List<ItemStack> items, ItemStack cursor);
+        /** Keep the original count as a conservative limit unless the port knows the slot rules. */
+        default int recoveryCapacity(int slot, ItemStack stack, int originalCount) { return originalCount; }
     }
     private final Port port;
     private final Object context;
@@ -143,7 +145,8 @@ public final class ContainerSyncTransfer {
         ItemStack there = items.get(back);
         int count = there.getCount() + carried.getCount();
         if (!there.isEmpty() && !ContainerSyncPlan.same(there, carried)
-                || count > Math.min(returnLimit, carried.getMaxStackSize())) return null;
+                || carried.getCount() > returnLimit
+                || count > Math.min(port.recoveryCapacity(back, carried, returnLimit), carried.getMaxStackSize())) return null;
         var restored = new java.util.ArrayList<>(ContainerSyncPlan.copy(items));
         ItemStack merged = carried.copy();
         merged.setCount(count);

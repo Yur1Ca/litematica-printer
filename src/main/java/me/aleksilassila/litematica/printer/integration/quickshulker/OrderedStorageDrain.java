@@ -89,6 +89,13 @@ final class OrderedStorageDrain {
             public boolean unchanged(List<ItemStack> items, ItemStack cursor) {
                 return ContainerSyncPlan.matches(items, snapshot(menu)) && ItemStack.matches(cursor, menu.getCarried());
             }
+            public int recoveryCapacity(int slot, ItemStack stack, int originalCount) {
+                var target = menu.slots.get(slots.get(slot));
+                // Bedrock drops can refill the vacated source. Bound our cursor separately
+                // from that new stack, and merge only when the real player slot has room.
+                return target.container == client.player.getInventory() && target.mayPlace(stack)
+                        ? target.getMaxStackSize(stack) : 0;
+            }
         }, new ContainerSyncPlan(initial, List.copyOf(steps), null));
         tick(client);
     }

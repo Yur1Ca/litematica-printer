@@ -18,10 +18,10 @@ final class BedrockDiagnostics {
         float progress = player == null ? 0.0F
                 : PlayerUtils.getDestroyProgress(player, Blocks.PISTON.defaultBlockState(), player.getMainHandItem());
         Reference.LOGGER.info(
-                "[PrinterBedrock] event={} target={} age={} executeTick={} status={} pendingPlacement={} "
+                "[PrinterBedrock] event={} target={} age={} executeTick={} status={} observing={} "
                         + "timeout={} bedrock={} piston={} head={} torches={} hand={} offhand={} pistonProgress={}",
                 event, target.getBedrockPos(), target.tickTimes(), target.executeTick(), target.currentStatus(),
-                target.hasPendingPistonRetry(), target.postExecuteSyncTimeoutTicks(),
+                target.hasTried(), target.postExecuteSyncTimeoutTicks(),
                 level.getBlockState(target.getBedrockPos()), level.getBlockState(target.getPistonPos()),
                 level.getBlockState(target.getHeadPos()), target.getOwnedTorchPositions(),
                 player == null ? "none" : player.getMainHandItem(),

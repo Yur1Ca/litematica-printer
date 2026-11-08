@@ -7,11 +7,17 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.CollisionContext;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 public final class BedrockEnvironment {
     private BedrockEnvironment() {
+    }
+
+    static boolean isChunkLoaded(ClientLevel level, BlockPos pos) {
+        return level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4);
     }
 
     public static boolean isTorchPlacementUsable(ClientLevel level, BedrockTorchPlacement placement) {
@@ -51,18 +57,6 @@ public final class BedrockEnvironment {
         return isTorchPlacementUsable(level, new BedrockTorchPlacement(supportPos, Direction.UP));
     }
 
-    public static boolean isSlimeSupportUsable(ClientLevel level, BlockPos slimePos) {
-        if (slimePos == null) {
-            return false;
-        }
-        BlockPos torchPos = slimePos.above();
-        if (!isWithinBuildHeight(level, slimePos) || !isWithinBuildHeight(level, torchPos)) {
-            return false;
-        }
-        return (level.getBlockState(slimePos).is(Blocks.SLIME_BLOCK) || BlockUtils.isReplaceable(level.getBlockState(slimePos)))
-                && (BlockUtils.isReplaceable(level.getBlockState(torchPos)) || isRedstoneTorch(level.getBlockState(torchPos)));
-    }
-
     public static boolean isSlimePlacementUsable(ClientLevel level, BedrockTorchPlacement placement) {
         if (placement == null || placement.getSupportPos() == null || placement.getTorchPos() == null) {
             return false;
@@ -71,11 +65,23 @@ public final class BedrockEnvironment {
             return false;
         }
         BlockState supportState = level.getBlockState(placement.getSupportPos());
-        if (!supportState.is(Blocks.SLIME_BLOCK) && !BlockUtils.isReplaceable(supportState)) {
+        if (!canPlaceSlimeSupport(level, placement.getSupportPos())) {
+            return false;
+        }
+        if (!supportState.is(Blocks.SLIME_BLOCK)
+                && findPlacementInteraction(level, placement.getSupportPos()) == null) {
             return false;
         }
         BlockState torchState = level.getBlockState(placement.getTorchPos());
         return BlockUtils.isReplaceable(torchState) || isRedstoneTorch(torchState);
+    }
+
+    /** Existing supports are reusable; a new full block must pass vanilla's entity collision query. */
+    static boolean canPlaceSlimeSupport(ClientLevel level, BlockPos pos) {
+        if (level == null || pos == null || !isWithinBuildHeight(level, pos)) return false;
+        BlockState state = level.getBlockState(pos);
+        return state.is(Blocks.SLIME_BLOCK) || BlockUtils.isReplaceable(state)
+                && level.isUnobstructed(Blocks.SLIME_BLOCK.defaultBlockState(), pos, CollisionContext.empty());
     }
 
     public static BlockPos findTorchSupport(ClientLevel level, BlockPos bedrockPos) {
@@ -96,7 +102,12 @@ public final class BedrockEnvironment {
     }
 
     public static BedrockTorchPlacement findTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        return findPreferredTorchPlacement(level, centerPos, excludedAxis, false, blockedPositions);
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, false, placement -> true, blockedPositions);
+    }
+
+    static BedrockTorchPlacement findTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis,
+                                                    Predicate<BedrockTorchPlacement> allowed, BlockPos... blockedPositions) {
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, false, allowed, blockedPositions);
     }
 
     public static BedrockTorchPlacement findTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis) {
@@ -104,10 +115,17 @@ public final class BedrockEnvironment {
     }
 
     public static BedrockTorchPlacement findPossibleSlimeTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        return findPreferredTorchPlacement(level, centerPos, excludedAxis, true, blockedPositions);
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, true, placement -> true, blockedPositions);
     }
 
-    private static BedrockTorchPlacement findPreferredTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, boolean allowSlimeSupport, BlockPos... blockedPositions) {
+    static BedrockTorchPlacement findPossibleSlimeTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis,
+                                                                Predicate<BedrockTorchPlacement> allowed, BlockPos... blockedPositions) {
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, true, allowed, blockedPositions);
+    }
+
+    private static BedrockTorchPlacement findPreferredTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis,
+                                                                    boolean allowSlimeSupport, Predicate<BedrockTorchPlacement> allowed,
+                                                                    BlockPos... blockedPositions) {
         BedrockTorchPlacement topFallback = null;
         BedrockTorchPlacement topDirtyFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
@@ -115,7 +133,7 @@ public final class BedrockEnvironment {
                 continue;
             }
             BedrockTorchPlacement placement = new BedrockTorchPlacement(centerPos.relative(direction), Direction.UP);
-            if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+            if (!allowed.test(placement) || !isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
                 continue;
             }
             if (isPlacementInteractable(placement, blockedPositions)) {
@@ -144,7 +162,7 @@ public final class BedrockEnvironment {
                     continue;
                 }
                 BedrockTorchPlacement placement = new BedrockTorchPlacement(torchPos.relative(attachedFace.getOpposite()), attachedFace);
-                if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+                if (!allowed.test(placement) || !isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
                     continue;
                 }
                 if (isPlacementInteractable(placement, blockedPositions)) {
@@ -169,7 +187,7 @@ public final class BedrockEnvironment {
                 continue;
             }
             BedrockTorchPlacement placement = new BedrockTorchPlacement(centerPos.relative(direction).below(), Direction.UP);
-            if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+            if (!allowed.test(placement) || !isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
                 continue;
             }
             if (isPlacementInteractable(placement, blockedPositions)) {

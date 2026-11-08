@@ -8,6 +8,8 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerGamePacketListener;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 
+import java.util.List;
+
 public class NetworkUtils {
 
     private static final Minecraft client = Minecraft.getInstance();
@@ -22,10 +24,24 @@ public class NetworkUtils {
     }
 
     public static void sendPacket(PredictiveAction packetCreator) {
-        if (client.level instanceof SequenceExtension sequenceExtension) {
-            Packet<ServerGamePacketListener> packet = sequenceExtension.litematica_printer3$predict(packetCreator);
-            NetworkUtils.sendPacket(packet);
-        }
+        Packet<ServerGamePacketListener> packet = createPacket(packetCreator);
+        if (packet != null) NetworkUtils.sendPacket(packet);
+    }
+
+    public static Packet<ServerGamePacketListener> createPacket(PredictiveAction packetCreator) {
+        return client.level instanceof SequenceExtension sequenceExtension
+                ? sequenceExtension.litematica_printer3$predict(packetCreator) : null;
+    }
+
+    public static boolean canSendPacketBatch() {
+        var listener = client.getConnection();
+        return listener != null && listener.getConnection() instanceof PacketBatchConnection;
+    }
+
+    public static boolean sendPacketBatch(List<Packet<?>> packets) {
+        var listener = client.getConnection();
+        return listener != null && listener.getConnection() instanceof PacketBatchConnection batch
+                && batch.litematica_printer$sendBatch(packets);
     }
 
     public static void sendLookPacket(LocalPlayer playerEntity, float lookYaw, float lookPitch) {
@@ -54,6 +70,19 @@ public class NetworkUtils {
 
     public static void sendLookPacketIgnoringQueuedLook(LocalPlayer playerEntity, PlayerLook playerLook) {
         sendLookPacketIgnoringQueuedLook(playerEntity, playerLook.getYaw(), playerLook.getPitch());
+    }
+
+    public static ServerboundMovePlayerPacket.Rot createLookPacketIgnoringQueuedLook(LocalPlayer player, PlayerLook look) {
+        try {
+            BYPASS_QUEUED_LOOK_OVERRIDE.set(true);
+            return new ServerboundMovePlayerPacket.Rot(look.yaw, look.pitch, player.onGround()
+                    //#if MC > 12101
+                    , player.horizontalCollision
+                    //#endif
+            );
+        } finally {
+            BYPASS_QUEUED_LOOK_OVERRIDE.set(false);
+        }
     }
 
     public static boolean shouldBypassQueuedLookOverride() {

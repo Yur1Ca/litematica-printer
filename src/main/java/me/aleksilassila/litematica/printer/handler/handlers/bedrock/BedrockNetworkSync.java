@@ -91,13 +91,13 @@ final class BedrockNetworkSync {
         if (!attempt.outcomeRecorded) {
             this.timing.count("bedrock", BEDROCK_ATTEMPT_TIMEOUTS, 1);
         }
-        attempt.result = "late_update";
+        attempt.result = "timeout";
         this.serverUpdateTimeouts++;
-        this.lastResult = "late_update";
+        this.lastResult = "timeout";
     }
 
     void recordRetry(BlockPos target) {
-        PendingAttempt attempt = this.pending.get(target);
+        PendingAttempt attempt = this.pending.remove(target);
         if (attempt != null) {
             this.finishObservation(attempt, BEDROCK_RETRIES);
             attempt.result = "retry";

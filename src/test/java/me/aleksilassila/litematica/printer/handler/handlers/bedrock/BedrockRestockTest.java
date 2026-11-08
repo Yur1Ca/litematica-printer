@@ -153,7 +153,7 @@ class BedrockRestockTest {
         }
     }
 
-    @Test void pendingReversePlacementAndConfirmationFinishBeforeRefilling() throws Exception {
+    @Test void dispatchedObservationFinishesBeforeRefillingWithoutRepeatingPlacement() throws Exception {
         try (var f = new Fixture()) {
             var target = f.addTarget();
             target.setHasTried(true);
@@ -161,33 +161,24 @@ class BedrockRestockTest {
             target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
             f.put(40, Items.PISTON, 1);
             f.machine(Direction.UP);
-            f.enginePlacer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            for (int tick = 1; tick < 8; tick++) {
+            for (int tick = 0; tick < 8; tick++) {
                 f.tick(tick);
                 assertTrue(f.prepare());
-                f.enginePlacer.tickPistonRetries();
                 f.settleTargets();
                 assertTrue(f.sent.isEmpty());
+                assertTrue(f.mode.hits.isEmpty(), "Confirmation observes the complete original bundle");
             }
-            f.level.blocks.remove(TARGET.above());
-            f.level.blocks.remove(TARGET.above(2));
-            f.tick(8);
-            assertTrue(f.prepare());
-            f.enginePlacer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "Keep the original delayed reverse placement");
-            assertEquals(TARGET.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
             f.put(40, Items.PISTON, 0);
-            f.settleTargets();
             assertTrue(f.prepare());
-            assertTrue(f.sent.isEmpty(), "An empty hand must not cancel the dispatched attempt");
+            assertTrue(target.hasTried(), "An empty hand cannot cancel the dispatched attempt");
 
-            // The target is confirmed gone. Retiring it and its retry uses the original executor.
-            f.level.blocks.remove(TARGET);
             f.level.blocks.clear();
+            f.tick(8);
             f.settleTargets();
-            assertFalse(target.hasPendingPistonRetry());
+            assertTrue(f.targets.isEmpty());
             assertFalse(f.prepare());
             assertEquals(1, f.sent.size());
+            assertTrue(f.mode.hits.isEmpty(), "Restocking never replays an old reverse placement");
         }
     }
 
@@ -198,8 +189,12 @@ class BedrockRestockTest {
             target.setExecuteTick(0);
             target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
             assertTrue(f.prepare());
-            for (int tick = 0; tick < 5; tick++) f.settleTargets();
-            assertFalse(target.hasTried(), "Existing collapsed-attempt recovery ends the drain");
+            for (int tick = 0; tick < 5; tick++) {
+                f.tick(tick);
+                f.settleTargets();
+            }
+            assertFalse(target.hasTried(), "The failed event closes before recovery can request supplies");
+            assertEquals(BedrockTarget.Status.RECOVERING, target.getStatus());
             assertFalse(f.targets.isEmpty());
             assertFalse(f.prepare());
             assertSame(Items.PISTON, f.sent.get(0).preferredItem());
@@ -211,10 +206,12 @@ class BedrockRestockTest {
         try (var f = new Fixture()) {
             var target = f.addTarget();
             f.machine(Direction.UP);
+            target.refreshStatusOnly();
             target.setHasTried(true);
             target.setExecuteTick(0);
             target.setStatus(BedrockTarget.Status.EXTENDED);
             assertTrue(f.prepare());
+            f.tick(1);
             f.settleTargets();
             assertEquals(1, target.tickTimes());
             assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.getStatus());

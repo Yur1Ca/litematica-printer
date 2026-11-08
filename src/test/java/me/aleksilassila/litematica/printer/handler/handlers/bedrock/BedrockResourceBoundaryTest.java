@@ -28,7 +28,7 @@ import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.Bedro
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.set;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real scheduler, broker and delayed placement; only feature input and game transport are headless. */
+/** Real scheduler, broker and observation continuation; feature inputs and transport are headless. */
 class BedrockResourceBoundaryTest {
     private static final BlockPos TARGET = new BlockPos(0, 64, 0);
     private static final String RESTOCK_OWNER = "same_tick_restock";
@@ -36,23 +36,23 @@ class BedrockResourceBoundaryTest {
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
     @Test
-    void defersExistingRetryWhenRestockStartsInSameTick() throws Exception {
-        this.assertRetryWaitsForEarlierModule(EnumSet.of(
+    void defersContinuationWhenRestockStartsInSameTick() throws Exception {
+        this.assertContinuationWaitsForEarlierModule(EnumSet.of(
                 ResourceLease.MAIN_HAND, ResourceLease.INVENTORY, ResourceLease.CONTAINER), false);
     }
 
     @Test
-    void iterationCompletionAlsoDefersExistingRetryWhenRestockStartsInSameTick() throws Exception {
-        this.assertRetryWaitsForEarlierModule(EnumSet.of(
+    void iterationCompletionAlsoDefersContinuationWhenRestockStartsInSameTick() throws Exception {
+        this.assertContinuationWaitsForEarlierModule(EnumSet.of(
                 ResourceLease.MAIN_HAND, ResourceLease.INVENTORY, ResourceLease.CONTAINER), true);
     }
 
     @ParameterizedTest @EnumSource(ResourceLease.class)
-    void defersExistingRetryForEachConflictingResource(ResourceLease resource) throws Exception {
-        this.assertRetryWaitsForEarlierModule(EnumSet.of(resource), false);
+    void defersContinuationForEachConflictingResource(ResourceLease resource) throws Exception {
+        this.assertContinuationWaitsForEarlierModule(EnumSet.of(resource), false);
     }
 
-    private void assertRetryWaitsForEarlierModule(EnumSet<ResourceLease> resources, boolean finishIteration) throws Exception {
+    private void assertContinuationWaitsForEarlierModule(EnumSet<ResourceLease> resources, boolean finishIteration) throws Exception {
         boolean oldWork = Configs.Core.WORK_SWITCH.getBooleanValue();
         boolean oldLag = Configs.Core.LAG_CHECK.getBooleanValue();
         boolean oldAvailability = Configs.Core.RENDER_ONLY_HOLDING_ITEMS.getBooleanValue();
@@ -71,8 +71,8 @@ class BedrockResourceBoundaryTest {
             f.client.player.containerMenu = f.client.player.inventoryMenu;
 
             var engine = f.engine();
-            var placer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
-            placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
+            var sync = (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync");
+            sync.beginAttempt(TARGET, java.util.Set.of(TARGET));
 
             // The external provider's network work is outside this test. Its actual broker
             // lease is acquired by an earlier feature, after the scheduler's shared precheck.
@@ -102,12 +102,15 @@ class BedrockResourceBoundaryTest {
             tick.invoke(scheduler);
             assertTrue(broker.isResourceHeld(resources.iterator().next()));
             assertTrue(f.mode.hits.isEmpty(), "Existing bedrock work must not place through another owner's lease");
+            assertEquals(Long.MIN_VALUE, get(engine, BedrockEngine.class, "lastProcessedTick"));
+            assertEquals(1, sync.pendingCount(), "The inventory owner cannot cancel the dispatched observation");
 
             broker.releaseOwner(RESTOCK_OWNER);
             f.tick(9);
             tick.invoke(scheduler);
-            assertEquals(1, f.mode.hits.size(), "Releasing the lease resumes the existing retry without resubmission");
-            assertEquals(TARGET.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
+            assertEquals(9L, get(engine, BedrockEngine.class, "lastProcessedTick"));
+            assertEquals(1, sync.pendingCount());
+            assertTrue(f.mode.hits.isEmpty(), "Resuming observation must not replay an expired placement");
         } finally {
             Configs.Core.WORK_SWITCH.setBooleanValue(oldWork);
             Configs.Core.LAG_CHECK.setBooleanValue(oldLag);

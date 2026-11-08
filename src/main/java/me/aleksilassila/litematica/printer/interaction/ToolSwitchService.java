@@ -66,6 +66,10 @@ public final class ToolSwitchService {
         return this.tweakeroo.isDurabilityGuardActive();
     }
 
+    public boolean isToolUsable(ItemStack stack) {
+        return this.tweakeroo.isCurrentToolUsable(stack);
+    }
+
     private static boolean stackFingerprintChanged(ItemStack before, ItemStack after) {
         if (before.isEmpty() || after.isEmpty()) {
             return before.isEmpty() != after.isEmpty();

@@ -7,12 +7,12 @@ import me.aleksilassila.litematica.printer.handler.scan.ScanAvailability;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,19 +22,75 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class BedrockCandidatePlanner {
-    private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
+    private static final int REJECTED_PLAN_RETRY_TICKS = 20;
     private final ScanEngine scanEngine;
     private final LitematicaAdapter litematica;
     private final BedrockCandidateBacklog<BedrockCandidatePlan> candidateBacklog = new BedrockCandidateBacklog<>();
     /** Avoid rebuilding the same unavailable piston layout on every scan pass. */
-    private final Long2LongOpenHashMap rejectedPlanRevisions = new Long2LongOpenHashMap();
+    private final Long2ObjectOpenHashMap<RejectedPlan> rejectedPlans = new Long2ObjectOpenHashMap<>();
     private final Map<BlockPos, Long> retryUntil = new HashMap<>();
     private boolean sourceHasMore;
     private long plannerTick;
+    private Vec3 sourceEyePosition;
+    private int sourceWorkRange;
+    private Object sourceRangeShape;
+    private boolean sourceInteractionCheck;
+    private double sourceInteractionRange;
+    private boolean sourceSideEnabled;
 
     public BedrockCandidatePlanner(ScanEngine scanEngine, LitematicaAdapter litematica) {
         this.scanEngine = scanEngine;
         this.litematica = litematica;
+    }
+
+    /** Reopen only a completed bedrock source whose live eligibility or rejection deadline changed. */
+    public boolean refreshEligibility(ClientLevel level, LocalPlayer player) {
+        if (level == null || player == null) return false;
+        if (this.sourceEyePosition == null) {
+            this.captureEligibility(player);
+            return false;
+        }
+        // Finish a cooperatively paused pass before replacing its cursor. Otherwise ordinary
+        // walking repeatedly rescans its prefix and starves positions at the edge of the range.
+        if (this.sourceHasMore) return false;
+        boolean contextChanged = this.eligibilityChanged(player);
+        long now = level.getGameTime();
+        long revision = this.scanEngine.dirtyVersion();
+        boolean retryDue = this.rejectedPlans.values().stream().anyMatch(
+                rejected -> rejected.revision() != revision || rejected.retryTick() <= now);
+        if (!contextChanged && !retryDue) return false;
+        if (contextChanged) this.rejectedPlans.clear();
+        else this.rejectedPlans.values().removeIf(
+                rejected -> rejected.revision() != revision || rejected.retryTick() <= now);
+        this.captureEligibility(player);
+        // A deadline must produce another source, not merely keep the outer coordinator busy.
+        // Owner reset preserves all other features' sessions and the world's dirty revision.
+        this.scanEngine.resetOwner("bedrock");
+        this.sourceHasMore = true;
+        return true;
+    }
+
+    private boolean eligibilityChanged(LocalPlayer player) {
+        return !this.sourceEyePosition.equals(player.getEyePosition())
+                || this.sourceWorkRange != Configs.Core.WORK_RANGE.getIntegerValue()
+                || this.sourceRangeShape != Configs.Core.ITERATOR_SHAPE.getOptionListValue()
+                || this.sourceInteractionCheck != Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()
+                || Double.compare(this.sourceInteractionRange, this.currentInteractionRange()) != 0
+                || this.sourceSideEnabled != Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
+    }
+
+    private void captureEligibility(LocalPlayer player) {
+        this.sourceEyePosition = player.getEyePosition();
+        this.sourceWorkRange = Configs.Core.WORK_RANGE.getIntegerValue();
+        this.sourceRangeShape = Configs.Core.ITERATOR_SHAPE.getOptionListValue();
+        this.sourceInteractionCheck = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue();
+        this.sourceInteractionRange = this.currentInteractionRange();
+        this.sourceSideEnabled = Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
+    }
+
+    private double currentInteractionRange() {
+        return Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()
+                ? PlayerUtils.getPlayerBlockInteractionRange() : 0.0D;
     }
 
     public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, LocalPlayer player, int maxEffectiveExecutions, int scanGuardLimit) {
@@ -130,10 +186,11 @@ public final class BedrockCandidatePlanner {
 
     public void reset() {
         this.candidateBacklog.clear();
-        this.rejectedPlanRevisions.clear();
+        this.rejectedPlans.clear();
         this.retryUntil.clear();
         this.sourceHasMore = false;
         this.plannerTick = 0L;
+        this.sourceEyePosition = null;
     }
 
     private List<BedrockCandidatePlan> getEligibleCandidates() {
@@ -159,7 +216,7 @@ public final class BedrockCandidatePlanner {
         this.candidateBacklog.removeIf((pos, ignored) -> !sourceBox.contains(pos)
                 || !this.litematica.isWithinSelectionRange(pos)
                 || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos)));
-        this.rejectedPlanRevisions.keySet().removeIf(key -> {
+        this.rejectedPlans.keySet().removeIf(key -> {
             BlockPos pos = BlockPos.of(key);
             return !sourceBox.contains(pos)
                     || !this.litematica.isWithinSelectionRange(pos);
@@ -185,7 +242,7 @@ public final class BedrockCandidatePlanner {
                 pos -> true,
                 pos -> this.passesCheapFilters(level, pos)
                         && !this.candidateBacklog.contains(pos)
-                        && !this.isRejectedAtCurrentRevision(pos)
+                        && !this.isRejectedAtCurrentRevision(pos, level.getGameTime())
         );
         Iterator<BlockPos> iterator = source.iterator();
         List<BedrockCandidatePlan> verticalCandidates = new ArrayList<>();
@@ -225,7 +282,7 @@ public final class BedrockCandidatePlanner {
                     verticalCandidates.add(candidate);
                 }
             } else {
-                this.rejectedPlanRevisions.put(pos.asLong(), this.scanEngine.dirtyVersion());
+                this.rejectedPlans.put(pos.asLong(), new RejectedPlan(this.scanEngine.dirtyVersion(), level.getGameTime() + REJECTED_PLAN_RETRY_TICKS));
             }
         }
 
@@ -260,7 +317,7 @@ public final class BedrockCandidatePlanner {
      * 重型建模阶段:调用方需保证已通过 {@link #passesCheapFilters}。计入建模预算。
      */
     private BedrockCandidatePlan buildModeledCandidate(ClientLevel level, BlockPos pos, boolean allowSide) {
-        BedrockCandidatePlan candidate = buildCandidate(level, pos.immutable());
+        BedrockCandidatePlan candidate = BedrockCandidatePlan.build(level, pos.immutable(), this.scanEngine::dirtyVersion);
         if (candidate.layout() == null) {
             return null;
         }
@@ -275,6 +332,11 @@ public final class BedrockCandidatePlanner {
             BedrockCandidatePlan cached,
             boolean allowSide
     ) {
+        if ((cached.layout().isHorizontal() && !allowSide)
+                || !BedrockEnvironment.arePositionsInteractable(cached.structuralPositions())
+                || !BedrockEnvironment.arePositionsInteractable(cached.powerReservationPositions())) {
+            return this.buildModeledCandidate(level, cached.pos(), allowSide);
+        }
         var dirty = this.scanEngine.dirtySnapshotAfter(cached.planRevision(), cached.footprint());
         if (dirty.boxes().isEmpty()) {
             return cached.planRevision() == dirty.version()
@@ -288,9 +350,13 @@ public final class BedrockCandidatePlanner {
         return Math.max(1, maxEffectiveExecutions);
     }
 
-    private boolean isRejectedAtCurrentRevision(BlockPos pos) {
-        return this.rejectedPlanRevisions.getOrDefault(pos.asLong(), Long.MIN_VALUE)
-                == this.scanEngine.dirtyVersion();
+    private boolean isRejectedAtCurrentRevision(BlockPos pos, long gameTick) {
+        var rejected = this.rejectedPlans.get(pos.asLong());
+        // Movement and range settings do not dirty the world; range-dependent failures must expire.
+        if (rejected != null && rejected.revision() == this.scanEngine.dirtyVersion()
+                && gameTick < rejected.retryTick()) return true;
+        this.rejectedPlans.remove(pos.asLong());
+        return false;
     }
 
     private int getCandidateScanLimit(int scanGuardLimit) {
@@ -300,125 +366,9 @@ public final class BedrockCandidatePlanner {
         return scanGuardLimit > 0 ? scanGuardLimit : Integer.MAX_VALUE;
     }
 
-    private BedrockCandidatePlan buildCandidate(ClientLevel level, BlockPos pos) {
-        BedrockMachineLayout layout = BedrockMachineLayout.find(level, pos);
-        PlacementSelection placementSelection = layout == null ? null : findPlacementSelection(level, layout, pos);
-        BedrockTorchPlacement placement = placementSelection == null ? null : placementSelection.placement();
-        BlockPos slimePos = placementSelection == null ? null : placementSelection.slimePos();
-        int priority = candidatePriority(level, pos, layout, placement);
-        int neighborTargetCount = neighborTargetCount(level, pos);
-        return new BedrockCandidatePlan(
-                pos,
-                layout,
-                placement,
-                slimePos,
-                buildStructuralPositions(pos, layout),
-                buildPowerReservationPositions(placement),
-                priority,
-                neighborTargetCount,
-                footprint(pos),
-                this.scanEngine.dirtyVersion()
-        );
-    }
-
-    private static PrinterBox footprint(BlockPos pos) {
-        // Layout search reaches at most three blocks from the bedrock target. One extra block
-        // covers neighbor-dependent support and torch-face changes at the boundary.
-        return new PrinterBox(
-                pos.getX() - 4,
-                pos.getY() - 4,
-                pos.getZ() - 4,
-                pos.getX() + 4,
-                pos.getY() + 4,
-                pos.getZ() + 4
-        );
-    }
-
-    private int candidatePriority(ClientLevel level, BlockPos pos, BedrockMachineLayout layout, BedrockTorchPlacement placement) {
-        int controllerPenalty = BedrockController.getSchedulingPenalty(pos);
-        if (layout != null) {
-            int penalty = controllerPenalty;
-            penalty += BedrockController.getSchedulingPenalty(layout.getPistonPos());
-            penalty += BedrockController.getSchedulingPenalty(layout.getHeadPos());
-            if (placement != null) {
-                penalty += BedrockController.getSchedulingPenalty(placement.getSupportPos());
-                penalty += BedrockController.getSchedulingPenalty(placement.getTorchPos());
-                if (level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)) {
-                    penalty += 200;
-                }
-            }
-            penalty += BedrockController.getPredictedMachineOverlapPenalty(pos, layout, placement);
-            return penalty;
-        }
-        if (BedrockMachineLayout.shouldDeferUntilExposed(level, pos)) {
-            return controllerPenalty + 1_000;
-        }
-        return controllerPenalty + 10_000;
-    }
-
-    private static List<BlockPos> buildStructuralPositions(BlockPos bedrockPos, BedrockMachineLayout layout) {
-        List<BlockPos> positions = new ArrayList<>(3);
-        positions.add(bedrockPos);
-        if (layout != null) {
-            positions.add(layout.getPistonPos());
-            positions.add(layout.getHeadPos());
-        }
-        return positions;
-    }
-
-    private static List<BlockPos> buildPowerReservationPositions(BedrockTorchPlacement placement) {
-        if (placement == null) {
-            return List.of();
-        }
-        List<BlockPos> positions = new ArrayList<>(2);
-        if (placement.getSupportPos() != null) {
-            positions.add(placement.getSupportPos());
-        }
-        if (placement.getTorchPos() != null) {
-            positions.add(placement.getTorchPos());
-        }
-        return positions;
-    }
-
-    private static PlacementSelection findPlacementSelection(ClientLevel level, BedrockMachineLayout layout, BlockPos bedrockPos) {
-        BedrockTorchPlacement placement = BedrockEnvironment.findTorchPlacement(
-                level,
-                layout.getPistonPos(),
-                layout.getPistonOffset().getOpposite(),
-                bedrockPos,
-                layout.getPistonPos(),
-                layout.getHeadPos()
-        );
-        if (placement != null) {
-            return new PlacementSelection(placement, level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)
-                    ? placement.getSupportPos()
-                    : null);
-        }
-        placement = BedrockEnvironment.findPossibleSlimeTorchPlacement(
-                level,
-                layout.getPistonPos(),
-                layout.getPistonOffset().getOpposite(),
-                bedrockPos,
-                layout.getPistonPos(),
-                layout.getHeadPos()
-        );
-        return placement == null ? null : new PlacementSelection(placement, placement.getSupportPos());
-    }
-
-    private static int neighborTargetCount(ClientLevel level, BlockPos pos) {
-        int count = 0;
-        for (Direction direction : NEIGHBOR_DIRECTIONS) {
-            BlockPos neighborPos = pos.relative(direction);
-            if (BedrockTargetBlocks.isTargetBlock(level.getBlockState(neighborPos))) {
-                count++;
-            }
-        }
-        return count;
-    }
-
     private record CandidateShard(List<BedrockCandidatePlan> candidates, boolean hasMoreSource) {
     }
 
-    private record PlacementSelection(BedrockTorchPlacement placement, BlockPos slimePos) {
-    }
+    private record RejectedPlan(long revision, long retryTick) { }
+
 }

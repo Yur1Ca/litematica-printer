@@ -5,18 +5,32 @@ import java.util.EnumSet;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEngine;
+import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
+import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.printer.RttReplayController;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
+import me.aleksilassila.litematica.printer.utils.CooldownUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.InventorySyncPackets;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -114,6 +128,106 @@ class InventoryAutomationGuardTest {
         }
     }
 
+    @Test void bedrockCleanupOwnsInventoryUntilItDrainsWithoutRequiringABrokerLease() throws Exception {
+        try (var f = new Fixture()) {
+            var level = allocate(CleanupLevel.class);
+            level.state = Blocks.AIR.defaultBlockState();
+            f.client.level = level;
+            var engine = new BedrockEngine(f.client, new CooldownUtils(), () -> f.tick, new LitematicaAdapter());
+            set(f.runtime, PrinterRuntime.class, "bedrockEngine", engine);
+            assertFalse(paused());
+            assertFalse(InventoryAutomationGuard.shouldResetAfterPause());
+            var cleanup = get(engine, BedrockEngine.class, "cleanup");
+            var add = cleanup.getClass().getDeclaredMethod("add", BlockPos.class, boolean.class);
+            add.setAccessible(true);
+            BlockPos residue = new BlockPos(0, 64, 0);
+            add.invoke(cleanup, residue, false);
+            assertFalse(paused(), "An air-only late-update watch does not own inventory");
+            assertFalse(InventoryAutomationGuard.shouldResetAfterPause());
+            level.state = Blocks.PISTON.defaultBlockState();
+            add.invoke(cleanup, residue, false);
+
+            assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
+            assertFalse(f.switchGuard.isWaiting());
+            assertTrue(paused(), "IPN cannot refill the fixed piston hand while bedrock owns queued work");
+            assertTrue(InventoryAutomationGuard.shouldResetAfterPause(), "IPN must discard the pre-bedrock inventory baseline");
+
+            var update = cleanup.getClass().getDeclaredMethod("onServerBlockUpdate", BlockPos.class);
+            update.setAccessible(true);
+            level.state = Blocks.AIR.defaultBlockState();
+            update.invoke(cleanup, residue);
+            assertFalse(paused(), "Authoritative air drains inventory ownership while preserving its late-update watch");
+            assertFalse(InventoryAutomationGuard.shouldResetAfterPause());
+            level.state = Blocks.PISTON.defaultBlockState();
+            update.invoke(cleanup, residue);
+            assertTrue(paused(), "A late real piston restores cleanup ownership");
+            assertTrue(InventoryAutomationGuard.shouldResetAfterPause());
+
+            var reset = cleanup.getClass().getDeclaredMethod("reset");
+            reset.setAccessible(true); reset.invoke(cleanup);
+            assertFalse(paused());
+            assertFalse(InventoryAutomationGuard.shouldResetAfterPause());
+        }
+    }
+
+    static class CleanupLevel extends ClientLevel {
+        BlockState state;
+        CleanupChunkCache chunks;
+        CleanupLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
+        @Override public BlockState getBlockState(BlockPos pos) { return state; }
+        @Override public long getGameTime() { return 0L; }
+        boolean isChunkCached(int x, int z) { return true; }
+        @Override public ClientChunkCache getChunkSource() {
+            if (chunks == null) {
+                try {
+                    chunks = allocate(CleanupChunkCache.class);
+                    chunks.world = this;
+                    chunks.present = allocate(net.minecraft.world.level.chunk.LevelChunk.class);
+                } catch (Exception error) { throw new AssertionError(error); }
+            }
+            return chunks;
+        }
+    }
+
+    /** Cache presence is separate from native ClientLevel.hasChunk's unconditional true. */
+    static class CleanupChunkCache extends ClientChunkCache {
+        CleanupLevel world;
+        net.minecraft.world.level.chunk.LevelChunk present;
+        CleanupChunkCache() { super(null, 0); }
+        @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+                net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
+            return load || world.isChunkCached(x, z) ? present : null;
+        }
+    }
+
+    @Test void aBedrockInventoryFencePausesAutoRefillWithNoTargetsOrPredictedSwitch() throws Exception {
+        try (var f = new Fixture()) {
+            var listener = allocate(TraceListener.class);
+            listener.transport = new Connection(PacketFlow.CLIENTBOUND);
+            set(f.player, LocalPlayer.class, "connection", listener);
+            var engine = new BedrockEngine(f.client, new CooldownUtils(), () -> f.tick, new LitematicaAdapter());
+            set(f.runtime, PrinterRuntime.class, "bedrockEngine", engine);
+            var placer = get(engine, BedrockEngine.class, "placer");
+            var fence = InventorySyncPackets.prepareFence(listener.transport);
+            InventoryRecoveryFence.sent(listener.transport, fence.packet());
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.recordFence(placer, fence);
+
+            assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
+            assertFalse(f.switchGuard.isWaiting());
+            assertTrue(paused());
+            assertTrue(InventoryAutomationGuard.shouldResetAfterPause());
+            InventoryRecoveryFence.received(listener.transport);
+            assertFalse(paused(), "Only completion of the owned response boundary restores auto-refill");
+            assertFalse(InventoryAutomationGuard.shouldResetAfterPause());
+        }
+    }
+
+    static class TraceListener extends ClientPacketListener {
+        Connection transport;
+        TraceListener() { super(null, null, null); }
+        @Override public Connection getConnection() { return this.transport; }
+    }
+
     static class Player extends LocalPlayer {
         Inventory inventory;
         Player() { super(null, null, null, null, null, null, false, null); }
@@ -138,6 +252,7 @@ class InventoryAutomationGuardTest {
             set(null, Minecraft.class, "instance", client);
             set(runtime, PrinterRuntime.class, "actionBroker", broker);
             set(runtime, PrinterRuntime.class, "inventorySwitchGuard", switchGuard);
+            set(runtime, PrinterRuntime.class, "rttReplayController", new RttReplayController());
             RuntimeAccess.install(runtime);
         }
         public void close() throws Exception {

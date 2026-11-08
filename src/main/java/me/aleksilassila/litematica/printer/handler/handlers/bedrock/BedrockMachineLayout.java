@@ -152,10 +152,6 @@ public final class BedrockMachineLayout {
         return this.headPos;
     }
 
-    public Direction getPistonPlacementFace() {
-        return this.pistonOffset;
-    }
-
     public Direction getPrimingFacing() {
         return this.pistonOffset;
     }

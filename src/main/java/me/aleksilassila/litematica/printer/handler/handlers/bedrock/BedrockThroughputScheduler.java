@@ -1,7 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 /**
- * Pure scheduling policy for bedrock target advancement.
+ * Pure scheduling policy for admitting new bedrock targets.
  *
  * <p>An interval is an execution window, rather than a credit accumulator. This keeps
  * {@code interval=2, throughput=6} as a deterministic {@code 6,0,6,0} cadence and prevents

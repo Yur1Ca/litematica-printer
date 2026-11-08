@@ -87,7 +87,11 @@ public final class BedrockController {
             BedrockTorchPlacement placement,
             BedrockTarget self
     ) {
-        return engine().isTorchPlacementReservedByOtherTarget(placement, self);
+        return engine() != null && engine().isTorchPlacementReservedByOtherTarget(placement, self);
+    }
+
+    static boolean hasInFlightPowerConflict(BedrockTarget self, BlockPos torchPos) {
+        return engine() != null && engine().hasInFlightPowerConflict(self, torchPos);
     }
 
     public static void clearSubmissionPlans() {

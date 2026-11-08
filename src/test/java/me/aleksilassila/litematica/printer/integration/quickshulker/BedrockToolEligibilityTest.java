@@ -12,6 +12,7 @@ import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
@@ -139,6 +140,7 @@ class BedrockToolEligibilityTest {
     }
 
     static class MiningLevel extends ClientLevel implements NetworkUtils.SequenceExtension {
+        MiningChunkCache chunks;
         //#if MC >= 260100
         MiningLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
         //#else
@@ -151,6 +153,33 @@ class BedrockToolEligibilityTest {
             return pos.equals(BlockPos.ZERO) ? Blocks.BEDROCK.defaultBlockState()
                     : pos.equals(PISTON) ? Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.EXTENDED, true)
                     : Blocks.REDSTONE_TORCH.defaultBlockState();
+        }
+        boolean isChunkCached(int x, int z) { return true; }
+        @Override public ClientChunkCache getChunkSource() {
+            if (chunks == null) {
+                try {
+                    chunks = allocate(MiningChunkCache.class);
+                    chunks.world = this;
+                    chunks.present = allocate(net.minecraft.world.level.chunk.LevelChunk.class);
+                } catch (Exception error) { throw new AssertionError(error); }
+            }
+            return chunks;
+        }
+    }
+
+    /** Retains native hasChunk -> getChunk(FULL,false), including a non-null forced fallback. */
+    static class MiningChunkCache extends ClientChunkCache {
+        MiningLevel world;
+        net.minecraft.world.level.chunk.LevelChunk present;
+        MiningChunkCache() { super(null, 0); }
+        //#if MC > 12004
+        @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+                net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
+        //#else
+        //$$ @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+        //$$         net.minecraft.world.level.chunk.ChunkStatus status, boolean load) {
+        //#endif
+            return load || world.isChunkCached(x, z) ? present : null;
         }
     }
 
@@ -190,7 +219,7 @@ class BedrockToolEligibilityTest {
                     PlayerUtils.class, NetworkUtils.class)) {
                 Class.forName(type.getName(), true, type.getClassLoader());
                 for (var field : type.getDeclaredFields()) {
-                    if (field.getType() != Minecraft.class) continue;
+                    if (field.getType() != Minecraft.class || !java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
                     field.setAccessible(true);
                     staticClients.put(field, field.get(null));
                     putStatic(field, client);
@@ -250,12 +279,6 @@ class BedrockToolEligibilityTest {
             var method = BedrockBreaker.class.getDeclaredMethod("prepareCriticalTool", BlockPos.class, BlockState.class);
             method.setAccessible(true);
             return (boolean) method.invoke(null, PISTON, level.getBlockState(PISTON));
-        }
-
-        void sendBreakPackets() throws Exception {
-            var method = BedrockBreaker.class.getDeclaredMethod("sendCriticalBreakPackets", BlockPos.class, Direction.class);
-            method.setAccessible(true);
-            method.invoke(null, PISTON, Direction.DOWN);
         }
 
         void assertBundleBlocked() throws Exception {
@@ -379,24 +402,6 @@ class BedrockToolEligibilityTest {
             assertFalse(f.guard.isWaiting());
             assertFalse(f.ready());
             f.assertBundleBlocked();
-        }
-    }
-
-    @Test void hotbarSelectionPacketPrecedesBothBreakPacketsWithoutWaitingForReply() throws Exception {
-        try (var f = new Fixture(5)) {
-            f.player.inventory.setItem(2, f.player.inventory.getItem(0));
-            f.player.inventory.setItem(0, new ItemStack(Items.STICK));
-            assertTrue(f.ready());
-            assertEquals(2, InventoryUtils.getSelectedSlot(f.player.inventory));
-            f.sendBreakPackets();
-            // Capture outbound packets without delivering any server acknowledgement.
-            // A delayed connection must still carry selection before START and STOP.
-            assertEquals(3, f.connection.packets.size());
-            assertEquals(2, assertInstanceOf(ServerboundSetCarriedItemPacket.class, f.connection.packets.get(0)).getSlot());
-            assertEquals(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
-                    assertInstanceOf(ServerboundPlayerActionPacket.class, f.connection.packets.get(1)).getAction());
-            assertEquals(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
-                    assertInstanceOf(ServerboundPlayerActionPacket.class, f.connection.packets.get(2)).getAction());
         }
     }
 

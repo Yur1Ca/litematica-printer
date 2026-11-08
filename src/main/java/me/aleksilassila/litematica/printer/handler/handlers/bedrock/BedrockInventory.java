@@ -1,7 +1,9 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -58,6 +60,29 @@ public final class BedrockInventory {
 
     public static boolean switchToOffhand(Item item) {
         return InventoryUtils.setItemToOffhand(new ItemStack(item), CLIENT);
+    }
+
+    static boolean materialRequiresInventorySwap(Item item) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || item == null) return false;
+        if (player.getMainHandItem().is(item)
+                && VoidWarehouseTriggerItem.isUsableAsMaterial(player.getMainHandItem())) return false;
+        Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.is(item) && VoidWarehouseTriggerItem.isUsableAsMaterial(stack)) {
+                return !Inventory.isHotbarSlot(slot);
+            }
+        }
+        return false;
+    }
+
+    static boolean toolRequiresInventorySwap(BlockState state, boolean cleanup) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || state == null || state.isAir()) return false;
+        ItemStack best = cleanup ? findBestCleanupBreakingStack(player, state) : findBestBreakingStack(player, state);
+        return !best.isEmpty() && !ItemStack.isSameItemSameComponents(best, player.getMainHandItem())
+                && !Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(best));
     }
 
     public static boolean switchToBestTool(BlockState blockState) {
@@ -153,7 +178,15 @@ public final class BedrockInventory {
         if (ItemStack.isSameItemSameComponents(bestStack, player.getMainHandItem())) {
             return true;
         }
-        return InventoryUtils.setPickedItemToHand(bestStack, CLIENT);
+        boolean inventorySwap = !Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(bestStack));
+        boolean selected = InventoryUtils.setPickedItemToHand(bestStack, CLIENT);
+        if (selected && inventorySwap) {
+            // ToolSwitchService is entered after this selection. Register a real
+            // inventory SWAP here so it cannot mistake the predicted hand for a
+            // previously settled tool. A hotbar selection needs only packet order.
+            RuntimeAccess.get().inventorySwitchGuard().markSwitchIfNeeded(player.getMainHandItem());
+        }
+        return selected;
     }
 
     private static boolean isPreferredCleanupTool(ItemStack stack, BlockState blockState) {

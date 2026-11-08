@@ -122,6 +122,13 @@ abstract class ModPlugin : Plugin<Project> {
             // Range fixtures also replace a cached final client. A compiled reader can retain
             // the initial null across fixtures even after Unsafe installs the current client.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils::isWithinWorkInteractedEuclideanRange")
+            // Packet fixtures replace the same final client; a hot factory can otherwise
+            // inline the bootstrap null instead of the current fixture's connection.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::createPacket")
+            // Batch routing reads that same final cache. Keep fixture packets on the
+            // currently installed connection instead of one retained by compiled code.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::canSendPacketBatch")
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::sendPacketBatch")
             // Java 25 warns when legacy Guava/JOML code uses Unsafe. Keep the
             // compatibility access enabled only on runtimes that support this
             // switch; older Java versions must not receive an unknown option.

@@ -71,6 +71,7 @@ public class BedrockHandler extends FeatureModuleBase {
             return false;
         }
         BedrockController.tick();
+        if (this.candidatePlanner.refreshEligibility(this.level, this.player)) this.requestFullScan();
         // A full active-target lane may temporarily reject new submissions, but it must not
         // prevent already discovered candidates from reaching the controller. Previously this
         // gate made the last cached bedrock positions wait until player movement rebuilt the

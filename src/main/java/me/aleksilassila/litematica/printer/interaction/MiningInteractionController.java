@@ -383,7 +383,10 @@ public final class MiningInteractionController {
     }
 
     private void send(Action action, BlockPos pos, Direction direction) {
-        NetworkUtils.sendPacket(sequence -> this.port.actionPacket(action, pos, direction, sequence));
+        var packet = NetworkUtils.createPacket(sequence -> this.port.actionPacket(action, pos, direction, sequence));
+        var client = this.port.client();
+        if (packet == null || client.getConnection() == null) return;
+        NetworkUtils.sendPacket(packet);
     }
 
     private void logProgress(BlockPos pos) {

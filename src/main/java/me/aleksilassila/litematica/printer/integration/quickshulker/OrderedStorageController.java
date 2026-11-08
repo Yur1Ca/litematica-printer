@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import me.aleksilassila.litematica.printer.I18n;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils;
@@ -119,6 +120,9 @@ final class OrderedStorageController {
      * tracked stack after the printer has been idle for a short period.
      */
     public boolean maintainOrderlyStorage() {
+        if (deferUnopenedRestoreForBedrock()) {
+            return false;
+        }
         LocalPlayer player = client.player;
         if (player == null || client.level == null || client.gameMode == null
                 //#if MC > 260100
@@ -163,6 +167,9 @@ final class OrderedStorageController {
     }
 
     public boolean tryRestoreForInventoryPressure() {
+        if (deferUnopenedRestoreForBedrock()) {
+            return false;
+        }
         LocalPlayer player = client.player;
         if (player == null || client.level == null || client.gameMode == null
                 || !player.containerMenu.equals(player.inventoryMenu)) {
@@ -183,6 +190,21 @@ final class OrderedStorageController {
 
     public boolean hasPendingRestore() {
         return this.drain.active() || this.restoreSession.hasPending();
+    }
+
+    /** Observe activity before acquiring leases, including ticks when bedrock owns the main hand. */
+    boolean deferUnopenedRestoreForBedrock() {
+        var runtime = RuntimeAccess.currentOrNull();
+        if (runtime == null || runtime.bedrockEngine() == null || !runtime.bedrockEngine().hasActiveWork()) {
+            return false;
+        }
+        markPrinterActivity();
+        // A sent open or return click still owns its menu/cursor until it safely settles.
+        if (this.drain.active() || this.restoreSession.isWaitingForContainer()) {
+            return false;
+        }
+        clearPendingRestore();
+        return true;
     }
 
     boolean isDraining() { return this.drain.active(); }

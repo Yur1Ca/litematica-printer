@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.integration.inventory;
 
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
+import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import net.minecraft.client.Minecraft;
 
 /** Shared read of the existing inventory-operation boundaries for optional auto-refill. */
@@ -26,7 +27,8 @@ public final class InventoryAutomationGuard {
         return runtime.actionBroker().isResourceHeld(ResourceLease.INVENTORY)
                 || runtime.actionBroker().isResourceHeld(ResourceLease.CONTAINER)
                 || runtime.actionBroker().isResourceHeld(ResourceLease.MAIN_HAND)
-                || runtime.inventorySwitchGuard().isWaiting();
+                || runtime.inventorySwitchGuard().isWaiting()
+                || bedrockOwnsInventory(runtime);
     }
 
     /** Called while paused: hand use alone defers native refill/sorting without invalidating its baseline. */
@@ -37,6 +39,13 @@ public final class InventoryAutomationGuard {
         var runtime = RuntimeAccess.currentOrNull();
         return runtime != null && (runtime.actionBroker().isResourceHeld(ResourceLease.INVENTORY)
                 || runtime.actionBroker().isResourceHeld(ResourceLease.CONTAINER)
-                || runtime.inventorySwitchGuard().isWaiting());
+                || runtime.inventorySwitchGuard().isWaiting()
+                || bedrockOwnsInventory(runtime));
+    }
+
+    private static boolean bedrockOwnsInventory(PrinterRuntime runtime) {
+        // IPN is not a supply provider. Let bedrock finish its fixed-hand work
+        // before native refill can change either hand or reuse an older baseline.
+        return runtime.bedrockEngine() != null && runtime.bedrockEngine().hasActiveWork();
     }
 }

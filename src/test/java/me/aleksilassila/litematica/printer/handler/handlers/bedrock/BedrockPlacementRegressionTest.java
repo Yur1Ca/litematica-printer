@@ -16,8 +16,11 @@ import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.PacketBatchConnection;
+import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -25,12 +28,14 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -110,242 +115,133 @@ class BedrockPlacementRegressionTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {true, false})
-    void oldPistonDoesNotCancelDelayedReversePlacement(boolean extended) throws Exception {
-        try (var f = new Fixture()) {
-            f.machine(Direction.UP);
-            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState()
-                    .setValue(PistonBaseBlock.FACING, Direction.UP).setValue(PistonBaseBlock.EXTENDED, extended));
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            for (int tick = 1; tick < 8; tick++) {
-                f.tick(tick);
-                f.placer.tickPistonRetries();
-            }
-            assertTrue(f.mode.hits.isEmpty(), "Keep the RTT delay without cancelling on the old piston");
-
-            // Deliver the delayed server removal, then reach the existing retry deadline.
-            f.level.blocks.remove(TARGET.above());
-            f.level.blocks.remove(TARGET.above(2));
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "The pending reverse placement must still be retried");
-            assertEquals(TARGET.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
-
-            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.DOWN));
-            f.tick(9);
-            f.placer.tickPistonRetries();
-            f.level.blocks.remove(TARGET.above());
-            f.tick(16);
-            f.placer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "A confirmed reverse piston completes the retry");
-        }
-    }
-
-    @Test void matchingPistonCompletesBeforeTheRetryDeadline() throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.DOWN));
-            f.tick(1);
-            f.placer.tickPistonRetries();
-            f.level.blocks.remove(TARGET.above());
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty(), "No fixed wait after the expected server state is observed");
-        }
-    }
-
-    @Test void unchangedWrongFacingStillHasABoundedRetryBudget() throws Exception {
-        try (var f = new Fixture()) {
-            f.machine(Direction.UP);
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            for (int tick = 1; tick <= 48; tick++) {
-                f.tick(tick);
-                f.placer.tickPistonRetries();
-            }
-            assertEquals(4, f.mode.hits.size());
-        }
-    }
-
-    @Test void completedTargetCancelsThePendingPlacement() throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.level.blocks.remove(TARGET);
-            f.tick(1);
-            f.placer.tickPistonRetries();
-            f.level.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    @Test void cancelledTargetDoesNotLeaveALatePlacement() throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.placer.cancelPistonRetry(TARGET.above());
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    @Test void resetClearsInFlightRetriesBeforeAnotherWorldUsesTheSamePosition() throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            // BedrockEngine.reset uses this when the feature/world lifecycle ends.
-            f.placer.clearHorizontalLookState();
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    @Test void disconnectedWorldClearsPendingRetries() throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.client.level = null;
-            f.placer.tickPistonRetries();
-            f.client.level = f.level;
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    @ParameterizedTest @ValueSource(booleans = {true, false})
-    void currentAttemptKeepsItsReversePlacementWhileServerUpdatesAreIncomplete(boolean oldPistonStillPresent) throws Exception {
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void partialInitializeUpdatesDoNotRebuildBeforeTheCurrentAttemptSettles(boolean torchReceived) throws Exception {
         try (var f = new Fixture()) {
             f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
-            if (oldPistonStillPresent) {
-                f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState()
-                        .setValue(PistonBaseBlock.FACING, Direction.UP));
-            }
-            BedrockTarget target = f.target();
-            target.setHasTried(true);
-            target.setExecuteTick(0);
-            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-
-            for (int tick = 1; tick <= 8; tick++) {
-                f.tick(tick);
-                f.placer.tickPistonRetries();
-                assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.tick(false, false),
-                        "An incomplete server snapshot must not restart the machine before its pending placement settles");
-                assertTrue(target.hasTried());
-            }
-            assertEquals(1, f.mode.hits.size(), "The current attempt must actually reach its delayed reverse placement");
-
-            f.level.blocks.remove(TARGET);
-            f.tick(9);
-            f.placer.tickPistonRetries();
-            assertEquals(BedrockTarget.Status.RETRACTED, target.tick(false, false),
-                    "Confirmed completion must not wait for the remaining retry budget");
-        }
-    }
-
-    @Test void pendingReversePlacementStillRespectsTheExistingAttemptDeadline() throws Exception {
-        try (var f = new Fixture()) {
-            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
-            var placer = new BedrockPlacer(f.client, new BedrockNetworkSync(f.runtime::currentTick, () -> 40));
-            BedrockTarget target = f.target(TARGET, Direction.UP, placer);
-            target.setHasTried(true);
-            target.setExecuteTick(0);
-            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
-            placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-
-            for (int tick = 1; tick < 56; tick++) {
-                f.tick(tick);
-                placer.tickPistonRetries();
-                assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.tick(false, false));
-            }
-            assertEquals(1, f.mode.hits.size());
-            f.tick(56);
-            placer.tickPistonRetries();
-            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.tick(false, false));
-            assertFalse(target.hasTried(), "Pending placement must not create an unbounded wait");
-            f.tick(80);
-            placer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "A timed-out attempt must not place into the next machine");
-        }
-    }
-
-    @Test void collapsedAttemptWithoutPendingPlacementKeepsItsExistingRecovery() throws Exception {
-        try (var f = new Fixture()) {
-            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
-            BedrockTarget target = f.target();
-            target.setHasTried(true);
-            target.setExecuteTick(0);
-            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
-            for (int tick = 1; tick <= 4; tick++) {
-                f.tick(tick);
-                target.tick(false, false);
-            }
-            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.getStatus());
-            assertFalse(target.hasTried());
-        }
-    }
-
-    @Test void restartingAnAttemptCancelsItsOldDelayedPlacement() throws Exception {
-        try (var f = new Fixture()) {
-            BedrockTarget target = f.target();
-            target.setHasTried(true);
-            target.setExecuteTick(0);
+            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.UP));
+            if (torchReceived) f.level.blocks.put(TARGET.east().above(), Blocks.REDSTONE_TORCH.defaultBlockState());
+            var target = f.target();
             var state = (BedrockTargetState) get(target, BedrockTarget.class, "state");
-            state.setStatus(BedrockTarget.Status.NEEDS_WAITING);
-            for (int tick = 0; tick < 4; tick++) state.beginTick(true);
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
+            // A rebuilt target can already be old when a fresh initialization is sent.
+            state.beginTick(0);
+            state.beginTick(100);
+            f.tick(100);
+            target.setInitializeTick(state.tickTimes());
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            f.tick(f.runtime.currentTick() + 1);
+            assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.refreshStatusOnly(),
+                    "The observation must keep the freshly initialized machine out of powered-stall recovery");
+            assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.tick(false, false),
+                    "An unextended piston is an intermediate update, not permission to dismantle it");
+            assertTrue(f.mode.hits.isEmpty(), "Do not send another placement while initialization is in flight");
 
-            target.resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty(), "The previous attempt must not place into the rebuilt machine");
-
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.tick(16);
-            f.placer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "A later attempt can still schedule its own retry");
+            f.machine(Direction.UP);
+            assertEquals(BedrockTarget.Status.EXTENDED, target.tick(false, false),
+                    "A confirmed extension must advance immediately without waiting out the timeout");
+            assertTrue(f.mode.hits.isEmpty());
         }
     }
 
-    @Test void resettingOneTargetPreservesAnotherTargetsRetry() throws Exception {
+    @Test void unextendedInitializationEventuallyBecomesRecoverable() throws Exception {
         try (var f = new Fixture()) {
-            BlockPos other = TARGET.east(2);
-            f.level.blocks.put(other, Blocks.BEDROCK.defaultBlockState());
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.placer.schedulePistonRetry(other, other.above(), Direction.DOWN);
-            f.target().resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
-            f.tick(8);
-            f.placer.tickPistonRetries();
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            f.level.blocks.put(TARGET.east().above(), Blocks.REDSTONE_TORCH.defaultBlockState());
+            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.UP));
+            var target = f.target();
+            target.setInitializeTick(0);
+            var state = (BedrockTargetState) get(target, BedrockTarget.class, "state");
+            state.beginTick(0);
+            for (int tick = 1; tick < target.postExecuteSyncTimeoutTicks(); tick++) {
+                f.tick(f.runtime.currentTick() + 1);
+                assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.refreshStatusOnly());
+            }
+            f.tick(f.runtime.currentTick() + 1);
+            assertEquals(BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE, target.refreshStatusOnly(),
+                    "A genuinely stalled initialization must still recover after its bounded confirmation window");
+        }
+    }
+
+    @Test void repoweringStartsANewConfirmationWindowInsteadOfImmediatelyRebuilding() throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.UP));
+            f.client.player.getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH));
+            var target = f.target();
+            var state = (BedrockTargetState) get(target, BedrockTarget.class, "state");
+            state.beginTick(0);
+            state.beginTick(100);
+            f.tick(100);
+            target.setInitializeTick(0);
+            assertTrue(target.tryRepowerTorch());
             assertEquals(1, f.mode.hits.size());
-            assertEquals(other.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
+
+            f.level.blocks.put(TARGET.east().above(), Blocks.REDSTONE_TORCH.defaultBlockState());
+            assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.refreshStatusOnly(),
+                    "The new torch must be allowed to extend the piston before dismantling the machine");
+            f.machine(Direction.UP);
+            assertEquals(BedrockTarget.Status.EXTENDED, target.refreshStatusOnly());
+        }
+    }
+
+
+    @Test void dispatchedAttemptNeverAddsLateReversePlacements() throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            var target = f.target();
+            f.machine(Direction.UP);
+            target.setHasTried(true);
+            target.setExecuteTick(0);
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            for (int tick = 0; tick <= 56; tick++) {
+                f.tick(tick);
+                target.settleDispatchedAttempt(false);
+            }
+            assertEquals(BedrockTarget.Status.RECOVERING, target.getStatus());
+            assertFalse(target.hasTried());
+            assertTrue(f.mode.hits.isEmpty(), "An expired retract event is never rescued by a later use packet");
+        }
+    }
+
+    @Test void collapsedAttemptClosesBeforeANewMachineIsPrepared() throws Exception {
+        try (var f = new Fixture()) {
+            f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
+            var target = f.target();
+            target.setHasTried(true);
+            target.setExecuteTick(0);
+            target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            for (int tick = 0; tick <= 4; tick++) {
+                f.tick(tick);
+                target.settleDispatchedAttempt(false);
+            }
+            assertEquals(BedrockTarget.Status.RECOVERING, target.getStatus());
+            assertFalse(target.hasTried());
+            assertTrue(f.mode.hits.isEmpty(), "Draining an old attempt does not begin its successor");
         }
     }
 
     @Test void completedBedrockDoesNotWaitForTheConfirmationTimeout() throws Exception {
         try (var f = new Fixture()) {
-            BedrockTarget target = f.target();
-            assertEquals(56, target.postExecuteSyncTimeoutTicks());
+            var target = f.target();
             target.setHasTried(true);
             target.setExecuteTick(0);
             f.level.blocks.remove(TARGET);
             assertEquals(BedrockTarget.Status.RETRACTED, target.refreshStatusOnly());
+            assertTrue(f.mode.hits.isEmpty());
         }
     }
 
-    @Test void restartingHorizontalAttemptReleasesItsPendingRetryLook() throws Exception {
+    @Test void restartingHorizontalAttemptReleasesItsPreparedLook() throws Exception {
         try (var f = new Fixture()) {
-            BedrockTarget target = f.target(TARGET, Direction.EAST, f.placer);
-            f.placer.schedulePistonRetry(TARGET, target.getPistonPos(), Direction.WEST);
-            f.tick(8);
-            f.placer.tickPistonRetries();
+            var target = f.target(TARGET, Direction.EAST, f.placer);
+            f.placer.preparePistonPlacementLook(target.getPistonPos(), Direction.WEST);
             assertTrue(target.hasPendingHorizontalLook());
             assertNotNull(NetworkUtils.getScopedLookOverride());
 
-            target.resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
-            assertFalse(target.hasPendingHorizontalLook(), "The old retry's look must not survive its attempt");
+            target.resetPostExecuteAttempt(BedrockTarget.Status.RECOVERING);
+
+            assertFalse(target.hasPendingHorizontalLook());
             assertNull(NetworkUtils.getScopedLookOverride());
-            f.tick(16);
-            f.placer.tickPistonRetries();
             assertTrue(f.mode.hits.isEmpty());
         }
     }
@@ -355,148 +251,154 @@ class BedrockPlacementRegressionTest {
             BlockPos sidePiston = TARGET.east(3);
             f.placer.preparePistonPlacementLook(sidePiston, Direction.WEST);
             var look = NetworkUtils.getScopedLookOverride();
-            assertNotNull(look);
-            f.placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
 
-            f.target().resetPostExecuteAttempt(BedrockTarget.Status.UNINITIALIZED);
+            f.target().resetPostExecuteAttempt(BedrockTarget.Status.RECOVERING);
+
             assertTrue(f.placer.hasPendingHorizontalLook(sidePiston));
             assertSame(look, NetworkUtils.getScopedLookOverride());
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {true, false})
-    void confirmedHorizontalRetryReleasesItsPendingLook(boolean targetCompleted) throws Exception {
-        try (var f = new Fixture()) {
-            f.placer.schedulePistonRetry(TARGET, TARGET.east(), Direction.WEST);
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertTrue(f.placer.hasPendingHorizontalLook(TARGET.east()));
-            if (targetCompleted) f.level.blocks.remove(TARGET);
-            else f.level.blocks.put(TARGET.east(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.WEST));
-
-            f.tick(9);
-            f.placer.tickPistonRetries();
-            assertFalse(f.placer.hasPendingHorizontalLook(TARGET.east()));
-            assertNull(NetworkUtils.getScopedLookOverride());
-            assertTrue(f.mode.hits.isEmpty(), "The delayed confirmation needs no further placement");
-        }
-    }
-
-    @Test void retiringHorizontalTargetPreservesAnotherTargetsDelayedRetry() throws Exception {
+    @Test void retiringCompletedHorizontalTargetReleasesItsLook() throws Exception {
         try (var f = new Fixture()) {
             var targets = new BedrockTargetRegistry();
-            BedrockTarget side = f.target(TARGET, Direction.EAST, f.placer);
+            var side = f.target(TARGET, Direction.EAST, f.placer);
             targets.add(side);
             f.placer.preparePistonPlacementLook(side.getPistonPos(), Direction.WEST);
-            BlockPos other = TARGET.west(3);
-            f.level.blocks.put(other, Blocks.BEDROCK.defaultBlockState());
-            f.level.blocks.put(other.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.UP));
-            f.placer.schedulePistonRetry(other, other.above(), Direction.DOWN);
-            f.tick(1);
-            f.placer.tickPistonRetries();
             f.level.blocks.remove(TARGET);
             var executor = new BedrockTargetExecutor(targets,
                     new BedrockCleanupCoordinator(f.client, new CooldownUtils()), new BedrockRunStats(),
                     (pos, ticks) -> fail("Completed targets do not need a cooldown"),
-                    f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8));
+                    f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8), () -> false);
 
             executor.process(f.level, 0, false, new LinkedHashSet<>(), side, true);
+
             assertTrue(targets.isEmpty());
             assertFalse(side.hasPendingHorizontalLook());
             assertNull(NetworkUtils.getScopedLookOverride());
-            f.level.blocks.remove(other.above());
-            f.tick(8);
-            f.placer.tickPistonRetries();
-            assertEquals(1, f.mode.hits.size(), "Retiring one machine must not clear another machine's retry");
-            assertEquals(other.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
+            assertTrue(f.mode.hits.isEmpty());
         }
     }
 
     @ParameterizedTest @ValueSource(ints = {4, 8})
-    void leavingSelectionCancelsRetryEvenOnItsDeadline(int removalTick) throws Exception {
-        try (var f = new Fixture()) {
-            var engine = f.engine();
-            var placer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
-            var targets = (BedrockTargetRegistry) get(engine, BedrockEngine.class, "targets");
-            targets.add(f.target(TARGET, Direction.UP, placer));
-            f.machine(Direction.UP);
-            placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            f.tick(1);
-            placer.tickPistonRetries();
-            f.level.blocks.remove(TARGET.above());
-            f.level.blocks.remove(TARGET.above(2));
-            assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET));
-
-            f.tick(removalTick);
-            engine.tick();
-            assertTrue(targets.isEmpty());
-            f.tick(16);
-            engine.tick();
-            assertTrue(f.mode.hits.isEmpty(), "A target removed from the selection must not dispatch a late placement");
-        }
-    }
-
-    @Test void leavingSelectionDiscardsThePendingNetworkAttempt() throws Exception {
+    void leavingSelectionDropsPreparedPlacementAndNetworkObservation(int removalTick) throws Exception {
         try (var f = new Fixture()) {
             var engine = f.engine();
             var placer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
             var targets = (BedrockTargetRegistry) get(engine, BedrockEngine.class, "targets");
             var sync = (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync");
-            var target = f.target(TARGET, Direction.UP, placer);
+            var target = f.target(TARGET, Direction.EAST, placer);
             targets.add(target);
+            placer.preparePistonPlacementLook(target.getPistonPos(), Direction.WEST);
             sync.beginAttempt(TARGET, target.getMachineFootprint());
-            assertEquals(1, sync.pendingCount());
             assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET));
 
-            f.tick(1);
+            f.tick(removalTick);
             engine.tick();
 
             assertTrue(targets.isEmpty());
-            assertEquals(0, sync.pendingCount(), "A target leaving the selection must also release its network observation");
+            assertEquals(0, sync.pendingCount());
+            assertFalse(target.hasPendingHorizontalLook());
             sync.onServerBlockUpdate(TARGET);
-            assertEquals(0, sync.pendingCount(), "Late updates must not restore an abandoned attempt");
+            f.tick(80);
+            engine.tick();
+            assertTrue(f.mode.hits.isEmpty());
+        }
+    }
+
+    @Test void networkObservationKeepsContinuationAliveAndRetryClosesIt() throws Exception {
+        try (var f = new Fixture()) {
+            var engine = f.engine();
+            var sync = (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync");
+            sync.beginAttempt(TARGET, java.util.Set.of(TARGET));
+            assertTrue(engine.hasActiveWork());
+
+            sync.recordRetry(TARGET);
+
+            assertFalse(engine.hasActiveWork());
         }
     }
 
     @ParameterizedTest @ValueSource(strings = {"work_switch_disabled", "execution_scope_changed", "client_scope_changed", "disconnect"})
-    void runtimeResetCancelsDelayedPlacementAndLookBeforePositionReuse(String reason) throws Exception {
+    void runtimeResetDropsPreparedLookAndNetworkObservationBeforePositionReuse(String reason) throws Exception {
         try (var f = new Fixture()) {
             var engine = f.engine();
             var placer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
-            placer.schedulePistonRetry(TARGET, TARGET.above(), Direction.DOWN);
-            placer.schedulePistonRetry(TARGET, TARGET.east(), Direction.WEST);
+            var sync = (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync");
             placer.preparePistonPlacementLook(TARGET.east(), Direction.WEST);
+            sync.beginAttempt(TARGET, java.util.Set.of(TARGET));
             assertNotNull(NetworkUtils.getScopedLookOverride());
 
             f.runtime.reset(reason);
+
             assertFalse(placer.hasPendingHorizontalLook(TARGET.east()));
             assertNull(NetworkUtils.getScopedLookOverride());
-            var nextLevel = f.allocate(TestLevel.class);
-            nextLevel.blocks = new HashMap<>();
-            nextLevel.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
-            f.client.level = nextLevel;
-            set(f.client.player, LocalPlayer.class, "connection", f.allocate(TestConnection.class));
-            f.tick(80);
-            placer.tickPistonRetries();
-            assertTrue(f.mode.hits.isEmpty(), "No old-world placement may reach the next connection");
+            assertEquals(0, sync.pendingCount());
+            assertFalse(engine.hasActiveWork());
+            sync.onServerBlockUpdate(TARGET);
+            assertEquals(0, sync.pendingCount());
+            assertTrue(f.mode.hits.isEmpty());
         }
     }
 
-    static class TestLevel extends ClientLevel {
+    static class TestLevel extends ClientLevel implements NetworkUtils.SequenceExtension {
         Map<BlockPos, BlockState> blocks;
+        net.minecraft.world.level.border.WorldBorder border;
+        TestChunkCache chunks;
         //#if MC >= 12102
         TestLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
         //#else
         //$$ TestLevel() { super(null, null, null, null, 0, 0, null, null, false, 0L); }
         //#endif
         @Override public BlockState getBlockState(BlockPos pos) { return blocks.getOrDefault(pos, Blocks.AIR.defaultBlockState()); }
+        @Override public List<Entity> getEntities(Entity except, net.minecraft.world.phys.AABB bounds,
+                                                  java.util.function.Predicate<? super Entity> filter) {
+            // These Unsafe-created fixtures have no entity manager or installed entities.
+            // Keep vanilla block collision queries available through an explicit empty entity port.
+            return List.of();
+        }
+        @Override public net.minecraft.world.level.border.WorldBorder getWorldBorder() {
+            if (border == null) border = new net.minecraft.world.level.border.WorldBorder();
+            return border;
+        }
         @Override public long getGameTime() { return 0L; }
+        boolean isChunkCached(int x, int z) { return true; }
+        @SuppressWarnings({"removal", "deprecation"})
+        @Override public ClientChunkCache getChunkSource() {
+            if (chunks == null) {
+                try {
+                    var unsafe = (sun.misc.Unsafe) get(null, sun.misc.Unsafe.class, "theUnsafe");
+                    chunks = (TestChunkCache) unsafe.allocateInstance(TestChunkCache.class);
+                    chunks.world = this;
+                    chunks.present = (net.minecraft.world.level.chunk.LevelChunk) unsafe.allocateInstance(
+                            net.minecraft.world.level.chunk.LevelChunk.class);
+                } catch (Exception error) { throw new AssertionError(error); }
+            }
+            return chunks;
+        }
         //#if MC >= 12102
         @Override public int getMinY() { return -64; }
         //#else
         //$$ @Override public int getMinBuildHeight() { return -64; }
         //#endif
         @Override public int getHeight() { return 384; }
+    }
+
+    /** The real ChunkSource.hasChunk probes getChunk(FULL, false); only cache presence is replaced. */
+    static class TestChunkCache extends ClientChunkCache {
+        TestLevel world;
+        net.minecraft.world.level.chunk.LevelChunk present;
+        TestChunkCache() { super(null, 0); }
+        //#if MC > 12004
+        @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+                net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
+        //#else
+        //$$ @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+        //$$         net.minecraft.world.level.chunk.ChunkStatus status, boolean load) {
+        //#endif
+            // A forced missing query also returns a non-null empty-chunk placeholder in vanilla.
+            return world.isChunkCached(x, z) || load ? present : null;
+        }
     }
 
     static class TestPlayer extends LocalPlayer {
@@ -511,10 +413,13 @@ class BedrockPlacementRegressionTest {
         //$$ TestPlayer() { super(null, null, null, null, null, false, false); }
         //#endif
         @Override public Inventory getInventory() { return inventory; }
+        @Override public ItemStack getMainHandItem() { return inventory.getItem(InventoryUtils.getSelectedSlot(inventory)); }
+        @Override public ItemStack getOffhandItem() { return inventory.getItem(40); }
         @Override public boolean isShiftKeyDown() { return false; }
     }
 
     static class TestConnection extends ClientPacketListener {
+        CaptureTransport transport;
         //#if MC >= 12002
         TestConnection() { super(null, null, null); }
         //#elseif MC >= 11904
@@ -522,15 +427,34 @@ class BedrockPlacementRegressionTest {
         //#else
         //$$ TestConnection() { super(null, null, null, null, null); }
         //#endif
-        @Override public void send(Packet<?> packet) { }
+        @Override public void send(Packet<?> packet) {
+            if (this.transport != null) this.transport.capture(packet);
+        }
+        @Override public net.minecraft.network.Connection getConnection() { return this.transport; }
+    }
+
+    static class CaptureTransport extends net.minecraft.network.Connection implements PacketBatchConnection {
+        List<Packet<?>> packets;
+        CaptureTransport() { super(PacketFlow.CLIENTBOUND); }
+        void capture(Packet<?> packet) {
+            InventoryRecoveryFence.inputSent(this, packet);
+            this.packets.add(packet);
+            InventoryRecoveryFence.sent(this, packet);
+        }
+        @Override public boolean litematica_printer$sendBatch(List<Packet<?>> packets) {
+            packets.forEach(this::capture);
+            return true;
+        }
     }
 
     static class TestGameMode extends MultiPlayerGameMode implements MultiPlayerGameModeExtension {
         List<BlockHitResult> hits;
         List<Boolean> predictions;
+        boolean rejectMutations;
         TestGameMode() { super(null, null); }
         @Override public net.minecraft.world.level.GameType getPlayerMode() { return net.minecraft.world.level.GameType.SURVIVAL; }
         @Override public InteractionResult litematica_printer$useItemOn(boolean prediction, InteractionHand hand, BlockHitResult hit) {
+            if (rejectMutations) throw new AssertionError("An observing attempt attempted to place a block");
             assertEquals(InteractionHand.OFF_HAND, hand);
             hits.add(hit);
             predictions.add(prediction);
@@ -553,11 +477,14 @@ class BedrockPlacementRegressionTest {
         final TestGameMode mode;
         final PrinterRuntime runtime;
         final BedrockPlacer placer;
+        final TestConnection connection;
+        final CaptureTransport transport;
 
         Fixture() throws Exception {
             unsafe = (sun.misc.Unsafe) get(null, sun.misc.Unsafe.class, "theUnsafe");
             client = allocate(Minecraft.class);
             level = allocate(TestLevel.class);
+            level.border = new net.minecraft.world.level.border.WorldBorder();
             set(level, Level.class, "dimension", Level.OVERWORLD);
             level.blocks = new HashMap<>();
             level.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
@@ -567,21 +494,28 @@ class BedrockPlacementRegressionTest {
             //#else
             //$$ player.inventory = new Inventory(player);
             //#endif
+            set(player, Player.class, "inventory", player.inventory);
+            set(player, Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
+            player.containerMenu = player.inventoryMenu;
             player.inventory.setItem(40, new ItemStack(Items.PISTON, 16));
             set(player, Entity.class, "position", new Vec3(0.5, 64, 0.5));
             set(player, Entity.class, "eyeHeight", 1.5F);
-            set(player, LocalPlayer.class, "connection", allocate(TestConnection.class));
+            connection = allocate(TestConnection.class);
+            transport = allocate(CaptureTransport.class);
+            transport.packets = new ArrayList<>();
+            connection.transport = transport;
+            set(player, LocalPlayer.class, "connection", connection);
             mode = allocate(TestGameMode.class);
             mode.hits = new ArrayList<>();
             mode.predictions = new ArrayList<>();
             client.level = level;
             client.player = player;
             client.gameMode = mode;
-            for (var type : List.of(BedrockInventory.class, InventoryUtils.class, InteractionUtils.class,
+            for (var type : List.of(BedrockInventory.class, BedrockBreaker.class, InventoryUtils.class, InteractionUtils.class,
                     ConfigUtils.class, PlayerUtils.class, NetworkUtils.class)) {
                 Class.forName(type.getName(), true, type.getClassLoader());
                 for (var field : type.getDeclaredFields()) {
-                    if (field.getType() != Minecraft.class) continue;
+                    if (field.getType() != Minecraft.class || !java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
                     field.setAccessible(true);
                     cachedClients.put(field, field.get(null));
                     unsafe.putObject(unsafe.staticFieldBase(field), unsafe.staticFieldOffset(field), client);

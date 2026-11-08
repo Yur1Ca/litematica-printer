@@ -5,18 +5,12 @@ final class BedrockSchedulingPolicy {
     private BedrockSchedulingPolicy() {
     }
 
+    static int effectiveThroughput(int throughput, boolean allowSide) {
+        return allowSide ? 1 : Math.max(1, throughput);
+    }
+
     static int verticalActiveCap(int throughput) {
         return Math.max(1, throughput);
-    }
-
-    static int submitCap(int throughput, int cleanupPressure) {
-        int base = Math.max(1, throughput);
-        int pressureSteps = Math.max(0, cleanupPressure) / lowCleanupPressureThreshold(throughput);
-        return Math.max(1, base - pressureSteps);
-    }
-
-    static int lowCleanupPressureThreshold(int throughput) {
-        return Math.max(8, Math.max(1, throughput));
     }
 
     static int mediumCleanupPressureThreshold(int throughput) {

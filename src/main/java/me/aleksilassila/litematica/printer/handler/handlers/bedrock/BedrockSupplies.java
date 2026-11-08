@@ -20,8 +20,7 @@ final class BedrockSupplies {
             preparing = true;
             var piston = level.getBlockState(target.getPistonPos());
             boolean installed = piston.is(Blocks.PISTON)
-                    && (piston.getValue(PistonBaseBlock.FACING) == target.layout().getPrimingFacing()
-                        || piston.getValue(PistonBaseBlock.FACING) == target.layout().getExecuteFacing());
+                    && piston.getValue(PistonBaseBlock.FACING) == target.layout().getPrimingFacing();
             Requirement missing = missing(installed ? 1 : 2,
                     target.hasOwnedTorchPowerSource() ? 0 : 1,
                     target.getSlimePos() == null || level.getBlockState(target.getSlimePos()).is(Blocks.SLIME_BLOCK) ? 0 : 1);
@@ -43,6 +42,15 @@ final class BedrockSupplies {
         while (iterator.hasNext()) {
             BedrockTarget target = iterator.next();
             if (target != null && target.hasTried()) return true;
+        }
+        return false;
+    }
+
+    static boolean hasRecoveringMachine(BedrockTargetRegistry targets) {
+        var iterator = targets.iterator();
+        while (iterator.hasNext()) {
+            BedrockTarget target = iterator.next();
+            if (target != null && target.getStatus() == BedrockTarget.Status.RECOVERING) return true;
         }
         return false;
     }

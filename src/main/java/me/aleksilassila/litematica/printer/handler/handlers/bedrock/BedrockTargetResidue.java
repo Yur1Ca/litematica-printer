@@ -9,56 +9,35 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Classifies and cleans transient machine residue for one target. */
 final class BedrockTargetResidue {
-    private static final int CLEANUP_INTERVAL_TICKS = 4;
-
     private final ClientLevel level;
     private final BedrockMachineLayout layout;
     private final BlockPos pistonPos;
     private final BlockPos headPos;
-    private int lastStableCleanupTick = -1;
-    private int lastPollutedCleanupTick = -1;
+    private final BedrockPlacer placer;
 
-    BedrockTargetResidue(
-            ClientLevel level,
-            BedrockMachineLayout layout,
-            BlockPos pistonPos,
-            BlockPos headPos
-    ) {
+    BedrockTargetResidue(ClientLevel level, BedrockMachineLayout layout,
+                         BlockPos pistonPos, BlockPos headPos, BedrockPlacer placer) {
         this.level = level;
         this.layout = layout;
         this.pistonPos = pistonPos;
         this.headPos = headPos;
+        this.placer = placer;
     }
 
-    void resetAttempt() {
-        this.lastStableCleanupTick = -1;
-        this.lastPollutedCleanupTick = -1;
+    boolean hasRecoveryResidue(java.util.Set<BlockPos> torches) {
+        return !torches.isEmpty() || this.hasCleanupResidue(this.pistonPos) || this.hasCleanupResidue(this.headPos);
+    }
+
+    boolean cleanupRecoveryResidue(int tickTimes, java.util.Set<BlockPos> torches) {
+        if (!this.hasRecoveryResidue(torches)) return false;
+        for (BlockPos torch : torches) BedrockBreaker.breakBlock(torch, Direction.DOWN, false, this.placer);
+        if (this.hasCleanupResidue(this.headPos)) BedrockBreaker.breakBlock(this.headPos, false, this.placer);
+        if (this.hasCleanupResidue(this.pistonPos)) BedrockBreaker.breakBlock(this.pistonPos, false, this.placer);
+        return true;
     }
 
     boolean hasCleanupResidue(BlockPos pos) {
         return pos != null && BedrockTargetBlocks.isCleanupResidue(this.level.getBlockState(pos));
-    }
-
-    boolean hasMachineCleanupResidue(BlockPos slimePos, BlockPos torchPos) {
-        return this.hasCleanupResidue(this.pistonPos)
-                || this.hasCleanupResidue(this.headPos)
-                || this.hasCleanupResidue(slimePos)
-                || this.hasCleanupResidue(torchPos);
-    }
-
-    boolean hasPostExecuteSyncResidue() {
-        return this.hasCleanupResidue(this.pistonPos) || this.hasCleanupResidue(this.headPos);
-    }
-
-    boolean isPostExecuteCollapsed(boolean hasTried) {
-        return hasTried
-                && this.level.getBlockState(this.pistonPos).isAir()
-                && !this.level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD);
-    }
-
-    boolean hasTransientMachineResidue() {
-        return this.isTransientMachineResidue(this.pistonPos, false)
-                || this.isTransientMachineResidue(this.headPos, true);
     }
 
     boolean hasAnyTransientMachineResidue(BlockPos torchSupportPos, BlockPos slimePos) {
@@ -68,32 +47,27 @@ final class BedrockTargetResidue {
                 || this.isTransientMachineResidue(slimePos, false);
     }
 
-    boolean hasStablePostExecuteResidue() {
-        return this.isStablePostExecuteResidue(this.pistonPos, false)
-                || this.isStablePostExecuteResidue(this.headPos, true);
-    }
-
-    boolean cleanupStablePostExecuteResidue(int tickTimes) {
-        if (this.lastStableCleanupTick >= 0
-                && tickTimes - this.lastStableCleanupTick < CLEANUP_INTERVAL_TICKS) {
-            return false;
-        }
-        boolean headResidue = this.isStablePostExecuteResidue(this.headPos, true);
-        boolean pistonResidue = this.isStablePostExecuteResidue(this.pistonPos, false);
-        if (!headResidue && !pistonResidue) {
-            return false;
-        }
-        this.lastStableCleanupTick = tickTimes;
-        if (headResidue) {
-            BedrockBreaker.breakBlock(this.headPos, false);
-        }
-        if (pistonResidue) {
-            BedrockBreaker.breakBlock(this.pistonPos, false);
-        }
-        return true;
-    }
-
     boolean hasPollutedMachineState(
+            BedrockTargetState state,
+            int syncTimeoutTicks,
+            BedrockTargetMachine machine
+    ) {
+        return this.hasPollutedMachineState(
+                state.hasTried(), state.executeTick(), state.tickTimes(), syncTimeoutTicks,
+                machine.torchPlacement(), machine.torchSupportPos(), machine.slimePos());
+    }
+
+    boolean cleanupPollutedMachineState(
+            BedrockTargetState state,
+            int syncTimeoutTicks,
+            BedrockTargetMachine machine
+    ) {
+        return this.cleanupPollutedMachineState(
+                state.tickTimes(), state.hasTried(), state.executeTick(), syncTimeoutTicks,
+                machine.torchPlacement(), machine.torchSupportPos(), machine.slimePos());
+    }
+
+    private boolean hasPollutedMachineState(
             boolean hasTried,
             int executeTick,
             int tickTimes,
@@ -109,7 +83,7 @@ final class BedrockTargetResidue {
                 || this.isPollutedSlimeSupportState(slimePos);
     }
 
-    boolean cleanupPollutedMachineState(
+    private boolean cleanupPollutedMachineState(
             int tickTimes,
             boolean hasTried,
             int executeTick,
@@ -118,10 +92,6 @@ final class BedrockTargetResidue {
             BlockPos torchSupportPos,
             BlockPos slimePos
     ) {
-        if (this.lastPollutedCleanupTick >= 0
-                && tickTimes - this.lastPollutedCleanupTick < CLEANUP_INTERVAL_TICKS) {
-            return false;
-        }
         boolean pollutedPiston = this.isPollutedPistonState();
         boolean pollutedHead = this.isPollutedHeadState(hasTried, executeTick, tickTimes, syncTimeoutTicks);
         boolean pollutedTorchSupport = this.isPollutedTorchSupportState(
@@ -132,22 +102,12 @@ final class BedrockTargetResidue {
                 && !pollutedTorch && !pollutedSlime) {
             return false;
         }
-        this.lastPollutedCleanupTick = tickTimes;
-        if (pollutedTorch) BedrockBreaker.breakBlock(torchPlacement.getTorchPos(), false);
-        if (pollutedHead) BedrockBreaker.breakBlock(this.headPos, false);
-        if (pollutedPiston) BedrockBreaker.breakBlock(this.pistonPos, false);
-        if (pollutedTorchSupport) BedrockBreaker.breakBlock(torchSupportPos, false);
-        if (pollutedSlime) BedrockBreaker.breakBlock(slimePos, false);
+        if (pollutedTorch) BedrockBreaker.breakBlock(torchPlacement.getTorchPos(), false, this.placer);
+        if (pollutedHead) BedrockBreaker.breakBlock(this.headPos, false, this.placer);
+        if (pollutedPiston) BedrockBreaker.breakBlock(this.pistonPos, false, this.placer);
+        if (pollutedTorchSupport) BedrockBreaker.breakBlock(torchSupportPos, false, this.placer);
+        if (pollutedSlime) BedrockBreaker.breakBlock(slimePos, false, this.placer);
         return true;
-    }
-
-    private boolean isStablePostExecuteResidue(BlockPos pos, boolean headSlot) {
-        if (pos == null) {
-            return false;
-        }
-        BlockState state = this.level.getBlockState(pos);
-        return BedrockTargetBlocks.isCleanupResidue(state)
-                && !this.isTransientMachineResidue(pos, headSlot);
     }
 
     private boolean isTransientMachineResidue(BlockPos pos, boolean headSlot) {

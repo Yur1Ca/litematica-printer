@@ -8,15 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BedrockSchedulingPolicyTest {
     @Test
-    void cleanupPressureReducesSubmissionGradually() {
-        assertEquals(6, BedrockSchedulingPolicy.submitCap(6, 0));
-        assertEquals(5, BedrockSchedulingPolicy.submitCap(6, 8));
-        assertEquals(4, BedrockSchedulingPolicy.submitCap(6, 16));
-        assertEquals(1, BedrockSchedulingPolicy.submitCap(6, 40));
-        assertEquals(1, BedrockSchedulingPolicy.submitCap(1, 10_000));
-    }
-
-    @Test
     void onlyActionableMachineStatesConsumeActiveCapacity() {
         assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.UNINITIALIZED));
         assertTrue(BedrockSchedulingPolicy.countsTowardsActiveCap(BedrockTarget.Status.EXTENDED));

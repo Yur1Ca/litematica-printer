@@ -153,6 +153,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void tick() {
+        this.orderedStorage.deferUnopenedRestoreForBedrock();
         if (this.requests.isCancelling() || this.orderedStorage.isDraining()
                 || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             if (!this.acquireResources()) return;

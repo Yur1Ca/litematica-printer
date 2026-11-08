@@ -86,6 +86,72 @@ class BedrockRestockCleanupTest {
         }
     }
 
+    @Test void anAirConfirmationKeepsWatchingForALaterPistonFromTheRetiredAttempt() throws Exception {
+        try (var f = new BedrockRestockTest.Fixture()) {
+            var cleanup = retireAttempt(f);
+            cleanup.onServerBlockUpdate(TARGET);
+            assertFalse(cleanup.contains(TARGET), "An air confirmation clears the current cleanup work");
+
+            f.level.blocks.put(TARGET, Blocks.PISTON.defaultBlockState());
+            cleanup.onServerBlockUpdate(TARGET);
+            assertTrue(cleanup.contains(TARGET), "A later in-flight placement still belongs to the retired attempt");
+            assertTrue(f.mode.hits.isEmpty(), "Watching a late update must not replay placement or start mining");
+        }
+    }
+
+    @Test void releasingAnAirSlotForAdmissionKeepsWatchingTheRetiredAttempt() throws Exception {
+        try (var f = new BedrockRestockTest.Fixture()) {
+            var cleanup = retireAttempt(f);
+            var candidate = f.target(TARGET.below(), Direction.UP, f.enginePlacer);
+            var admission = get(f.engine, BedrockEngine.class, "admission");
+            var conflict = BedrockAdmissionController.class.getDeclaredMethod("findPendingCleanupConflict", BedrockTarget.class);
+            conflict.setAccessible(true);
+            assertNull(conflict.invoke(admission, candidate));
+            assertFalse(cleanup.contains(TARGET), "Admission can release the currently empty machine position");
+
+            f.level.blocks.put(TARGET, Blocks.PISTON.defaultBlockState());
+            cleanup.onServerBlockUpdate(TARGET);
+            assertTrue(cleanup.contains(TARGET), "Releasing an empty queue entry must retain its short-lived late-update watch");
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void anExpiredCleanupWatchCannotReclaimALaterPiston(boolean beginTickFirst) throws Exception {
+        try (var f = new BedrockRestockTest.Fixture()) {
+            var cleanup = retireAttempt(f);
+            cleanup.onServerBlockUpdate(TARGET);
+            var clockLevel = f.allocate(ClockedLevel.class);
+            clockLevel.blocks = f.level.blocks;
+            clockLevel.tick = 201L; // Beyond the maximum cleanup-watch window, including before its next pruning tick.
+            f.client.level = clockLevel;
+            if (beginTickFirst) cleanup.beginTick();
+
+            f.level.blocks.put(TARGET, Blocks.PISTON.defaultBlockState());
+            cleanup.onServerBlockUpdate(TARGET);
+            assertFalse(cleanup.contains(TARGET), "An expired attempt must not claim a new block at the same position");
+            assertTrue(f.mode.hits.isEmpty());
+        }
+    }
+
+    private static BedrockCleanupCoordinator retireAttempt(BedrockRestockTest.Fixture f) throws Exception {
+        var target = f.addTarget();
+        target.recordNetworkAttempt();
+        target.setHasTried(true);
+        target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+        f.level.blocks.remove(TARGET);
+        f.settleTargets();
+        var cleanup = (BedrockCleanupCoordinator) get(f.engine, BedrockEngine.class, "cleanup");
+        assertTrue(f.targets.isEmpty(), "The completed target retires before its late-update watch begins");
+        assertFalse(cleanup.contains(TARGET), "An air slot has a watch but contributes no queued cleanup work");
+        assertTrue(cleanup.isEmpty());
+        return cleanup;
+    }
+
+    static class ClockedLevel extends BedrockPlacementRegressionTest.TestLevel {
+        long tick;
+        @Override public long getGameTime() { return tick; }
+    }
+
     @Test void missingStockMustNotPreventAlreadyOwnedResidueFromBeingCleaned() throws Exception {
         try (var f = new BedrockRestockTest.Fixture()) {
             var cleanup = (BedrockCleanupCoordinator) get(f.engine, BedrockEngine.class, "cleanup");
@@ -135,9 +201,12 @@ class BedrockRestockCleanupTest {
             f.level.blocks.remove(TARGET);
             f.settleTargets();
             var cleanup = (BedrockCleanupCoordinator) get(f.engine, BedrockEngine.class, "cleanup");
-            assertTrue(cleanup.contains(TARGET));
+            assertFalse(cleanup.contains(TARGET), "Retirement keeps only the late-update watch for the air slot");
+            assertTrue(cleanup.isEmpty());
             assertFalse(f.prepare());
 
+            cleanup.onServerBlockUpdate(TARGET); // Reset must also discard a watch whose current queue entry is already clear.
+            assertFalse(cleanup.contains(TARGET));
             f.runtime.reset(reason);
             f.level.blocks.put(TARGET, Blocks.PISTON.defaultBlockState());
             cleanup.onServerBlockUpdate(TARGET);

@@ -34,7 +34,20 @@ final class BedrockTargetLifecycle {
             return;
         }
 
-        if (!this.ensureTorchPlacement()) {
+        if (!this.state.hasTried() && !this.owner.canMutatePower()) {
+            if (this.state.status() != BedrockTarget.Status.RECOVERING) {
+                this.state.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+            }
+            return;
+        }
+
+        if (!this.state.hasTried()
+                && this.state.status() != BedrockTarget.Status.RECOVERING
+                && !this.ensureTorchPlacement()) {
+            if (this.machine.isInventorySettling()) {
+                this.state.setStatus(BedrockTarget.Status.NEEDS_WAITING);
+                return;
+            }
             this.state.setStatus(BedrockTarget.Status.FAILED);
             BedrockMessages.actionBar("bedrockminer.fail.place.redstonetorch");
             return;

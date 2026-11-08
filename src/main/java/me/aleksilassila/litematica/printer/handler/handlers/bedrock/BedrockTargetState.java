@@ -9,19 +9,15 @@ final class BedrockTargetState {
     private int initializeTick = -1;
     private boolean throughputConsumed;
     private BedrockTarget.Status status = BedrockTarget.Status.UNINITIALIZED;
+    private long lastAdvancedTick = Long.MIN_VALUE;
 
-    void beginTick(boolean allowExecute) {
+    void beginTick(long now) {
+        if (this.lastAdvancedTick == now) return;
         this.throughputConsumed = false;
-        if (this.status != BedrockTarget.Status.UNINITIALIZED
-                && this.status != BedrockTarget.Status.EXTENDED) {
-            this.tickTimes++;
-        } else if (this.status == BedrockTarget.Status.EXTENDED && allowExecute) {
-            this.tickTimes++;
+        if (this.lastAdvancedTick != Long.MIN_VALUE && now > this.lastAdvancedTick) {
+            this.tickTimes += (int) Math.min(Integer.MAX_VALUE - this.tickTimes, now - this.lastAdvancedTick);
         }
-    }
-
-    void advanceStatusOnly() {
-        this.tickTimes++;
+        this.lastAdvancedTick = now;
     }
 
     void resetAttempt() {
@@ -38,6 +34,11 @@ final class BedrockTargetState {
 
     boolean hasTried() {
         return this.hasTried;
+    }
+
+    void markDispatched() {
+        this.hasTried = true;
+        this.executeTick = this.tickTimes;
     }
 
     void setHasTried(boolean value) {

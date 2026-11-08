@@ -42,7 +42,7 @@ class BedrockAttemptObservationTest {
         f.tick.set(104);
         f.sync.recordRetry(TARGET);
         f.sync.recordRetry(TARGET);
-        assertEquals(1, f.sync.pendingCount(), "Keep the existing HUD pending-observation lifetime");
+        assertEquals(0, f.sync.pendingCount(), "A closed attempt releases its observation before rebuilding");
         f.tick.set(106);
         f.sync.onServerBlockUpdate(TARGET);
         f.sync.beginAttempt(TARGET, Set.of(TARGET));
@@ -124,7 +124,7 @@ class BedrockAttemptObservationTest {
         assertEquals(1, sync.pendingCount());
         tick.set(104);
         sync.recordRetry(TARGET);
-        assertEquals(1, sync.pendingCount());
+        assertEquals(0, sync.pendingCount());
         sync.confirmed(TARGET);
         assertEquals(0, sync.pendingCount());
         assertTrue(timing.snapshot().counters().isEmpty());

@@ -85,9 +85,13 @@ class OrderedStorageDrainTest {
         Fixture(boolean split) throws Exception { this(split, 9, 64); }
         Fixture(int source, int targetCapacity) throws Exception { this(false, source, targetCapacity); }
         Fixture(boolean split, int source, int targetCapacity) throws Exception {
+            this(split, source, targetCapacity, Items.PISTON, 64);
+        }
+        Fixture(Item material, int count) throws Exception { this(false, 9, 64, material, count); }
+        Fixture(boolean split, int source, int targetCapacity, Item material, int count) throws Exception {
             player.auditLevel = QuickShulkerPacketContractTest.allocate(QuickShulkerPacketContractTest.AuditLevel.class);
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
-            player.inventory.setItem(source, new ItemStack(Items.PISTON, 64));
+            player.inventory.setItem(source, new ItemStack(material, count));
             set(player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
             connection.packets = new ArrayList<>();
             set(player, net.minecraft.client.player.LocalPlayer.class, "connection", connection);
@@ -108,7 +112,7 @@ class OrderedStorageDrainTest {
             Configs.Core.WORK_SWITCH.setBooleanValue(true);
             Configs.Placement.QUICK_SHULKER.setBooleanValue(true);
             Configs.Placement.STORE_ORDERLY.setBooleanValue(true);
-            storage.newItem(new ItemStack(Items.PISTON, 64), ItemStack.EMPTY, 0, 9, source);
+            storage.newItem(new ItemStack(material, count), ItemStack.EMPTY, 0, 9, source);
             @SuppressWarnings("unchecked")
             var entries = (List<OrderedStorageEntry>) get(storage, OrderedStorageController.class, "trackedItems");
             @SuppressWarnings("unchecked")
@@ -233,6 +237,76 @@ class OrderedStorageDrainTest {
             assertTrue(f.player.closed);
             assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
             assertEquals(63, f.player.inventory.getItem(9).getCount());
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"piston", "slime_block", "redstone_torch", "work_off"})
+    void pickedUpBedrockDropsDoNotPreventReturningTheOwnedCursor(String item) throws Exception {
+        Item material = switch (item) {
+            case "slime_block" -> Items.SLIME_BLOCK;
+            case "redstone_torch" -> Items.REDSTONE_TORCH;
+            default -> Items.PISTON;
+        };
+        try (var f = new Fixture(material, 16)) {
+            // A partial stack is picked up for an orderly return, then another drop fills
+            // its vacated inventory slot before the server's full snapshot arrives.
+            f.storage.restorePendingItem();
+            f.reply(f.menu, 1, List.of(ItemStack.EMPTY, new ItemStack(material)), new ItemStack(material, 16));
+            if (item.equals("work_off")) Configs.Core.WORK_SWITCH.setBooleanValue(false);
+            f.expireUnexpectedReply();
+            var packet = (net.minecraft.network.protocol.game.ServerboundContainerClickPacket) f.connection.packets.getLast();
+            assertEquals(1, packet.slotNum(), "The original player slot has room for the owned cursor and the new drop");
+            assertEquals(0, packet.buttonNum());
+            assertEquals(2, f.connection.packets.size(), "One pickup and one return, with no replay");
+            assertFalse(f.player.closed);
+            f.assertExclusion();
+            assertEquals(16, f.menu.getCarried().getCount(), "Wait for the server, without predicting the return");
+            f.reply(f.menu, 2, List.of(ItemStack.EMPTY, new ItemStack(material, 17)), ItemStack.EMPTY);
+            assertFalse(f.storage.isDraining());
+            assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
+            assertTrue(f.player.closed);
+            assertTrue(f.player.inventoryMenu.getCarried().isEmpty());
+            assertEquals(17, f.player.inventory.getItem(9).getCount());
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"components", "cursor_count", "slot_capacity", "slot_rejects"})
+    void dropRecoveryStillHonoursCursorOwnershipAndPlayerSlotRules(String restriction) throws Exception {
+        try (var f = new Fixture(Items.PISTON, 16)) {
+            var original = f.menu.slots.get(1);
+            f.menu.slots.set(1, new Slot(original.container, original.getContainerSlot(), 0, 0) {
+                @Override public boolean mayPlace(ItemStack stack) { return !restriction.equals("slot_rejects"); }
+                @Override public int getMaxStackSize(ItemStack stack) { return restriction.equals("slot_capacity") ? 16 : 64; }
+            });
+            f.storage.restorePendingItem();
+            var drop = new ItemStack(Items.PISTON);
+            if (restriction.equals("components")) drop.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    net.minecraft.network.chat.Component.literal("Different piston"));
+            int carriedCount = restriction.equals("cursor_count") ? 17 : 16;
+            f.reply(f.menu, 1, List.of(ItemStack.EMPTY, drop), new ItemStack(Items.PISTON, carriedCount));
+            f.expireUnexpectedReply();
+            var packet = (net.minecraft.network.protocol.game.ServerboundContainerClickPacket) f.connection.packets.getLast();
+            assertEquals(-1, packet.slotNum(), "Unsafe recovery may only request synchronization");
+            assertEquals(2, f.connection.packets.size());
+            assertEquals(carriedCount, f.menu.getCarried().getCount());
+            assertTrue(ItemStack.matches(drop, f.player.inventory.getItem(9)));
+            assertFalse(f.player.closed);
+            f.assertExclusion();
+        }
+    }
+
+    @Test void fullCursorAndNewDropStillCannotOverflowTheOriginalSlot() throws Exception {
+        try (var f = new Fixture()) {
+            f.storage.restorePendingItem();
+            f.reply(f.menu, 1, List.of(ItemStack.EMPTY, new ItemStack(Items.PISTON)), new ItemStack(Items.PISTON, 64));
+            f.expireUnexpectedReply();
+            var packet = (net.minecraft.network.protocol.game.ServerboundContainerClickPacket) f.connection.packets.getLast();
+            assertEquals(-1, packet.slotNum(), "A full source may only request synchronization");
+            assertEquals(2, f.connection.packets.size());
+            assertEquals(64, f.menu.getCarried().getCount());
+            assertEquals(1, f.player.inventory.getItem(9).getCount());
+            assertFalse(f.player.closed);
+            f.assertExclusion();
         }
     }
 

@@ -4,6 +4,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RedstoneTorchBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -28,6 +29,7 @@ final class BedrockTargetMachine {
     private BlockPos slimePos;
     private int lastRepowerTick = -1;
     private int poweredStallRebuildCount;
+    private boolean deferredInitialTorch;
     private boolean valid;
 
     BedrockTargetMachine(
@@ -90,6 +92,12 @@ final class BedrockTargetMachine {
         return this.torchPlacement;
     }
 
+    BedrockTorchPlacement initialBatchTorchPlacement() {
+        return this.torchPlacement != null && this.torchPlacement.getSupportPos() != null && this.slimePos == null
+                && !BedrockTargetBlocks.requiresSneakPlacement(this.level.getBlockState(this.torchPlacement.getSupportPos()))
+                ? this.torchPlacement : null;
+    }
+
     BlockPos torchSupportPos() {
         return this.torchSupportPos;
     }
@@ -122,7 +130,24 @@ final class BedrockTargetMachine {
 
     void resetAttempt() {
         this.lastRepowerTick = -1;
+        this.deferredInitialTorch = false;
     }
+
+    void deferInitialTorch() {
+        this.deferredInitialTorch = true;
+    }
+
+    boolean hasDeferredInitialTorch() {
+        return this.deferredInitialTorch;
+    }
+
+    void onTorchBatchDispatched(BedrockTorchPlacement placement) {
+        if (!this.matchesTorchPlacement(placement)) return;
+        this.footprint.recordTemporary(placement.getTorchPos());
+        this.deferredInitialTorch = false;
+    }
+
+    boolean isInventorySettling() { return this.placer.isInventorySettling(); }
 
     boolean canBuildInitialMachine() {
         if (!BedrockInventory.hasAtLeast(Blocks.PISTON.asItem(), 1)) return false;
@@ -137,13 +162,17 @@ final class BedrockTargetMachine {
             Predicate<BedrockTorchPlacement> reservedByOther,
             Runnable markThroughput
     ) {
-        if (BedrockEnvironment.isTorchPlacementUsable(this.level, this.torchPlacement)) return true;
+        // Keeping an installed source is observation, not new construction. The
+        // lifecycle's canMutatePower gate still protects another in-flight event.
+        if (BedrockEnvironment.isTorchPlacementUsable(this.level, this.torchPlacement)
+                && (this.hasInstalledPowerSource() || !reservedByOther.test(this.torchPlacement))) return true;
         if (this.slimePos != null
                 && this.torchPlacement != null
+                && !reservedByOther.test(this.torchPlacement)
                 && this.slimePos.equals(this.torchPlacement.getSupportPos())
                 && BedrockEnvironment.isSlimePlacementUsable(this.level, this.torchPlacement)) {
             if (!this.level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)) {
-                if (!this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem())) {
+                if (!this.placer.placeSlimeSupport(this.slimePos)) {
                     return false;
                 }
                 this.footprint.recordTemporary(this.slimePos);
@@ -156,11 +185,11 @@ final class BedrockTargetMachine {
                 this.level,
                 this.pistonPos,
                 this.layout.getPistonOffset().getOpposite(),
+                placement -> !reservedByOther.test(placement),
                 this.bedrockPos,
                 this.pistonPos,
                 this.headPos
         );
-        if (reservedByOther.test(naturalPlacement)) naturalPlacement = null;
         if (naturalPlacement != null) {
             this.torchPlacement = naturalPlacement;
             this.torchSupportPos = this.torchSupportFromPlacement();
@@ -174,24 +203,25 @@ final class BedrockTargetMachine {
 
         BedrockTorchPlacement slimePlacement = this.torchPlacement;
         if (slimePlacement == null
+                || reservedByOther.test(slimePlacement)
                 || !BedrockEnvironment.isSlimePlacementUsable(this.level, slimePlacement)
                 || !slimePlacement.getSupportPos().equals(this.slimePos)) {
             slimePlacement = BedrockEnvironment.findPossibleSlimeTorchPlacement(
                     this.level,
                     this.pistonPos,
                     this.layout.getPistonOffset().getOpposite(),
+                    placement -> !reservedByOther.test(placement),
                     this.bedrockPos,
                     this.pistonPos,
                     this.headPos
             );
         }
-        if (reservedByOther.test(slimePlacement)) slimePlacement = null;
         if (slimePlacement == null) return false;
 
         this.torchPlacement = slimePlacement;
         this.slimePos = slimePlacement.getSupportPos();
         if (!this.level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)) {
-            if (!this.placer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem())) {
+            if (!this.placer.placeSlimeSupport(this.slimePos)) {
                 return false;
             }
             this.footprint.recordTemporary(this.slimePos);
@@ -199,6 +229,14 @@ final class BedrockTargetMachine {
         }
         this.torchSupportPos = this.torchSupportFromPlacement();
         return true;
+    }
+
+    private boolean hasInstalledPowerSource() {
+        BlockState piston = this.level.getBlockState(this.pistonPos);
+        return this.layout != null && piston.is(Blocks.PISTON)
+                && piston.getValue(PistonBaseBlock.FACING) == this.layout.getPrimingFacing()
+                && this.hasOwnedTorchPowerSource()
+                && this.level.getBlockState(this.torchPos()).getValue(RedstoneTorchBlock.LIT);
     }
 
     boolean tryRepowerTorch(int tickTimes, Runnable markThroughput) {
@@ -249,7 +287,7 @@ final class BedrockTargetMachine {
             return false;
         }
         Direction facing = state.getValue(PistonBaseBlock.FACING);
-        return facing == this.layout.getPrimingFacing() || facing == this.layout.getExecuteFacing();
+        return facing == this.layout.getPrimingFacing();
     }
 
     boolean placeTorch() {
@@ -260,6 +298,7 @@ final class BedrockTargetMachine {
                 Blocks.REDSTONE_TORCH.asItem()
         )) return false;
         this.footprint.recordTemporary(this.torchPos());
+        this.deferredInitialTorch = false;
         return true;
     }
 

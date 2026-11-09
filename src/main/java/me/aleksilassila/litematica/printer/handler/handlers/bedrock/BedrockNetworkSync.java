@@ -75,8 +75,6 @@ final class BedrockNetworkSync {
                 }
             }
             if (attempt.timeoutRecorded) {
-                attempt.lateUpdate = true;
-                attempt.result = "late_update";
                 this.lastResult = "late_update";
             }
         }
@@ -91,7 +89,6 @@ final class BedrockNetworkSync {
         if (!attempt.outcomeRecorded) {
             this.timing.count("bedrock", BEDROCK_ATTEMPT_TIMEOUTS, 1);
         }
-        attempt.result = "timeout";
         this.serverUpdateTimeouts++;
         this.lastResult = "timeout";
     }
@@ -100,7 +97,6 @@ final class BedrockNetworkSync {
         PendingAttempt attempt = this.pending.remove(target);
         if (attempt != null) {
             this.finishObservation(attempt, BEDROCK_RETRIES);
-            attempt.result = "retry";
             this.lastResult = "retry";
         }
     }
@@ -110,7 +106,6 @@ final class BedrockNetworkSync {
             PendingAttempt attempt = this.pending.remove(target);
             if (attempt != null) {
                 this.finishObservation(attempt, BEDROCK_CONFIRMED_ATTEMPTS);
-                attempt.result = "confirmed";
             }
             this.lastResult = "confirmed";
         }
@@ -121,7 +116,6 @@ final class BedrockNetworkSync {
             PendingAttempt attempt = this.pending.remove(target);
             if (attempt != null) {
                 this.finishObservation(attempt, BEDROCK_DISCARDED_ATTEMPTS);
-                attempt.result = stuck ? "stuck" : "retry";
             }
         }
         this.lastResult = stuck ? "stuck" : "retry";
@@ -222,8 +216,6 @@ final class BedrockNetworkSync {
         private long firstServerUpdateTick = -1L;
         private boolean timeoutRecorded;
         private boolean outcomeRecorded;
-        private boolean lateUpdate;
-        private String result = "dispatched";
 
         private PendingAttempt(Set<BlockPos> footprint, long submittedTick) {
             this.footprint = new HashSet<>();

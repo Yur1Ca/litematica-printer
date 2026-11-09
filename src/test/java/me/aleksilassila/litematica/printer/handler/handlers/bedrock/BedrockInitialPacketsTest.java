@@ -75,17 +75,17 @@ class BedrockInitialPacketsTest {
 
             var packets = powered(f.client.player, List.of(first, second), List.of(firstTorch, secondTorch), 6);
 
-            assertEquals(8, packets.size());
+            assertEquals(7, packets.size());
             assertEquals(InteractionHand.OFF_HAND, assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(1)).getHand());
-            assertEquals(InteractionHand.OFF_HAND, assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(3)).getHand());
-            assertEquals(6, assertInstanceOf(ServerboundSetCarriedItemPacket.class, packets.get(4)).getSlot());
-            var torchOne = assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(5));
-            var torchTwo = assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(6));
+            assertEquals(InteractionHand.OFF_HAND, assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(2)).getHand());
+            assertEquals(6, assertInstanceOf(ServerboundSetCarriedItemPacket.class, packets.get(3)).getSlot());
+            var torchOne = assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(4));
+            var torchTwo = assertInstanceOf(ServerboundUseItemOnPacket.class, packets.get(5));
             assertEquals(InteractionHand.MAIN_HAND, torchOne.getHand());
             assertEquals(InteractionHand.MAIN_HAND, torchTwo.getHand());
             assertSame(firstTorch, torchOne.getHitResult());
             assertSame(secondTorch, torchTwo.getHitResult());
-            assertEquals(0, assertInstanceOf(ServerboundSetCarriedItemPacket.class, packets.get(7)).getSlot());
+            assertEquals(0, assertInstanceOf(ServerboundSetCarriedItemPacket.class, packets.get(6)).getSlot());
             assertTrue(packets.stream().noneMatch(ServerboundContainerClickPacket.class::isInstance));
             assertTrue(packets.stream().noneMatch(ServerboundClientCommandPacket.class::isInstance));
             assertEquals(8, f.client.player.getInventory().getItem(6).getCount());

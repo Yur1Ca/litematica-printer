@@ -11,6 +11,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayList;
+
 /** Coordinates Printer's ordinary effective-tool selection with Tweakeroo's own tool policies. */
 public final class ToolSwitchService {
     private final Minecraft client;
@@ -59,6 +61,36 @@ public final class ToolSwitchService {
             this.switchGuard.markSwitchIfNeeded(player.getMainHandItem());
             return ToolPreparationResult.SWITCHED_WAITING_SYNC;
         }
+        return ToolPreparationResult.READY;
+    }
+
+    /** Bedrock follows a pure hotbar selection with its own native equipment-tick acknowledgement. */
+    public ToolPreparationResult prepareForBedrockBreak(BlockPos pos, BlockState state) {
+        LocalPlayer player = this.client.player;
+        if (player == null || this.switchGuard.isWaiting() || !this.tweakeroo.isDurabilityGuardActive()
+                || this.tweakeroo.isCurrentToolUsable(player.getMainHandItem())) {
+            return this.prepareForBreak(pos, state, false);
+        }
+        var menu = player.containerMenu;
+        if (menu == null || menu != player.inventoryMenu || !menu.getCarried().isEmpty()) {
+            return this.prepareForBreak(pos, state, false);
+        }
+        // Only a real guard-driven replacement pays for this comparison. Ordinary mining
+        // keeps the existing fast path; a selection plus any menu mutation stays exclusive.
+        var inventory = player.getInventory();
+        int beforeSlot = InventoryUtils.getSelectedSlot(inventory);
+        var beforeItems = new ArrayList<ItemStack>(inventory.getContainerSize());
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) beforeItems.add(inventory.getItem(slot).copy());
+        var result = this.prepareForBreak(pos, state, false);
+        long receipt = this.switchGuard.receipt();
+        if (result != ToolPreparationResult.SWITCHED_WAITING_SYNC || player != this.client.player
+                || player.containerMenu != menu || !menu.getCarried().isEmpty()
+                || beforeSlot == InventoryUtils.getSelectedSlot(inventory)
+                || beforeItems.size() != inventory.getContainerSize()) return result;
+        for (int slot = 0; slot < beforeItems.size(); slot++) {
+            if (!ItemStack.matches(beforeItems.get(slot), inventory.getItem(slot))) return result;
+        }
+        this.switchGuard.confirmReceipt(receipt);
         return ToolPreparationResult.READY;
     }
 

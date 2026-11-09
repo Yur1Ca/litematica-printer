@@ -56,7 +56,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -85,6 +84,7 @@ class BedrockPlacementRegressionTest {
             BlockPos piston = TARGET.relative(primingFacing);
             BlockPos head = piston.relative(primingFacing);
             f.machine(primingFacing);
+            f.synchronizeInventory();
             assertTrue(f.place(piston, primingFacing.getOpposite()));
             assertEquals(1, f.mode.hits.size());
             BlockHitResult hit = f.mode.hits.get(0);
@@ -103,6 +103,7 @@ class BedrockPlacementRegressionTest {
         try (var f = new Fixture()) {
             f.machine(Direction.UP);
             f.level.blocks.remove(TARGET);
+            f.synchronizeInventory();
             assertFalse(f.place(TARGET.above(), Direction.DOWN));
             assertTrue(f.mode.hits.isEmpty());
         }
@@ -110,6 +111,7 @@ class BedrockPlacementRegressionTest {
 
     @Test void ordinaryInitialPistonPlacementKeepsItsSupport() throws Exception {
         try (var f = new Fixture()) {
+            f.synchronizeInventory();
             assertTrue(f.place(TARGET.above(), Direction.UP));
             assertEquals(TARGET.above(), f.serverPlacementPosition(f.mode.hits.get(0)));
         }
@@ -166,7 +168,8 @@ class BedrockPlacementRegressionTest {
         try (var f = new Fixture()) {
             f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
             f.level.blocks.put(TARGET.above(), Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.UP));
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH));
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.REDSTONE_TORCH));
+            f.synchronizeInventory();
             var target = f.target();
             var state = (BedrockTargetState) get(target, BedrockTarget.class, "state");
             state.beginTick(0);
@@ -267,11 +270,12 @@ class BedrockPlacementRegressionTest {
             f.placer.preparePistonPlacementLook(side.getPistonPos(), Direction.WEST);
             f.level.blocks.remove(TARGET);
             var executor = new BedrockTargetExecutor(targets,
-                    new BedrockCleanupCoordinator(f.client, new CooldownUtils()), new BedrockRunStats(),
+                    new BedrockCleanupCoordinator(f.client, null, () -> false, f.placer), new BedrockRunStats(),
                     (pos, ticks) -> fail("Completed targets do not need a cooldown"),
-                    f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8), () -> false);
+                    f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8), new BedrockCriticalExecutor(f.placer),
+                    new BedrockThroughputScheduler<>());
 
-            executor.process(f.level, 0, false, new LinkedHashSet<>(), side, true);
+            executor.observeAndRetire(f.level);
 
             assertTrue(targets.isEmpty());
             assertFalse(side.hasPendingHorizontalLook());
@@ -455,7 +459,7 @@ class BedrockPlacementRegressionTest {
         @Override public net.minecraft.world.level.GameType getPlayerMode() { return net.minecraft.world.level.GameType.SURVIVAL; }
         @Override public InteractionResult litematica_printer$useItemOn(boolean prediction, InteractionHand hand, BlockHitResult hit) {
             if (rejectMutations) throw new AssertionError("An observing attempt attempted to place a block");
-            assertEquals(InteractionHand.OFF_HAND, hand);
+            assertEquals(prediction ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND, hand);
             hits.add(hit);
             predictions.add(prediction);
             return InteractionResult.PASS;
@@ -484,11 +488,13 @@ class BedrockPlacementRegressionTest {
             unsafe = (sun.misc.Unsafe) get(null, sun.misc.Unsafe.class, "theUnsafe");
             client = allocate(Minecraft.class);
             level = allocate(TestLevel.class);
+            set(level, Level.class, "isClientSide", true);
             level.border = new net.minecraft.world.level.border.WorldBorder();
             set(level, Level.class, "dimension", Level.OVERWORLD);
             level.blocks = new HashMap<>();
             level.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
             var player = allocate(TestPlayer.class);
+            set(player, Entity.class, "level", level);
             //#if MC >= 12105
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
             //#else
@@ -496,6 +502,7 @@ class BedrockPlacementRegressionTest {
             //#endif
             set(player, Player.class, "inventory", player.inventory);
             set(player, Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
+            set(player, Player.class, "abilities", new net.minecraft.world.entity.player.Abilities());
             player.containerMenu = player.inventoryMenu;
             player.inventory.setItem(40, new ItemStack(Items.PISTON, 16));
             set(player, Entity.class, "position", new Vec3(0.5, 64, 0.5));
@@ -529,12 +536,26 @@ class BedrockPlacementRegressionTest {
             set(runtime, PrinterRuntime.class, "events", new RuntimeEventBus());
             set(runtime, PrinterRuntime.class, "epoch", RuntimeEpoch.INITIAL);
             RuntimeAccess.install(runtime);
+            var guard = new me.aleksilassila.litematica.printer.utils.InventorySwitchGuard(client, runtime::currentTick);
+            set(runtime, PrinterRuntime.class, "inventorySwitchGuard", guard);
+            var tweakeroo = (me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort)
+                    java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                            new Class<?>[]{me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort.class},
+                            (proxy, method, args) -> method.getReturnType() == boolean.class ? false : null);
+            set(runtime, PrinterRuntime.class, "toolSwitchService",
+                    new me.aleksilassila.litematica.printer.interaction.ToolSwitchService(client, tweakeroo, guard));
             Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(false);
             Configs.Bedrock.BEDROCK_MULTIPLAYER_ADAPTIVE.setBooleanValue(true);
             placer = new BedrockPlacer(client, new BedrockNetworkSync(runtime::currentTick, () -> 8));
         }
 
         <T> T allocate(Class<T> type) throws Exception { return type.cast(unsafe.allocateInstance(type)); }
+        void synchronizeInventory() {
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.synchronizeInventory(placer, client);
+        }
+        void readyTool() {
+            assertTrue(me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeSelectedTool(placer, client));
+        }
         void tick(long tick) throws Exception { set(runtime, PrinterRuntime.class, "currentTick", tick); }
         void machine(Direction facing) {
             BlockPos piston = TARGET.relative(facing);

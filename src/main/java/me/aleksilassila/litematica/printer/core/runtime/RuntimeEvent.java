@@ -1,7 +1,7 @@
 package me.aleksilassila.litematica.printer.core.runtime;
 
 public sealed interface RuntimeEvent permits RuntimeEvent.EpochChanged, RuntimeEvent.BlockUpdated,
-        RuntimeEvent.MaterialAvailabilityChanged, RuntimeEvent.BlockActionAcknowledged {
+        RuntimeEvent.MaterialAvailabilityChanged, RuntimeEvent.BlockActionAcknowledged, RuntimeEvent.InventorySynchronized {
     record EpochChanged(RuntimeEpoch previous, RuntimeEpoch current, String reason) implements RuntimeEvent {
     }
 
@@ -15,4 +15,7 @@ public sealed interface RuntimeEvent permits RuntimeEvent.EpochChanged, RuntimeE
 
     /** An ordered server player-tick acknowledgement for sequenced predicted actions. */
     record BlockActionAcknowledged(Object connection, int sequence) implements RuntimeEvent { }
+
+    /** Published immediately after the ordered statistics reply, while its inventory baseline is current. */
+    record InventorySynchronized(Object connection) implements RuntimeEvent { }
 }

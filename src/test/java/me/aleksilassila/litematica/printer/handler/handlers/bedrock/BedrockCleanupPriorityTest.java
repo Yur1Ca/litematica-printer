@@ -4,6 +4,9 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -75,9 +78,12 @@ class BedrockCleanupPriorityTest {
             assertEquals(RESIDUE, digs.getFirst().getPos());
             assertTrue(cleanup.contains(RESIDUE));
             assertTrue(f.enginePlacer.isCleanupPendingAt(RESIDUE));
-            assertTrue(f.transport.packets.stream().noneMatch(
-                    net.minecraft.network.protocol.game.ServerboundUseItemOnPacket.class::isInstance),
-                    "New machine preparation cannot switch MAIN while cleanup's tool equipment tick is pending");
+            var uses = f.transport.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance)
+                    .map(ServerboundUseItemOnPacket.class::cast).toList();
+            assertEquals(1, uses.size(), "Independent OFF_HAND priming can share the equipment wait");
+            assertEquals(InteractionHand.OFF_HAND, uses.getFirst().getHand());
+            assertTrue(f.client.player.getMainHandItem().is(Items.DIAMOND_PICKAXE),
+                    "No MAIN material use may invalidate the pending equipment signature");
             assertFalse(f.enginePlacer.prepareCriticalToolTick(), "Hardness-zero work cannot acknowledge a pending tool change");
             assertTrue(f.level.blocks.get(RESIDUE).is(Blocks.REDSTONE_TORCH));
         }

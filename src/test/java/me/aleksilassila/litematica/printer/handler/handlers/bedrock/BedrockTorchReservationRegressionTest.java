@@ -40,8 +40,7 @@ class BedrockTorchReservationRegressionTest {
             assertFalse(reserved.test(west));
             assertTrue(BedrockEnvironment.isTorchPlacementUsable(f.level, west));
 
-            assertTrue(machine.ensureTorchPlacement(reserved,
-                            () -> fail("An existing natural support needs no placement")),
+            assertTrue(machine.ensureTorchPlacement(reserved),
                     "A reserved first candidate must not fail a machine with a legal west candidate");
 
             assertEquals(west.getSupportPos(), machine.torchPlacement().getSupportPos());
@@ -64,8 +63,7 @@ class BedrockTorchReservationRegressionTest {
             assertTrue(BedrockEnvironment.isTorchPlacementUsable(f.level, placement));
             assertTrue(machine.hasOwnedTorchPowerSource());
 
-            assertTrue(machine.ensureTorchPlacement(candidate -> true,
-                            () -> fail("Retaining installed power must be observation only")),
+            assertTrue(machine.ensureTorchPlacement(candidate -> true),
                     "An inactive reservation cannot force rebuilding a correct powered machine");
 
             assertEquals(placement.getTorchPos(), machine.torchPos());
@@ -77,7 +75,8 @@ class BedrockTorchReservationRegressionTest {
         try (var f = new BedrockPlacementRegressionTest.Fixture()) {
             var east = new BedrockTorchPlacement(TARGET.east(), Direction.UP);
             var layout = f.target().layout();
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.SLIME_BLOCK, 16));
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.SLIME_BLOCK, 16));
+            f.synchronizeInventory();
             var machine = new BedrockTargetMachine(f.level, layout, TARGET, layout.getPistonPos(),
                     layout.getHeadPos(), new BedrockTargetFootprint(f.level, TARGET,
                     layout.getPistonPos(), layout.getHeadPos()), east, east.getSupportPos(), f.placer);
@@ -88,7 +87,7 @@ class BedrockTorchReservationRegressionTest {
             assertNull(BedrockEnvironment.findTorchPlacement(f.level, layout.getPistonPos(),
                     Direction.DOWN, TARGET, layout.getPistonPos(), layout.getHeadPos()));
 
-            assertTrue(machine.ensureTorchPlacement(reserved, () -> { }),
+            assertTrue(machine.ensureTorchPlacement(reserved),
                     "A reserved cached slime plan must not suppress the next anchorable plan");
 
             assertEquals(TARGET.west(), machine.torchSupportPos());

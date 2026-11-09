@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Owns the indivisible packet bundle used by the piston bedrock exploit.
@@ -26,72 +27,52 @@ import java.util.List;
  * on later ticks; it is deliberately not used as a mid-bundle acknowledgement.</p>
  */
 final class BedrockCriticalExecutor {
-    private long currentTick = Long.MIN_VALUE;
-    private int reservedPistons;
     private final BedrockPlacer placer;
-    private final BedrockRunStats stats;
 
     BedrockCriticalExecutor(BedrockPlacer placer) {
-        this(placer, null);
-    }
-
-    BedrockCriticalExecutor(BedrockPlacer placer, BedrockRunStats stats) {
         this.placer = placer;
-        this.stats = stats;
     }
 
     BedrockPlacer placer() {
         return this.placer;
     }
 
-    void reset() {
-        currentTick = Long.MIN_VALUE;
-        reservedPistons = 0;
-    }
-
-    void beginTick(long tick) {
-        if (currentTick == tick) {
-            return;
-        }
-        currentTick = tick;
-        reservedPistons = 0;
-    }
-
-    boolean hasDispatchedThisTick() {
-        return this.reservedPistons > 0;
-    }
-
     List<BedrockTarget> submitBatch(List<BedrockTarget> candidates) {
+        return this.submitBatch(candidates, Integer.MAX_VALUE, target -> false);
+    }
+
+    List<BedrockTarget> submitBatch(List<BedrockTarget> candidates, int newStarts, Predicate<BedrockTarget> started) {
         var client = Minecraft.getInstance();
         if (candidates == null || candidates.isEmpty() || !this.hasSafeInventory(client, client.level)
                 || !NetworkUtils.canSendPacketBatch()) return List.of();
+        if (newStarts <= 0 && candidates.stream().noneMatch(target -> target != null && started.test(target))) return List.of();
         // Do not let a later candidate overtake a material swap started by this batch.
         if (!this.placer.preparePistons()) return List.of();
         var selected = new ArrayList<BedrockTarget>();
         var packets = new ArrayList<Packet<?>>();
         var reservedToolUses = new HashMap<Integer, Integer>();
-        boolean guardedTool = me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get()
-                .toolSwitchService().isDurabilityGuardActive();
+        int selectedStarts = 0;
         for (BedrockTarget target : candidates) {
             if (target == null || target.layout() == null || target.isHorizontalLayout() || target.hasTried()
                     || target.getStatus() != BedrockTarget.Status.EXTENDED || !target.canMutatePower()
                     || !BedrockEnvironment.arePositionsInteractable(target.getStaticMachinePositions())
                     || selected.stream().anyMatch(other -> conflicts(target, other))) continue;
+            boolean newStart = !started.test(target);
+            if (newStart && selectedStarts >= newStarts) continue;
             var torches = target.getOwnedTorchPositions();
             var placement = this.preflight(target.level(), target.getBedrockPos(), target.getPistonPos(),
                     target.layout().getExecuteFacing(), torches, selected.size() + 1);
             if (placement == null) continue;
             int toolSlot = InventoryUtils.getSelectedSlot(client.player.getInventory());
             int toolUses = reservedToolUses.getOrDefault(toolSlot, 0) + 1;
-            if (this.placer.availableToolUses() < toolUses) continue;
+            if (!this.placer.canReserveToolUses(toolUses)) continue;
             var body = BedrockCriticalPackets.prepareBody(target.level(), client.player, target.getPistonPos(),
                     target.layout().getExecuteFacing(), torches, placement);
             if (body.isEmpty()) continue;
             selected.add(target);
+            if (newStart) selectedStarts++;
             packets.addAll(body);
             reservedToolUses.put(toolSlot, toolUses);
-            // The external guard approves current durability, not a projected batch of future uses.
-            if (guardedTool) break;
         }
         if (selected.isEmpty()) return List.of();
         // A later candidate may have started an inventory move while earlier
@@ -106,7 +87,6 @@ final class BedrockCriticalExecutor {
             reservedToolUses.forEach((slot, uses) -> {
                 for (int used = 0; used < uses; used++) this.placer.recordToolUse(slot);
             });
-            this.reservedPistons += selected.size();
             return List.copyOf(selected);
         } finally {
             selected.forEach(target -> this.placer.cancelPistonPlacement(target.getPistonPos()));
@@ -127,6 +107,7 @@ final class BedrockCriticalExecutor {
 
     private boolean hasSafeInventory(Minecraft client, ClientLevel level) {
         return level != null && this.placer != null && !this.placer.isInventorySettling() && !this.placer.isToolSettling()
+                && !this.placer.hasActiveCleanupMining()
                 && client.player != null && client.level == level && client.player.inventoryMenu != null
                 && client.player.containerMenu == client.player.inventoryMenu
                 && client.player.containerMenu.getCarried().isEmpty();
@@ -148,7 +129,6 @@ final class BedrockCriticalExecutor {
             if (packets.isEmpty() || !NetworkUtils.sendPacketBatch(packets)) return false;
             this.placer.recordRawUses(1, -1, 0);
             this.placer.recordToolUse();
-            reservedPistons++;
             return true;
         } finally {
             this.placer.cancelPistonPlacement(pistonPos);

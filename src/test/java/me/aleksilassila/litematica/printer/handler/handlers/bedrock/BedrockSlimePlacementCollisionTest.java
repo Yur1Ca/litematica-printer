@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -139,7 +141,10 @@ class BedrockSlimePlacementCollisionTest {
             world.blocks.put(new BlockPos(2, 64, 4), Blocks.BEDROCK.defaultBlockState());
             world.blocks.put(PLAYER_FEET.below(), Blocks.BEDROCK.defaultBlockState());
             client.level = world;
-            set(placer, BedrockPlacer.class, "inventory", new BedrockInventorySession(client, false, access));
+            client.player.getInventory().setItem(0, new ItemStack(Items.SLIME_BLOCK, 16));
+            set(placer, BedrockPlacer.class, "inventory", new BedrockInventorySession(client, access));
+            synchronizeInventory();
+            transport.packets.clear();
             occupantAt(new Vec3(2.5, 65, 2.5));
         }
 

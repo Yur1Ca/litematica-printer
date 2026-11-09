@@ -14,8 +14,6 @@ import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashSet;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Inventory snapshots must settle before another world or inventory mutation can begin. */
@@ -89,13 +87,15 @@ class BedrockInventoryFenceGateTest {
                     f.engine, BedrockEngine.class, "targetExecutor");
             f.tick(5);
 
-            executor.process(f.level, 4, false, new LinkedHashSet<>(), null, true);
+            executor.observeAndRetire(f.level);
+            executor.advance(f.level, true);
 
             assertEquals(5, target.tickTimes());
             assertEquals(0, target.cleanupCalls);
             InventoryRecoveryFence.received(f.transport);
             f.tick(6);
-            executor.process(f.level, 4, false, new LinkedHashSet<>(), null, true);
+            executor.observeAndRetire(f.level);
+            executor.advance(f.level, true);
             assertEquals(1, target.cleanupCalls);
         }
     }
@@ -105,6 +105,7 @@ class BedrockInventoryFenceGateTest {
             BedrockPlacementRegressionTest.set(f.client.player, Player.class, "abilities", new Abilities());
             f.level.blocks.put(TARGET.east(), Blocks.BEDROCK.defaultBlockState());
             f.client.player.getInventory().setItem(1, new ItemStack(Items.REDSTONE_TORCH));
+            f.synchronizeInventory();
             var target = f.target();
             assertTrue(f.place(target.getPistonPos(), Direction.UP));
             assertEquals(1, f.mode.hits.size());
@@ -122,7 +123,7 @@ class BedrockInventoryFenceGateTest {
             f.level.blocks.put(target.getPistonPos(), Blocks.PISTON.defaultBlockState()
                     .setValue(PistonBaseBlock.FACING, Direction.UP));
             // The ordinary torch path owns item switching; this test starts at its ready-hand boundary.
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH));
+            me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(f.client.player.getInventory(), 1);
             f.tick(3);
             target.tick(false, true);
 

@@ -13,6 +13,8 @@ import java.util.Set;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacer;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
+import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
@@ -136,9 +138,9 @@ class BedrockCriticalFlowTest {
                 }
             }
             var placerConstructor = BedrockPlacer.class.getDeclaredConstructor(Minecraft.class,
-                    Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockNetworkSync"), boolean.class);
+                    Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockNetworkSync"));
             placerConstructor.setAccessible(true);
-            var placer = placerConstructor.newInstance(client, null, true);
+            var placer = placerConstructor.newInstance(client, null);
             var preparePistons = BedrockPlacer.class.getDeclaredMethod("preparePistons");
             preparePistons.setAccessible(true);
             Transport.lastBatchTransport = null;
@@ -187,7 +189,6 @@ class BedrockCriticalFlowTest {
                     "Preflight rejection must happen before the first torch/base START: " + describe(connection.packets));
             assertNull(failure, "Rejected preflight must return cleanly");
             assertFalse(accepted);
-            assertEquals(0, get(executor, executor.getClass(), "reservedPistons"));
         }
 
         @Override public void close() throws Exception {
@@ -268,7 +269,6 @@ class BedrockCriticalFlowTest {
             assertTrue(batch.stream().noneMatch(net.minecraft.network.protocol.game.ServerboundContainerClickPacket.class::isInstance));
             assertTrue(batch.stream().noneMatch(net.minecraft.network.protocol.game.ServerboundClientCommandPacket.class::isInstance));
             assertEquals(batch, f.connection.packets, "No packets outside the submitted critical batch may split the sequence");
-            assertEquals(1, get(f.executor, f.executor.getClass(), "reservedPistons"));
             assertTrue(f.traceLevel.getBlockState(PISTON).getValue(PistonBaseBlock.EXTENDED),
                     "Sending the bundle must not replace the client world snapshot");
         }
@@ -311,9 +311,8 @@ class BedrockCriticalFlowTest {
             f.player.inventory.setItem(40, new ItemStack(Items.PISTON));
             assertTrue(f.submit(Set.of(TORCH)));
             assertTrue(f.player.inventory.getItem(40).isEmpty(), "Raw use must predict its material consumption");
-            var begin = f.executor.getClass().getDeclaredMethod("beginTick", long.class);
-            begin.setAccessible(true);
-            begin.invoke(f.executor, 1L);
+            f.tick = 1L;
+            set(RuntimeAccess.get(), PrinterRuntime.class, "currentTick", 1L);
             f.connection.packets.clear();
             f.assertRejectedBeforeBreak(Set.of(TORCH));
         }
@@ -323,15 +322,15 @@ class BedrockCriticalFlowTest {
         try (var f = new Fixture()) {
             f.player.inventory.setItem(1, ItemStack.EMPTY);
             assertTrue(f.submit(Set.of(TORCH)));
-            var begin = f.executor.getClass().getDeclaredMethod("beginTick", long.class);
-            begin.setAccessible(true);
-            begin.invoke(f.executor, 1L);
+            f.tick = 1L;
+            set(RuntimeAccess.get(), PrinterRuntime.class, "currentTick", 1L);
             // A full snapshot from before this placement can arrive one client tick
             // later. Its count alone cannot establish the result of the raw use.
             f.player.inventory.setItem(40, new ItemStack(Items.PISTON, 2));
             f.connection.packets.clear();
             assertTrue(f.submit(Set.of(TORCH)), "The one genuinely unspent allowance may continue without an inventory round trip");
-            begin.invoke(f.executor, 2L);
+            f.tick = 2L;
+            set(RuntimeAccess.get(), PrinterRuntime.class, "currentTick", 2L);
             f.player.inventory.setItem(40, new ItemStack(Items.PISTON, 2));
             f.connection.packets.clear();
             f.assertRejectedBeforeBreak(Set.of(TORCH));

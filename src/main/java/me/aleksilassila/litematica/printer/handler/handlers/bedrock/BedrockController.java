@@ -27,6 +27,16 @@ public final class BedrockController {
         engine().tick();
     }
 
+    public static void beginTick(boolean allowMutations) {
+        var engine = engine();
+        engine.observeSupplies(RuntimeAccess.get().materialRequests());
+        engine.beginTick(allowMutations);
+    }
+
+    public static void finishTick(boolean allowMutations) {
+        engine().finishTick(allowMutations);
+    }
+
     public static boolean prepareMaterials() {
         return engine().prepareMaterials(RuntimeAccess.get().materialRequests());
     }

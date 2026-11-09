@@ -117,7 +117,7 @@ class BedrockCleanupMiningChunkBoundaryTest {
             assertFalse(enginePlacer.prepareCriticalToolTick());
             enginePlacer.acknowledgeToolTick(transport, 0);
             assertFalse(enginePlacer.isInventorySettling());
-            cleanup = new BedrockCleanupCoordinator(client, new CooldownUtils(), null, () -> false, enginePlacer);
+            cleanup = new BedrockCleanupCoordinator(client, null, () -> false, enginePlacer);
             transport.packets.clear();
         }
 

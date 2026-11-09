@@ -61,10 +61,7 @@ final class BedrockTargetLifecycle {
     }
 
     private boolean ensureTorchPlacement() {
-        return this.machine.ensureTorchPlacement(
-                this::isPlacementReservedByOtherTarget,
-                this.owner::markThroughputAction
-        );
+        return this.machine.ensureTorchPlacement(this::isPlacementReservedByOtherTarget);
     }
 
     private boolean isTargetCompleted() {

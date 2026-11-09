@@ -24,6 +24,8 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 public final class BedrockPlacer {
     private final Minecraft client;
@@ -31,21 +33,27 @@ public final class BedrockPlacer {
     private final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
     private final BedrockInventorySession inventory;
     private final BedrockBreaker cleanupBreaker;
-
-    BedrockPlacer(Minecraft client) {
-        this(client, null);
-    }
+    private BooleanSupplier constructionAllowed;
+    private Runnable constructionSent;
 
     BedrockPlacer(Minecraft client, BedrockNetworkSync networkSync) {
-        this(client, networkSync, false);
-    }
-
-    BedrockPlacer(Minecraft client, BedrockNetworkSync networkSync, boolean dedicatedPistonHand) {
         this.client = client;
         this.networkSync = networkSync;
-        this.inventory = new BedrockInventorySession(client, dedicatedPistonHand);
+        this.inventory = new BedrockInventorySession(client);
         this.cleanupBreaker = new BedrockBreaker(client, this);
     }
+
+    void withConstructionStart(BlockPos owner, BedrockThroughputScheduler<BlockPos> starts, Runnable action) {
+        if (!starts.canStart(owner)) return;
+        this.constructionAllowed = () -> starts.canStart(owner);
+        this.constructionSent = () -> starts.started(owner);
+        try { action.run(); }
+        finally { this.constructionAllowed = null; this.constructionSent = null; }
+    }
+
+    private boolean canConstruct() { return this.constructionAllowed == null || this.constructionAllowed.getAsBoolean(); }
+
+    private void constructionSent() { if (this.constructionSent != null) this.constructionSent.run(); }
 
     public void clearHorizontalLookState() {
         pendingHorizontalPistonPlacements.clear();
@@ -58,7 +66,13 @@ public final class BedrockPlacer {
 
     boolean isToolSettling() { return this.inventory.isToolSettling(); }
 
+    boolean isInventoryPreparationPending() { return this.inventory.isInventoryPreparationPending(); }
+
     boolean reconcileInventoryIfDirty() { return this.inventory.reconcileInventoryIfDirty(); }
+
+    void maintainInventory(int reserveBuffer) { this.inventory.maintainInventory(reserveBuffer); }
+
+    void onInventorySynchronized(Object connection) { this.inventory.onInventorySynchronized(connection); }
 
     void resetInventorySync() {
         this.cleanupBreaker.reset();
@@ -72,6 +86,8 @@ public final class BedrockPlacer {
     int availablePistons() { return this.inventory.availablePistons(); }
 
     int availableToolUses() { return this.inventory.availableToolUses(); }
+
+    boolean canReserveToolUses(int requiredUses) { return this.inventory.canReserveToolUses(requiredUses); }
 
     void recordToolUse() { this.inventory.recordToolUse(); }
 
@@ -90,6 +106,8 @@ public final class BedrockPlacer {
     void acknowledgeToolTick(Object connection, int sequence) { this.inventory.acknowledgeToolTick(connection, sequence); }
 
     boolean breakCleanupBlock(BlockPos pos, Direction direction) { return this.cleanupBreaker.breakCleanup(pos, direction); }
+
+    int breakCleanupBlocks(List<BlockPos> positions, int limit) { return this.cleanupBreaker.breakCleanupBatch(positions, limit); }
 
     boolean hasActiveCleanupMining() { return this.cleanupBreaker != null && this.cleanupBreaker.hasActiveMining(); }
 
@@ -120,7 +138,8 @@ public final class BedrockPlacer {
 
     public boolean placeSimple(BlockPos supportPos, Direction clickedFace, Item item) {
         LocalPlayer player = client.player;
-        if (player == null || client.gameMode == null || this.isInventorySettling() || this.hasActiveCleanupMining()) {
+        if (player == null || client.gameMode == null || this.isInventorySettling() || this.hasActiveCleanupMining()
+                || !this.canConstruct()) {
             return false;
         }
         if (!this.inventory.prepareMaterial(item)) {
@@ -130,8 +149,11 @@ public final class BedrockPlacer {
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
-        boolean accepted = placeBlockAggressively(player, hitResult, true, this.inventory.placementHand());
-        if (accepted) this.inventory.recordPredictedUse();
+        boolean accepted = placeBlockAggressively(player, hitResult, true, InteractionHand.MAIN_HAND);
+        if (accepted) {
+            this.inventory.recordPredictedUse();
+            this.constructionSent();
+        }
         return accepted;
     }
 
@@ -167,8 +189,13 @@ public final class BedrockPlacer {
     }
 
     List<PistonRequest> placePistonBatch(List<PistonRequest> requests) {
+        return this.placePistonBatch(requests, Integer.MAX_VALUE, request -> false);
+    }
+
+    List<PistonRequest> placePistonBatch(List<PistonRequest> requests, int newStarts, Predicate<PistonRequest> started) {
         if (this.hasActiveCleanupMining()) return List.of();
-        var preparation = BedrockInitialPackets.placeBatch(this.client, this.inventory, requests, this::isCleanupPendingAt);
+        var preparation = BedrockInitialPackets.placeBatch(this.client, this.inventory, requests,
+                this::isCleanupPendingAt, newStarts, started);
         if (preparation.powered()) {
             this.inventory.onInitialPreparationSent(preparation.changedMainHand());
         }
@@ -209,13 +236,13 @@ public final class BedrockPlacer {
     public boolean placePiston(BlockPos pistonPos, Direction facing, BlockPos... preferredAnchors) {
         LocalPlayer player = client.player;
         if (player == null || client.gameMode == null || this.isInventorySettling() || this.hasActiveCleanupMining()
+                || !this.canConstruct()
                 || player.inventoryMenu == null || player.containerMenu != player.inventoryMenu
                 || !player.inventoryMenu.getCarried().isEmpty()) {
             NetworkUtils.clearScopedLookOverride();
             return false;
         }
-        if (!(this.inventory.placementHand() == InteractionHand.MAIN_HAND
-                ? this.preparePistons() : BedrockInventory.switchToOffhand(Blocks.PISTON.asItem()))) {
+        if (!this.preparePistons()) {
             NetworkUtils.clearScopedLookOverride();
             return false;
         }
@@ -249,6 +276,7 @@ public final class BedrockPlacer {
         boolean accepted = placeBlockAggressively(player, hitResult, false, InteractionHand.OFF_HAND);
         if (accepted) {
             this.inventory.recordRawUses(1, -1, 0);
+            this.constructionSent();
         }
         NetworkUtils.clearScopedLookOverride();
         return accepted;

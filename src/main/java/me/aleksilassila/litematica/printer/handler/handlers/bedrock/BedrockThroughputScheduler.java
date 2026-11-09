@@ -1,45 +1,85 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
-/**
- * Pure scheduling policy for admitting new bedrock targets.
- *
- * <p>An interval is an execution window, rather than a credit accumulator. This keeps
- * {@code interval=2, throughput=6} as a deterministic {@code 6,0,6,0} cadence and prevents
- * unused work from becoming a later burst.</p>
- */
-final class BedrockThroughputScheduler {
-    private long tick;
-    private int configuredThroughput = -1;
-    private int configuredInterval = -1;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Function;
+
+/** Paces the first real construction use; already-started cycles never wait for another start. */
+final class BedrockThroughputScheduler<K> {
+    enum CycleState { RUNNING, UNMEASURED, COMPLETE, DISCARDED }
+
+    private final Map<K, Long> started = new HashMap<>();
+    private long tick = Long.MIN_VALUE;
+    private long lastStart = Long.MIN_VALUE;
+    private int capacity;
+    private int interval = -1;
+    private double nextStart;
+    private double cycleTicks;
+    private boolean learning;
 
     void reset() {
-        this.tick = 0L;
-        this.configuredThroughput = -1;
-        this.configuredInterval = -1;
+        this.started.clear();
+        this.tick = this.lastStart = Long.MIN_VALUE;
+        this.capacity = 0;
+        this.interval = -1;
+        this.nextStart = this.cycleTicks = 0;
+        this.learning = false;
     }
 
-    Allocation allocate(int requestedThroughput, int requestedInterval) {
-        int throughput = Math.max(1, requestedThroughput);
-        int interval = Math.max(1, requestedInterval);
-        if (throughput != this.configuredThroughput || interval != this.configuredInterval) {
-            this.configuredThroughput = throughput;
-            this.configuredInterval = interval;
-            this.tick = 0L;
+    void beginTick(long now, int capacity, int interval, boolean learning) {
+        int cap = Math.max(1, capacity);
+        int delay = Math.max(0, interval);
+        if (!learning || this.tick != Long.MIN_VALUE && now - this.tick > 1) {
+            this.started.replaceAll((owner, start) -> Long.MIN_VALUE);
         }
-        boolean window = this.tick++ % interval == 0L;
-        int total = window ? throughput : 0;
-        int critical = (total + 1) / 2;
-        return new Allocation(total, critical, total - critical, interval);
-    }
-
-    void consume(Allocation allocation, int unusedActions) {
-        if (allocation == null) {
-            return;
+        this.tick = now;
+        this.learning = learning;
+        if (cap != this.capacity || delay != this.interval) {
+            this.capacity = cap;
+            this.interval = delay;
+            this.nextStart = this.lastStart == Long.MIN_VALUE ? now : this.lastStart + this.period();
         }
-        // A window expires at the end of its tick. Never carry unused capacity into a later
-        // window: doing so turns a bounded throughput setting into an unbounded burst.
     }
 
-    record Allocation(int total, int critical, int preparation, int interval) {
+    boolean hasStarted(K owner) { return this.started.containsKey(owner); }
+
+    boolean canStart(K owner) {
+        return this.hasStarted(owner) || this.availableStarts() > 0;
     }
+
+    int availableStarts() {
+        if (this.tick == Long.MIN_VALUE) return 0;
+        // Keep only this tick's fractional allowance. Time spent idle cannot buy a later burst.
+        double due = this.tick + 1.0 - Math.max(this.nextStart, this.tick);
+        int allowance = (int) Math.ceil(Math.max(0, due / this.period() - 1.0e-9));
+        return Math.max(0, Math.min(this.capacity - this.started.size(), allowance));
+    }
+
+    void started(K owner) {
+        if (this.hasStarted(owner)) return;
+        if (this.availableStarts() == 0) throw new IllegalStateException("No bedrock construction start available");
+        this.started.put(owner, this.learning ? this.tick : Long.MIN_VALUE);
+        this.lastStart = this.tick;
+        this.nextStart = Math.max(this.nextStart, this.tick) + this.period();
+    }
+
+    void observeCycles(Function<K, CycleState> observation) {
+        var iterator = this.started.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            CycleState state = observation.apply(entry.getKey());
+            if (state == CycleState.RUNNING) continue;
+            if (state == CycleState.UNMEASURED) { entry.setValue(Long.MIN_VALUE); continue; }
+            if (state == CycleState.COMPLETE && entry.getValue() != Long.MIN_VALUE && this.learning) {
+                double elapsed = Math.max(1, this.tick - entry.getValue());
+                this.cycleTicks = this.cycleTicks == 0 ? elapsed : this.cycleTicks + (elapsed - this.cycleTicks) / 4;
+            }
+            iterator.remove();
+        }
+    }
+
+    private double period() {
+        return this.interval > 0 ? this.interval : this.cycleTicks > 0 ? this.cycleTicks / this.capacity : 1;
+    }
+
 }

@@ -48,12 +48,16 @@ class BedrockRawPlacementInventoryTest {
             set(player, Player.class, "inventoryMenu", new InventoryMenu(player.getInventory(), true, player));
             player.containerMenu = player.inventoryMenu;
             this.replaceConnection();
+            synchronizeInventory();
+            this.connection.packets.clear();
         }
 
         void replaceConnection() throws Exception {
             this.connection = this.allocate(CaptureConnection.class);
-            this.connection.transport = new Connection(PacketFlow.CLIENTBOUND);
+            var transport = this.allocate(BedrockPlacementRegressionTest.CaptureTransport.class);
             this.connection.packets = new ArrayList<>();
+            transport.packets = this.connection.packets;
+            this.connection.transport = transport;
             set(this.client.player, LocalPlayer.class, "connection", this.connection);
         }
 

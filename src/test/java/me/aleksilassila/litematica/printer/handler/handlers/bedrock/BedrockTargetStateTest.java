@@ -33,7 +33,6 @@ class BedrockTargetStateTest {
         state.setExecuteTick(7);
         state.setInitializeTick(3);
         state.incrementStuckTicks();
-        state.markThroughputAction();
 
         state.resetAttempt();
 
@@ -42,19 +41,7 @@ class BedrockTargetStateTest {
         assertEquals(-1, state.initializeTick());
         assertEquals(0, state.stuckTicks());
         assertFalse(state.hasTried());
-        assertTrue(state.consumedThroughput());
         assertEquals(BedrockTarget.Status.NEEDS_WAITING, state.status());
-    }
-
-    @Test
-    void throughputMarkerIsPerTick() {
-        BedrockTargetState state = new BedrockTargetState();
-        state.markThroughputAction();
-        assertTrue(state.consumedThroughput());
-
-        state.beginTick(1);
-
-        assertFalse(state.consumedThroughput());
     }
 
     @Test
@@ -66,14 +53,11 @@ class BedrockTargetStateTest {
         assertEquals(4, state.executeTick());
         assertTrue(state.hasTried());
         state.resetAttempt();
-        state.markThroughputAction();
 
         state.beginTick(14);
 
         assertEquals(0, state.tickTimes());
-        assertTrue(state.consumedThroughput());
         state.beginTick(15);
         assertEquals(1, state.tickTimes());
-        assertFalse(state.consumedThroughput());
     }
 }

@@ -113,8 +113,13 @@ public abstract class MixinClientPacketListener {
 
     @Inject(at = @At("TAIL"), method = "handleAwardStats")
     private void printer$confirmRecoveryFence(net.minecraft.network.protocol.game.ClientboundAwardStatsPacket packet, CallbackInfo ci) {
+        if ((Object) this != Minecraft.getInstance().getConnection()) return;
+        var connection = ((ClientPacketListener) (Object) this).getConnection();
         me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.received(
-                ((ClientPacketListener) (Object) this).getConnection());
+                connection);
+        var runtime = RuntimeAccess.currentOrNull();
+        if (runtime != null) runtime.events().publish(
+                new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.InventorySynchronized(connection));
     }
     //#if MC >= 12103
     @Inject(at = @At("TAIL"), method = "handleSetCursorItem")

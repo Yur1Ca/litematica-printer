@@ -90,7 +90,8 @@ class BedrockAdmissionPipelineTest {
             assertTrue(f.enginePlacer.isInventorySettling());
 
             f.advance(1);
-            assertFalse(f.engine.canSubmitInCurrentWindow(), "The ordinary interval tick still expires its budget");
+            assertTrue(f.engine.canSubmitInCurrentWindow(), "Read-only reservations no longer depend on construction-start windows");
+            assertFalse(f.engine.canScanForTargets(), "Six reserved complete cycles still hold the hard capacity");
             assertEquals(sent, f.transport.packets.size());
         }
     }
@@ -111,21 +112,6 @@ class BedrockAdmissionPipelineTest {
             assertTrue(f.engine.submit(FIRST));
             assertTrue(f.enginePlacer.preparePistons(), "An already prepared offhand does not depend on MAIN equipment attributes");
             assertFalse(f.enginePlacer.prepareCriticalToolTick(), "Reservation cannot release the equipment acknowledgement");
-            assertEquals(sent, f.transport.packets.size());
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    @Test void aDispatchedCriticalCanReserveTheNextIndependentTargetWithoutAnotherMutation() throws Exception {
-        try (var f = new Fixture()) {
-            f.advance(0);
-            var critical = (BedrockCriticalExecutor) get(f.engine, BedrockEngine.class, "criticalExecutor");
-            set(critical, BedrockCriticalExecutor.class, "reservedPistons", 1);
-            int sent = f.transport.packets.size();
-            f.plan(FIRST, Direction.UP);
-
-            assertTrue(f.engine.submit(FIRST));
-            assertEquals(1, f.engine.getHudSnapshot().totalTargets());
             assertEquals(sent, f.transport.packets.size());
             assertTrue(f.mode.hits.isEmpty());
         }

@@ -1,9 +1,8 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
-import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
-import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.interaction.ToolPreparationResult;
+import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -47,33 +46,99 @@ public final class BedrockBreaker {
     }
 
     private boolean startCleanup(BlockPos pos, Direction direction, boolean fallback) {
+        var prepared = this.prepareCleanup(pos, direction, fallback);
+        return prepared != null && this.sendCleanup(List.of(prepared));
+    }
+
+    int breakCleanupBatch(List<BlockPos> positions, int limit) {
+        if (positions == null || positions.isEmpty() || limit <= 0 || !this.refresh()) return 0;
+        if (this.active != null) return this.advanceActive() ? 1 : 0;
+        var prepared = new ArrayList<PreparedCleanup>();
+        int sent = 0;
+        int hardUses = 0;
+        for (BlockPos pos : positions) {
+            if (sent + prepared.size() >= limit) break;
+            if (pos == null || prepared.stream().anyMatch(entry -> entry.attempt().pos.equals(pos))) continue;
+            var previous = this.pending.get(pos);
+            if (previous != null && !previous.retryNeeded) continue;
+            var entry = this.prepareCleanup(pos, Direction.DOWN, previous != null);
+            if (entry == null) continue;
+            // Keep dependent parts in ordered submissions without inserting an extra client tick.
+            if (prepared.stream().anyMatch(other -> cleanupConflicts(pos, entry.attempt().state, other.attempt()))) {
+                if (!this.sendCleanup(prepared)) return sent;
+                sent += prepared.size();
+                prepared.clear();
+                hardUses = 0;
+            }
+            if (entry.attempt().stopTick < 0) {
+                if (!prepared.isEmpty()) {
+                    if (!this.sendCleanup(prepared)) return sent;
+                    sent += prepared.size();
+                }
+                // A native OPEN owner must never be followed by another position's START.
+                return sent + (this.sendCleanup(List.of(entry)) ? 1 : 0);
+            }
+            if (entry.usesTool() && !this.placer.canReserveToolUses(hardUses + 1)) continue;
+            prepared.add(entry);
+            if (entry.usesTool()) hardUses++;
+        }
+        return sent + (!prepared.isEmpty() && this.sendCleanup(prepared) ? prepared.size() : 0);
+    }
+
+    private static boolean cleanupConflicts(BlockPos pos, BlockState state, CleanupAttempt other) {
+        return pos.distManhattan(other.pos) <= 1
+                || BedrockEnvironment.isRedstoneTorch(state) && BedrockEnvironment.getTorchInfluencePositions(other.pos).contains(pos)
+                || BedrockEnvironment.isRedstoneTorch(other.state) && BedrockEnvironment.getTorchInfluencePositions(pos).contains(other.pos);
+    }
+
+    private PreparedCleanup prepareCleanup(BlockPos pos, Direction direction, boolean fallback) {
         if (!this.canMine(pos)
-                || this.placer.isInventorySettling() || !NetworkUtils.canSendPacketBatch()) return false;
+                || this.placer.isInventorySettling() || !NetworkUtils.canSendPacketBatch()) return null;
         BlockState state = this.level.getBlockState(pos);
-        if (!BedrockTargetBlocks.isCleanupResidue(state) || state.is(Blocks.MOVING_PISTON)) return false;
+        if (!BedrockTargetBlocks.isCleanupResidue(state) || state.is(Blocks.MOVING_PISTON)) return null;
         float hardness = state.getDestroySpeed(this.level, pos);
-        if (hardness < 0.0F) return false;
+        if (hardness < 0.0F) return null;
         if (hardness > 0.0F) {
             if (!this.placer.prepareTool(state, true)
-                    || !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBreak(pos, state, false), this.placer)
-                    || !this.placer.prepareCriticalToolTick()) return false;
+                    || !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBedrockBreak(pos, state), this.placer)
+                    || !this.placer.prepareCriticalToolTick()) return null;
         }
         float progress = hardness == 0.0F || this.client.player.getAbilities().instabuild
                 ? 1.0F : state.getDestroyProgress(this.client.player, this.level, pos);
-        if (!(progress > 0.0F)) return false;
+        if (!(progress > 0.0F)) return null;
         var packets = new ArrayList<Packet<?>>();
-        if (!appendAction(packets, ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, pos, direction)) return false;
+        if (!appendAction(packets, ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, pos, direction)) return null;
         boolean open = progress < 0.7F || fallback;
         if (!open && progress < 1.0F
-                && !appendAction(packets, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, direction)) return false;
-        if (!NetworkUtils.sendPacketBatch(packets)) return false;
-        if (hardness > 0.0F) this.placer.recordToolUse();
+                && !appendAction(packets, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, direction)) return null;
         var attempt = new CleanupAttempt(pos.immutable(), direction, state, this.level.getGameTime(), open, fallback,
                 normalizedTool(this.client.player.getMainHandItem()));
-        this.pending.put(attempt.pos, attempt);
-        if (open) this.active = attempt;
+        return new PreparedCleanup(attempt, packets, InventoryUtils.getSelectedSlot(this.client.player.getInventory()), hardness > 0.0F);
+    }
+
+    private boolean sendCleanup(List<PreparedCleanup> prepared) {
+        if (!this.sameContext() || this.placer.isInventorySettling()) return false;
+        int hardUses = 0;
+        var packets = new ArrayList<Packet<?>>();
+        for (var entry : prepared) {
+            if (entry.usesTool()) {
+                if (entry.toolSlot() != InventoryUtils.getSelectedSlot(this.client.player.getInventory())
+                        || !sameTool(entry.attempt().tool, normalizedTool(this.client.player.getMainHandItem()))
+                        || this.placer.isToolSettling() || !this.placer.canReserveToolUses(++hardUses)) return false;
+            }
+            packets.addAll(entry.packets());
+        }
+        if (!NetworkUtils.sendPacketBatch(packets)) return false;
+        for (var entry : prepared) {
+            var attempt = entry.attempt();
+            if (entry.usesTool()) this.placer.recordToolUse(entry.toolSlot());
+            this.pending.put(attempt.pos, attempt);
+            if (attempt.stopTick < 0) this.active = attempt;
+        }
         return true;
     }
+
+    private record PreparedCleanup(CleanupAttempt attempt, List<Packet<?>> packets, int toolSlot, boolean usesTool) { }
 
     boolean hasActiveMining() {
         return this.active != null && this.sameContext()
@@ -265,58 +330,12 @@ public final class BedrockBreaker {
         }
     }
 
-    public static boolean breakBlock(BlockPos pos) {
-        return breakBlock(pos, Direction.DOWN, true);
+    public static boolean breakBlock(BlockPos pos, BedrockPlacer placer) {
+        return breakBlock(pos, Direction.DOWN, placer);
     }
 
-    public static boolean breakBlock(BlockPos pos, boolean predictRemoval) {
-        return breakBlock(pos, Direction.DOWN, predictRemoval);
-    }
-
-    public static boolean breakBlock(BlockPos pos, Direction direction, boolean predictRemoval) {
-        return breakBlock(pos, direction, predictRemoval, null);
-    }
-
-    public static boolean breakBlock(BlockPos pos, boolean predictRemoval, BedrockPlacer placer) {
-        return breakBlock(pos, Direction.DOWN, predictRemoval, placer);
-    }
-
-    public static boolean breakBlock(BlockPos pos, Direction direction, boolean predictRemoval, BedrockPlacer placer) {
-        if (placer != null) return placer.breakCleanupBlock(pos, direction);
-        if (CLIENT.level == null || CLIENT.player == null || !BedrockEnvironment.canInteract(pos)) {
-            return false;
-        }
-        var state = CLIENT.level.getBlockState(pos);
-        if (state.isAir()) {
-            return false;
-        }
-        // MOVING_PISTON has destroySpeed -1: the server's calcBlockBreakingDelta is negative, so it
-        // can never reach the 0.7 STOP threshold nor the failedToMine 1.0 auto-break. Attempting it
-        // just spams hit sounds forever ("敲击声但没有回收"). Wait for it to settle into a PISTON /
-        // PISTON_HEAD / air and let the normal residue path handle it.
-        if (state.is(Blocks.MOVING_PISTON)) {
-            return false;
-        }
-
-        boolean cleanupResidue = BedrockTargetBlocks.isCleanupResidue(state);
-        boolean switched = cleanupResidue ? BedrockInventory.switchToCleanupTool(state) : BedrockInventory.switchToBestTool(state);
-        if (!switched) {
-            return false;
-        }
-        var preparation = RuntimeAccess.get().toolSwitchService().prepareForBreak(pos, state, false);
-        if (!toolReady(preparation, null)) return false;
-
-        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension) {
-            BlockBreakResult result = gameModeExtension.litematica_printer$continueDestroyBlock(
-                    false,
-                    pos,
-                    direction,
-                    false,
-                    false
-            );
-            return result != BlockBreakResult.FAILED && result != BlockBreakResult.ABORTED;
-        }
-        return false;
+    public static boolean breakBlock(BlockPos pos, Direction direction, BedrockPlacer placer) {
+        return placer != null && placer.breakCleanupBlock(pos, direction);
     }
 
     static boolean prepareCriticalTool(BlockPos pistonPos, BlockState pistonState) {
@@ -331,7 +350,9 @@ public final class BedrockBreaker {
         if (!(placer == null ? BedrockInventory.switchToBestTool(pistonState) : placer.prepareTool(pistonState, false))) {
             return false;
         }
-        return toolReady(RuntimeAccess.get().toolSwitchService().prepareForBreak(pistonPos, pistonState, false), placer)
+        var service = RuntimeAccess.get().toolSwitchService();
+        return toolReady(placer == null ? service.prepareForBreak(pistonPos, pistonState, false)
+                        : service.prepareForBedrockBreak(pistonPos, pistonState), placer)
                 && BedrockInventory.canBreakInCriticalBundle(CLIENT.player, pistonState, CLIENT.player.getMainHandItem())
                 && (placer == null || placer.prepareCriticalToolTick());
     }

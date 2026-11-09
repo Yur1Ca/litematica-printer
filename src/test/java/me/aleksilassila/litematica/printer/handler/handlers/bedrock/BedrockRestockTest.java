@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.integration.inventory.InventoryProvider;
@@ -92,9 +91,8 @@ class BedrockRestockTest {
         }
         void settleTargets() throws Exception {
             var executor = (BedrockTargetExecutor) get(engine, BedrockEngine.class, "targetExecutor");
-            var processed = new LinkedHashSet<BedrockTarget>();
-            executor.process(level, 4, true, processed, null, false);
-            executor.process(level, 4, false, processed, null, false);
+            executor.observeAndRetire(level);
+            executor.advance(level, false);
         }
     }
 
@@ -194,7 +192,8 @@ class BedrockRestockTest {
                 f.settleTargets();
             }
             assertFalse(target.hasTried(), "The failed event closes before recovery can request supplies");
-            assertEquals(BedrockTarget.Status.RECOVERING, target.getStatus());
+            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.getStatus(),
+                    "A clean failed attempt needs no extra recovering tick before supplies can be requested");
             assertFalse(f.targets.isEmpty());
             assertFalse(f.prepare());
             assertSame(Items.PISTON, f.sent.get(0).preferredItem());
@@ -257,7 +256,10 @@ class BedrockRestockTest {
     //#if MC == 260100
     static class EntryProbe extends me.aleksilassila.litematica.printer.handler.handlers.BedrockHandler {
         EntryProbe() { super(null); }
-        boolean prepareFromFeature() { return super.canExecute(); }
+        boolean prepareFromFeature() {
+            super.preprocess();
+            return super.canExecute();
+        }
     }
 
     private static EntryProbe entry(Fixture f) throws Exception {

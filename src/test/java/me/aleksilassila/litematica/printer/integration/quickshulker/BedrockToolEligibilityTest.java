@@ -291,7 +291,6 @@ class BedrockToolEligibilityTest {
             var submit = type.getDeclaredMethod("submit", ClientLevel.class, BlockPos.class, BlockPos.class, Direction.class, Set.class);
             submit.setAccessible(true);
             assertFalse((boolean) submit.invoke(executor, level, BlockPos.ZERO, PISTON, Direction.DOWN, Set.of(PISTON.east())));
-            assertEquals(0, get(executor, type, "reservedPistons"));
             assertTrue(connection.packets.isEmpty(), "Reject before breaking the torch or piston");
             assertTrue(level.getBlockState(PISTON).getValue(PistonBaseBlock.EXTENDED));
             assertEquals(2, player.inventory.getItem(1).getCount());

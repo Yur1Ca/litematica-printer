@@ -39,7 +39,7 @@ class BedrockRawInventoryBudgetTest {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 4));
             f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 3));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             long markers = f.markers();
 
@@ -72,7 +72,7 @@ class BedrockRawInventoryBudgetTest {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 4));
             f.player().getInventory().setItem(11, new ItemStack(Items.REDSTONE_TORCH, 8));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             rawUse(session, 1, -1, 0);
 
@@ -100,7 +100,7 @@ class BedrockRawInventoryBudgetTest {
             var tool = new ItemStack(Items.DIAMOND_PICKAXE);
             tool.setDamageValue(tool.getMaxDamage() - 2);
             f.player().getInventory().setItem(0, tool);
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             assertTrue((boolean) call(session, "prepareTool", new Class<?>[]{net.minecraft.world.level.block.state.BlockState.class, boolean.class},
                     Blocks.PISTON.defaultBlockState(), true));
@@ -125,7 +125,7 @@ class BedrockRawInventoryBudgetTest {
     @Test void aRejectedLastPistonUseCalibratesEvenWhenTheClientPredictsNoMaterialAnywhere() throws Exception {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(40, new ItemStack(Items.PISTON));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             rawUse(session, 1, -1, 0);
             assertEquals(0, f.player().getInventory().countItem(Items.PISTON));
@@ -144,7 +144,7 @@ class BedrockRawInventoryBudgetTest {
     @Test void exhaustedMaterialCanBeReconciledBeforeRequestingAProviderWithoutPerUsePolling() throws Exception {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             assertFalse((boolean) call(session, "reconcileInventoryIfDirty", new Class<?>[0]));
             rawUse(session, 0, 6, 1);
@@ -166,7 +166,7 @@ class BedrockRawInventoryBudgetTest {
     @Test void rawConsumptionAbsorbsALowerVisibleCountBeforeChargingItsOwnUse() throws Exception {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 4));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             f.player().getInventory().getItem(40).setCount(2);
 
@@ -180,7 +180,7 @@ class BedrockRawInventoryBudgetTest {
     @Test void predictedConsumptionDoesNotChargeVanillasAlreadyReducedCountTwice() throws Exception {
         try (var f = new BedrockInventorySessionTest.Fixture()) {
             f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 4));
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             assertTrue((boolean) call(session, "prepareMaterial", new Class<?>[]{net.minecraft.world.item.Item.class}, Items.REDSTONE_TORCH));
             f.player().getInventory().getItem(6).shrink(1); // The existing vanilla useItemOn prediction has already consumed it.
@@ -198,7 +198,7 @@ class BedrockRawInventoryBudgetTest {
             var tool = new ItemStack(Items.DIAMOND_PICKAXE);
             tool.setDamageValue(tool.getMaxDamage() - 4);
             f.player().getInventory().setItem(0, tool);
-            Object session = f.session(true);
+            Object session = f.session();
             f.validateInitial(session);
             f.player().getInventory().getItem(0).setDamageValue(tool.getMaxDamage() - 2);
 

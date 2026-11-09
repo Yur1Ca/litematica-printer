@@ -73,6 +73,7 @@ class BedrockInitialBatchPlacementTest {
             var first = poweredRequest(FIRST.above(), new BedrockTorchPlacement(firstSupport, Direction.UP));
             var second = poweredRequest(SECOND.above(), new BedrockTorchPlacement(secondSupport, Direction.UP));
             var worldBefore = new HashMap<>(f.level.blocks);
+            f.readyInventory();
 
             assertEquals(List.of(first, second), send(f.placer, List.of(first, second)));
 
@@ -99,7 +100,7 @@ class BedrockInitialBatchPlacementTest {
             f.client.player.getInventory().setItem(11, new ItemStack(Items.DIAMOND_PICKAXE));
             var support = FIRST.north();
             f.level.blocks.put(support, Blocks.BEDROCK.defaultBlockState());
-            var session = new BedrockInventorySession(f.client, false, new BedrockInventorySession.InventoryAccess() {
+            var session = new BedrockInventorySession(f.client, new BedrockInventorySession.InventoryAccess() {
                 public boolean selectOffhand(net.minecraft.world.item.Item item) { return true; }
                 public boolean materialRequiresInventorySwap(net.minecraft.world.item.Item item) { return false; }
                 public boolean selectMaterial(net.minecraft.world.item.Item item) { return true; }
@@ -110,6 +111,7 @@ class BedrockInitialBatchPlacementTest {
             });
             set(f.placer, BedrockPlacer.class, "inventory", session);
             var request = poweredRequest(FIRST.above(), new BedrockTorchPlacement(support, Direction.UP));
+            f.readyInventory();
 
             assertEquals(List.of(request), send(f.placer, List.of(request)));
 
@@ -127,6 +129,7 @@ class BedrockInitialBatchPlacementTest {
             var power = new BedrockTorchPlacement(support, Direction.UP);
             var first = poweredRequest(FIRST.above(), power);
             var second = poweredRequest(SECOND.above(), power);
+            f.readyInventory();
 
             assertEquals(List.of(first, second), send(f.placer, List.of(first, second)));
 
@@ -136,19 +139,84 @@ class BedrockInitialBatchPlacementTest {
         }
     }
 
-    @Test void aSingleTorchCanPrepareACompatibleSubsetWithoutStarvingTheWholeBatch() throws Exception {
+    @Test void aSingleTorchPrimesBothPistonsAndDefersOnlyTheUnsuppliedPowerSource() throws Exception {
         try (var f = new Fixture()) {
             f.client.player.getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 1));
             f.level.blocks.put(FIRST.north(), Blocks.BEDROCK.defaultBlockState());
             f.level.blocks.put(SECOND.south(), Blocks.BEDROCK.defaultBlockState());
             var first = poweredRequest(FIRST.above(), new BedrockTorchPlacement(FIRST.north(), Direction.UP));
             var second = poweredRequest(SECOND.above(), new BedrockTorchPlacement(SECOND.south(), Direction.UP));
+            f.readyInventory();
 
-            assertEquals(List.of(first), send(f.placer, List.of(first, second)));
+            assertEquals(List.of(first, request(SECOND.above(), Direction.UP)), send(f.placer, List.of(first, second)));
 
-            assertEquals(15, f.client.player.getInventory().getItem(40).getCount());
+            assertEquals(14, f.client.player.getInventory().getItem(40).getCount());
             assertTrue(f.client.player.getInventory().getItem(6).isEmpty());
+            assertEquals(3, f.batch.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
+        }
+    }
+
+    @Test void aColdTorchLeavesItsPistonPrimedWithoutStallingOtherInitialRequests() throws Exception {
+        try (var f = new Fixture()) {
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            f.client.player.getInventory().setItem(11, new ItemStack(Items.REDSTONE_TORCH, 8));
+            var support = FIRST.north();
+            f.level.blocks.put(support, Blocks.BEDROCK.defaultBlockState());
+            int[] materialSelections = {0};
+            var session = new BedrockInventorySession(f.client, new BedrockInventorySession.InventoryAccess() {
+                public boolean selectOffhand(net.minecraft.world.item.Item item) { materialSelections[0]++; return false; }
+                public boolean materialRequiresInventorySwap(net.minecraft.world.item.Item item) { return false; }
+                public boolean selectMaterial(net.minecraft.world.item.Item item) { materialSelections[0]++; return false; }
+                public boolean toolRequiresInventorySwap(BlockState state, boolean cleanup) { return false; }
+                public boolean selectTool(BlockState state, boolean cleanup) { return true; }
+            });
+            set(f.placer, BedrockPlacer.class, "inventory", session);
+            var cold = poweredRequest(FIRST.above(), new BedrockTorchPlacement(support, Direction.UP));
+            var independent = request(SECOND.above(), Direction.UP);
+            f.readyInventory();
+
+            var accepted = send(f.placer, List.of(cold, independent));
+
+            assertEquals(List.of(request(FIRST.above(), Direction.UP), independent), accepted,
+                    "A missing hotbar Torch defers power, not either available priming piston");
+            assertEquals(0, materialSelections[0], "The frozen initial builder cannot start a relative material move");
+            assertEquals(14, f.client.player.getInventory().getItem(40).getCount());
+            assertEquals(8, f.client.player.getInventory().getItem(11).getCount());
+            var uses = f.batch.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance)
+                    .map(ServerboundUseItemOnPacket.class::cast).toList();
+            assertEquals(2, uses.size());
+            assertTrue(uses.stream().allMatch(packet -> packet.getHand() == net.minecraft.world.InteractionHand.OFF_HAND));
+            assertEquals(1, f.batch.batches);
+        }
+    }
+
+    @Test void aColdTorchDoesNotStripAnExistingPowerSourceFromTheAcceptedPrefix() throws Exception {
+        try (var f = new Fixture()) {
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            f.client.player.getInventory().setItem(11, new ItemStack(Items.REDSTONE_TORCH, 8));
+            var firstSupport = FIRST.north();
+            var secondSupport = SECOND.south();
+            f.level.blocks.put(firstSupport, Blocks.BEDROCK.defaultBlockState());
+            f.level.blocks.put(secondSupport, Blocks.BEDROCK.defaultBlockState());
+            var readyPower = new BedrockTorchPlacement(firstSupport, Direction.UP);
+            f.level.blocks.put(readyPower.getTorchPos(), Blocks.REDSTONE_TORCH.defaultBlockState());
+            var ready = poweredRequest(FIRST.above(), readyPower);
+            var cold = poweredRequest(SECOND.above(), new BedrockTorchPlacement(secondSupport, Direction.UP));
+            var session = new BedrockInventorySession(f.client, new BedrockInventorySession.InventoryAccess() {
+                public boolean selectOffhand(net.minecraft.world.item.Item item) { return true; }
+                public boolean materialRequiresInventorySwap(net.minecraft.world.item.Item item) { return false; }
+                public boolean selectMaterial(net.minecraft.world.item.Item item) { return false; }
+                public boolean toolRequiresInventorySwap(BlockState state, boolean cleanup) { return false; }
+                public boolean selectTool(BlockState state, boolean cleanup) { return true; }
+            });
+            set(f.placer, BedrockPlacer.class, "inventory", session);
+            f.readyInventory();
+
+            assertEquals(List.of(ready, request(SECOND.above(), Direction.UP)), send(f.placer, List.of(ready, cold)));
+
             assertEquals(2, f.batch.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
+            assertEquals(8, f.client.player.getInventory().getItem(11).getCount());
+            assertEquals(1, f.batch.batches);
         }
     }
 
@@ -160,6 +228,7 @@ class BedrockInitialBatchPlacementTest {
             f.level.blocks.put(support, Blocks.BEDROCK.defaultBlockState());
             f.level.blocks.put(power.getTorchPos(), Blocks.REDSTONE_TORCH.defaultBlockState());
             var request = poweredRequest(FIRST.above(), power);
+            f.readyInventory();
 
             assertEquals(List.of(request), send(f.placer, List.of(request)));
 
@@ -186,6 +255,7 @@ class BedrockInitialBatchPlacementTest {
             var up = request(FIRST.above(), Direction.UP);
             var down = request(SECOND.below(), Direction.DOWN);
             var beforeWorld = new HashMap<>(f.level.blocks);
+            f.readyInventory();
 
             assertEquals(List.of(up, down), send(f.placer, List.of(up, down)));
 
@@ -207,6 +277,7 @@ class BedrockInitialBatchPlacementTest {
     @Test void aPendingInventoryFenceRejectsEveryRequestBeforeAnyPacketOrConsumption() throws Exception {
         try (var f = new Fixture()) {
             var up = request(FIRST.above(), Direction.UP);
+            f.readyInventory();
             me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.recordFence(
                     f.placer, InventorySyncPackets.prepareFence(f.batch));
             f.tick(100);
@@ -235,6 +306,7 @@ class BedrockInitialBatchPlacementTest {
             f.level.blocks.put(outsideRange, Blocks.BEDROCK.defaultBlockState());
             var far = request(outsideRange.above(), Direction.UP);
             var beforeWorld = new HashMap<>(f.level.blocks);
+            f.readyInventory();
 
             assertEquals(List.of(good), send(f.placer,
                     Arrays.asList(collision, occupiedHead, missingAnchor, side, far, null,
@@ -253,6 +325,7 @@ class BedrockInitialBatchPlacementTest {
             f.client.player.getInventory().setItem(40, new ItemStack(Items.PISTON, 1));
             var first = request(FIRST.above(), Direction.UP);
             var second = request(SECOND.above(), Direction.UP);
+            f.readyInventory();
 
             assertEquals(List.of(first), send(f.placer, List.of(first, second)));
 
@@ -263,6 +336,7 @@ class BedrockInitialBatchPlacementTest {
 
     @Test void aRejectedSendDoesNotPredictConsumptionOrInstallAFence() throws Exception {
         try (var f = new Fixture()) {
+            f.readyInventory();
             f.batch.reject = true;
 
             assertTrue(send(f.placer, List.of(request(FIRST.above(), Direction.UP))).isEmpty());
@@ -282,12 +356,16 @@ class BedrockInitialBatchPlacementTest {
             f.client.player.getInventory().setItem(10, new ItemStack(Items.PISTON, 8));
             f.client.player.getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH, 4));
             var first = request(FIRST.above(), Direction.UP);
+            f.readyInventory();
 
             assertTrue(send(f.placer, List.of(first)).isEmpty());
 
             assertEquals(1, mode.swaps);
-            assertEquals(0, f.batch.batches);
+            assertEquals(1, f.batch.batches, "The actual relative SWAP owns a snapshot and ordered reply");
+            assertTrue(f.placer.isInventorySettling());
             assertEquals(8, f.client.player.getInventory().getItem(40).getCount());
+            assertTrue(send(f.placer, List.of(first)).isEmpty(), "The swap cannot be consumed before its real reply");
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeInventory(f.placer, f.client);
             assertEquals(List.of(first), send(f.placer, List.of(first)));
             assertEquals(7, f.client.player.getInventory().getItem(40).getCount());
             assertEquals(1, mode.swaps);
@@ -299,6 +377,7 @@ class BedrockInitialBatchPlacementTest {
         try (var f = new Fixture()) {
             var player = f.client.player;
             List<?> requests = List.of(request(FIRST.above(), Direction.UP));
+            f.readyInventory();
             switch (invalid) {
                 case "cursor" -> player.inventoryMenu.setCarried(new ItemStack(Items.STONE));
                 case "container" -> player.containerMenu = ChestMenu.threeRows(7, player.getInventory());
@@ -388,6 +467,12 @@ class BedrockInitialBatchPlacementTest {
             batch.packets = new ArrayList<>();
             connection.transport = batch;
             mode.rejectMutations = true;
+        }
+        void readyInventory() {
+            synchronizeInventory();
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeSelectedTool(placer, client);
+            batch.packets.clear();
+            batch.batches = 0;
         }
         @Override public void close() throws Exception {
             Configs.Core.WORK_RANGE.setIntegerValue(oldWorkRange);

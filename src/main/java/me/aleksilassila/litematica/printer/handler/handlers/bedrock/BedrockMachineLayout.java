@@ -15,15 +15,6 @@ public final class BedrockMachineLayout {
             Direction.EAST,
             Direction.WEST
     };
-    private static final Direction[] SEARCH_ORDER = {
-            Direction.UP,
-            Direction.DOWN,
-            Direction.NORTH,
-            Direction.SOUTH,
-            Direction.EAST,
-            Direction.WEST
-    };
-
     private final BlockPos bedrockPos;
     private final Direction pistonOffset;
     private final BlockPos pistonPos;

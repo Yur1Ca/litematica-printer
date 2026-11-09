@@ -59,6 +59,31 @@ class BedrockCleanupCycleTest {
         }
     }
 
+    @Test void aNewReservationTransfersOnlyItsSharedPositionFromEveryRetiredCycle() throws Exception {
+        try (var f = new Fixture()) {
+            f.world.blocks.put(PISTON, Blocks.PISTON.defaultBlockState());
+            f.world.blocks.put(SUPPORT, Blocks.SLIME_BLOCK.defaultBlockState());
+            f.cleanup.enqueueCycle(OWNER, Set.of(PISTON, SUPPORT), false);
+            f.cleanup.enqueueCycle(OWNER.east(2), Set.of(PISTON), false);
+            assertEquals(2, f.cleanup.reachableCycleCount());
+
+            f.cleanup.transferOwnership(Set.of(PISTON));
+            f.cleanup.onServerBlockUpdate(PISTON);
+
+            assertFalse(f.cleanup.contains(PISTON), "A transferred position cannot be reclaimed by either old watch");
+            assertTrue(f.cleanup.contains(SUPPORT));
+            assertEquals(1, f.cleanup.reachableCycleCount(), "The unrelated remaining footprint still owns its slot");
+            f.world.loaded = false;
+            f.world.tick = 1000;
+            f.cleanup.beginTick();
+            assertTrue(f.cleanup.contains(SUPPORT), "Transferring one coordinate cannot discard unknown-chunk debt elsewhere");
+            f.world.loaded = true;
+            assertEquals(1, f.cleanup.reachableCycleCount());
+            f.air(SUPPORT);
+            assertEquals(0, f.cleanup.reachableCycleCount());
+        }
+    }
+
     @Test void anAirOnlyWatchUsesNoSlotButALateOwnedPistonRestoresItsCycle() throws Exception {
         try (var f = new Fixture()) {
             f.cleanup.enqueueCycle(OWNER, Set.of(PISTON), false);
@@ -208,7 +233,7 @@ class BedrockCleanupCycleTest {
             world.loaded = true;
             set(world, Level.class, "dimension", Level.OVERWORLD);
             client.level = world;
-            cleanup = new BedrockCleanupCoordinator(client, new CooldownUtils());
+            cleanup = new BedrockCleanupCoordinator(client, null, () -> false, enginePlacer);
         }
 
         void air(BlockPos pos) {

@@ -9,9 +9,14 @@ import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialReservation;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
+import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RedstoneTorchBlock;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
 
 import java.util.function.LongSupplier;
 
@@ -26,11 +31,11 @@ public final class BedrockEngine implements RuntimeComponent {
     private final BedrockCriticalExecutor criticalExecutor;
     private final BedrockAdmissionController admission;
     private final BedrockTargetExecutor targetExecutor;
-    private final BedrockBatchPipeline batchPipeline;
-    private final BedrockThroughputScheduler throughputScheduler = new BedrockThroughputScheduler();
+    private final BedrockThroughputScheduler<BlockPos> throughputScheduler = new BedrockThroughputScheduler<>();
     private final LongSupplier tickClock;
     private long lastProcessedTick = Long.MIN_VALUE;
     private boolean awaitingSupplies;
+    private boolean mutationsAllowed;
 
     public BedrockEngine(
             Minecraft client,
@@ -56,10 +61,10 @@ public final class BedrockEngine implements RuntimeComponent {
                         .rttReplayController().getExtraIntervalTicks(100),
                 timing
         );
-        this.placer = new BedrockPlacer(client, this.networkSync, true);
-        this.criticalExecutor = new BedrockCriticalExecutor(this.placer, this.stats);
+        this.placer = new BedrockPlacer(client, this.networkSync);
+        this.criticalExecutor = new BedrockCriticalExecutor(this.placer);
         this.cleanup = new BedrockCleanupCoordinator(
-                client, cooldownUtils, this.networkSync, this::mutationsDeferred, this.placer);
+                client, this.networkSync, this::mutationsDeferred, this.placer);
         this.admission = new BedrockAdmissionController(
                 client, this.targets, this.cleanup, this.stats, cooldownUtils, tickClock,
                 this.criticalExecutor, this.placer, litematica, this.networkSync);
@@ -70,9 +75,9 @@ public final class BedrockEngine implements RuntimeComponent {
                 this.admission::setRetryCooldown,
                 this.placer,
                 this.networkSync,
-                this::mutationsDeferred
+                this.criticalExecutor,
+                this.throughputScheduler
         );
-        this.batchPipeline = new BedrockBatchPipeline(this.targets, this.targetExecutor, this.criticalExecutor, this.placer);
     }
 
     @Override
@@ -88,9 +93,10 @@ public final class BedrockEngine implements RuntimeComponent {
         this.networkSync.reset();
         this.placer.clearHorizontalLookState();
         this.placer.resetInventorySync();
-        this.criticalExecutor.reset();
         this.throughputScheduler.reset();
+        this.targetExecutor.reset();
         this.awaitingSupplies = false;
+        this.mutationsAllowed = false;
         this.lastProcessedTick = Long.MIN_VALUE;
         HudStatsManager.getRuntime().resetMode(HudStatsManager.Mode.BEDROCK);
     }
@@ -105,23 +111,34 @@ public final class BedrockEngine implements RuntimeComponent {
             this.networkSync.onServerBlockUpdate(pos);
             this.cleanup.onServerBlockUpdate(pos);
             this.placer.onCleanupBlockUpdate(pos);
+            this.admission.onServerBlockUpdate(pos);
         } else if (event instanceof RuntimeEvent.BlockActionAcknowledged ack) {
             this.placer.acknowledgeToolTick(ack.connection(), ack.sequence());
+        } else if (event instanceof RuntimeEvent.InventorySynchronized sync) {
+            this.placer.onInventorySynchronized(sync.connection());
         }
+    }
+
+    /** Refresh construction permission without acquiring a provider or moving inventory. */
+    BedrockSupplies.Requirement observeSupplies(MaterialRequestCoordinator requests) {
+        var missing = this.client.level == null || this.client.player == null ? null
+                : BedrockSupplies.missing(this.client.level, this.targets);
+        this.awaitingSupplies = missing != null || requests.isBusy();
+        return missing;
     }
 
     /** Called only at the feature's inventory-safe boundary, never inside a critical bundle. */
     public boolean prepareMaterials(MaterialRequestCoordinator requests) {
         if (this.client.level == null || this.client.player == null) return false;
-        BedrockSupplies.Requirement missing = BedrockSupplies.missing(this.client.level, this.targets);
-        this.awaitingSupplies = missing != null || requests.isBusy();
+        BedrockSupplies.Requirement missing = this.observeSupplies(requests);
         // Background provider ticks own completion, including a cancelled operation's recovery.
         if (requests.isBusy()) return false;
-        if (this.mutationsDeferred() || this.placer.hasActiveCleanupMining()) return true;
+        if (this.placer.isInventorySettling() || this.placer.hasActiveCleanupMining()) return true;
         if (missing == null) return true;
         // Waiting for the whole registry to empty would deadlock an unexecuted machine on
-        // the very materials it needs to finish. Only dispatched attempts must settle first.
-        if (BedrockSupplies.hasDispatchedAttempt(this.targets)) {
+        // the very materials it needs to finish. Preserve a funded attempt's already-sent
+        // tool boundary as well as an attempt whose critical body has been dispatched.
+        if (BedrockSupplies.hasDispatchedAttempt(this.targets) || this.awaitingFundedCriticalTool()) {
             return true;
         }
         // A rejected raw use may leave the client's last material optimistically empty.
@@ -135,42 +152,98 @@ public final class BedrockEngine implements RuntimeComponent {
                 && (!this.cleanup.isEmpty() || BedrockSupplies.hasRecoveringMachine(this.targets));
     }
 
-    public void tick() {
+    private boolean awaitingFundedCriticalTool() {
+        if (!this.placer.isToolSettling() || !InventoryUtils.getOffhandStack(this.client.player).is(Items.PISTON)
+                || this.placer.availablePistons() < 1 || !this.placer.canReserveToolUses(1)) return false;
+        var iterator = this.targets.iterator();
+        while (iterator.hasNext()) {
+            var target = iterator.next();
+            if (target == null || target.hasTried() || target.getStatus() != BedrockTarget.Status.EXTENDED
+                    || !target.canMutatePower() || !BedrockTargetBlocks.isTargetBlock(this.client.level.getBlockState(target.getBedrockPos()))
+                    || !BedrockEnvironment.arePositionsInteractable(target.getStaticMachinePositions())) continue;
+            var piston = this.client.level.getBlockState(target.getPistonPos());
+            if (!piston.is(Blocks.PISTON) || !piston.getValue(PistonBaseBlock.EXTENDED)
+                    || piston.getValue(PistonBaseBlock.FACING) != target.layout().getPrimingFacing()
+                    || !BedrockInventory.canBreakInCriticalBundle(this.client.player, piston, this.client.player.getMainHandItem())) continue;
+            var torches = target.getOwnedTorchPositions();
+            if (!torches.isEmpty() && torches.stream().allMatch(pos ->
+                    this.client.level.getBlockState(pos).getValue(RedstoneTorchBlock.LIT))) return true;
+        }
+        return false;
+    }
+
+    public void tick() { this.beginTick(true); }
+
+    /** Observe and service existing cycles before the scanner decides whether it may admit work. */
+    public void beginTick(boolean allowMutations) {
         ClientLevel level = this.client.level;
         if (level == null) {
             this.reset();
             return;
         }
         long now = this.tickClock.getAsLong();
+        this.mutationsAllowed = allowMutations;
         if (now == this.lastProcessedTick) {
             return;
         }
         this.lastProcessedTick = now;
+        this.throughputScheduler.beginTick(now, this.admission.effectiveThroughput(),
+                this.admission.configuredInterval(), !this.mutationsDeferred() && this.allowAdmission());
         this.stats.beginTick();
         this.cleanup.beginTick();
-        this.criticalExecutor.beginTick(now);
         this.admission.purgeTargetsOutsideSelection();
         this.targetExecutor.observeAndRetire(level);
-        if (!this.mutationsDeferred()) this.placer.advanceCleanupMining();
-        // Finish already-owned cycles before preparation can change the hand or start a real menu swap.
-        this.cleanup.process(this.targets::isReserved, this.admission.cleanupLimitPerTick());
+        if (!this.mutationsDeferred()) this.placer.maintainInventory(Math.max(2, this.admission.effectiveThroughput() * 2));
+        this.advanceWork(level);
+        this.observeCycleCompletions(level);
         this.admission.beginTick(level);
-
-        BedrockThroughputScheduler.Allocation allocation = this.throughputScheduler.allocate(
-                this.admission.effectiveThroughput(),
-                this.admission.configuredInterval()
-        );
-        // Reservation only reads the world and owns a footprint. Inventory settlement and
-        // a dispatched bundle still gate every physical mutation in the pipeline below.
-        this.admission.setSubmissionBudget(this.allowAdmission() ? allocation.total() : 0);
-        this.batchPipeline.advance(level, this.allowPreparation());
-        this.cleanup.process(this.targets::isReserved, this.admission.cleanupLimitPerTick());
+        // Reserving a candidate does not send a USE. The executor paces the first
+        // actual construction use even when an inventory fence releases a backlog.
+        this.admission.setSubmissionBudget(this.admission.effectiveThroughput());
         this.admission.refreshCleanupPressure(level);
+    }
+
+    /** New reservations use this tick's remaining action phase instead of waiting for another tick. */
+    public void finishTick(boolean allowMutations) {
+        if (this.client.level == null) return;
+        if (this.lastProcessedTick != this.tickClock.getAsLong()) {
+            this.beginTick(allowMutations);
+            return;
+        }
+        this.mutationsAllowed = allowMutations;
+        this.targetExecutor.observeAndRetire(this.client.level);
+        this.advanceWork(this.client.level);
+        this.observeCycleCompletions(this.client.level);
+        this.admission.refreshCleanupPressure(this.client.level);
+    }
+
+    private void observeCycleCompletions(ClientLevel level) {
+        this.throughputScheduler.observeCycles(owner -> {
+            boolean observable = BedrockEnvironment.isChunkLoaded(level, owner)
+                    && BedrockEnvironment.canInteract(owner);
+            if (this.targets.containsOwner(owner) || this.cleanup.hasReachableCycle(owner)) {
+                return observable ? BedrockThroughputScheduler.CycleState.RUNNING
+                        : BedrockThroughputScheduler.CycleState.UNMEASURED;
+            }
+            return observable && !BedrockTargetBlocks.isTargetBlock(level.getBlockState(owner))
+                    && this.cleanup.isCycleClear(owner) ? BedrockThroughputScheduler.CycleState.COMPLETE
+                    : BedrockThroughputScheduler.CycleState.DISCARDED;
+        });
+    }
+
+    private void advanceWork(ClientLevel level) {
+        if (this.mutationsDeferred()) return;
+        this.placer.advanceCleanupMining();
+        if (!this.targetExecutor.hasPreparationMaterialHand()) {
+            this.cleanup.process(this.targets::isReserved, this.admission.cleanupLimitPerTick());
+        }
+        this.targetExecutor.advance(level, this.allowAdmission());
+        this.cleanup.process(this.targets::isReserved, this.admission.cleanupLimitPerTick());
     }
 
     public boolean hasActiveWork() {
         return !this.targets.isEmpty() || !this.cleanup.isEmpty()
-                || this.networkSync.pendingCount() > 0 || this.placer.isInventorySettling()
+                || this.networkSync.pendingCount() > 0 || this.placer.isInventoryPreparationPending()
                 || this.placer.hasActiveCleanupMining();
     }
 
@@ -222,17 +295,8 @@ public final class BedrockEngine implements RuntimeComponent {
         return !this.awaitingSupplies;
     }
 
-    private boolean allowPreparation() {
-        return this.allowAdmission() && !this.mutationsDeferred() && !this.placer.isToolSettling()
-                && !this.placer.hasActiveCleanupMining();
-    }
-
     private boolean mutationsDeferred() {
-        return this.hasDispatchedInCurrentTick() || this.placer.isInventorySettling();
-    }
-
-    private boolean hasDispatchedInCurrentTick() {
-        return this.lastProcessedTick == this.tickClock.getAsLong() && this.criticalExecutor.hasDispatchedThisTick();
+        return !this.mutationsAllowed || this.placer.isInventorySettling();
     }
 
     boolean isPositionReservedByOtherTarget(BlockPos pos, BedrockTarget self) {

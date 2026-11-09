@@ -38,7 +38,6 @@ final class BedrockTargetActionExecutor {
         boolean canRepowerNow();
         boolean rebuildLimitReached();
         void recordRebuild();
-        void markThroughputAction();
         boolean canMutatePower();
         void cleanupRecoveryResidue();
     }
@@ -92,7 +91,6 @@ final class BedrockTargetActionExecutor {
 
     void initialized() {
         this.host.setInitializeTick(this.host.tickTimes());
-        this.host.markThroughputAction();
         if (this.host.torchSupportPos() != null && !this.host.hasOwnedTorchPowerSource()) {
             this.host.deferInitialTorch();
         }
@@ -121,7 +119,6 @@ final class BedrockTargetActionExecutor {
         // before network tracking starts; tracking is observation only and never gates it.
         this.host.markDispatched();
         this.host.recordNetworkAttempt();
-        this.host.markThroughputAction();
     }
 
     private void recoverPoweredStall() {

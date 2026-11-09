@@ -115,60 +115,44 @@ public final class BedrockInventory {
     }
 
     private static ItemStack findBestBreakingStack(LocalPlayer player, BlockState blockState) {
-        Inventory inventory = player.getInventory();
-        ItemStack bestStack = ItemStack.EMPTY;
-        float bestProgress = 0.0F;
-        for (ItemStack stack : InventoryUtils.getMainStacks(inventory)) {
-            if (!isAllowedBedrockTool(stack, blockState)) {
-                continue;
-            }
-            float progress = PlayerUtils.getDestroyProgress(player, blockState, stack);
-            if (progress > bestProgress) {
-                bestProgress = progress;
-                bestStack = stack;
-            }
-        }
-        if (!bestStack.isEmpty()) {
-            return bestStack;
-        }
-
-        ItemStack current = player.getMainHandItem();
-        return isAllowedBedrockTool(current, blockState) ? current : ItemStack.EMPTY;
+        return findBestTool(player, blockState, false);
     }
 
     private static ItemStack findBestCleanupBreakingStack(LocalPlayer player, BlockState blockState) {
-        Inventory inventory = player.getInventory();
-        BlockState probeState = getCleanupProbeState(blockState);
-        ItemStack bestPreferredStack = ItemStack.EMPTY;
-        float bestPreferredScore = 0.0F;
-        ItemStack bestFallbackStack = ItemStack.EMPTY;
-        float bestFallbackScore = 0.0F;
+        return findBestTool(player, getCleanupProbeState(blockState), true);
+    }
 
-        for (ItemStack stack : InventoryUtils.getMainStacks(inventory)) {
-            if (!isAllowedBedrockTool(stack, probeState)) {
-                continue;
-            }
-
-            float score = getCleanupToolScore(player, probeState, stack);
-            if (score > bestFallbackScore) {
-                bestFallbackScore = score;
-                bestFallbackStack = stack;
-            }
-            if (isPreferredCleanupTool(stack, probeState) && score > bestPreferredScore) {
-                bestPreferredScore = score;
-                bestPreferredStack = stack;
+    private static ItemStack findBestTool(LocalPlayer player, BlockState state, boolean cleanup) {
+        var runtime = RuntimeAccess.currentOrNull();
+        var service = runtime == null ? null : runtime.toolSwitchService();
+        boolean guarded = service != null && service.isDurabilityGuardActive();
+        ItemStack best = ItemStack.EMPTY;
+        ItemStack unsafe = ItemStack.EMPTY;
+        float bestScore = 0F, unsafeScore = 0F;
+        boolean bestPreferred = false, unsafePreferred = false;
+        for (ItemStack stack : InventoryUtils.getMainStacks(player.getInventory())) {
+            if (!isAllowedBedrockTool(stack, state)) continue;
+            float score = cleanup ? getCleanupToolScore(player, state, stack)
+                    : PlayerUtils.getDestroyProgress(player, state, stack);
+            if (!(score > 0F)) continue;
+            boolean preferred = cleanup && isPreferredCleanupTool(stack, state);
+            if (guarded && !service.isToolUsable(stack)) {
+                if (unsafe.isEmpty() || preferred && !unsafePreferred || preferred == unsafePreferred && score > unsafeScore) {
+                    unsafe = stack;
+                    unsafeScore = score;
+                    unsafePreferred = preferred;
+                }
+            } else if (best.isEmpty() || preferred && !bestPreferred || preferred == bestPreferred && score > bestScore) {
+                best = stack;
+                bestScore = score;
+                bestPreferred = preferred;
             }
         }
-
-        if (!bestPreferredStack.isEmpty()) {
-            return bestPreferredStack;
-        }
-        if (!bestFallbackStack.isEmpty()) {
-            return bestFallbackStack;
-        }
-
+        if (!best.isEmpty()) return best;
+        // With no usable candidate, let the existing guard attempt its own replacement.
+        if (!unsafe.isEmpty()) return unsafe;
         ItemStack current = player.getMainHandItem();
-        return isAllowedBedrockTool(current, probeState) ? current : ItemStack.EMPTY;
+        return isAllowedBedrockTool(current, state) ? current : ItemStack.EMPTY;
     }
 
     private static boolean switchToResolvedTool(LocalPlayer player, ItemStack bestStack) {

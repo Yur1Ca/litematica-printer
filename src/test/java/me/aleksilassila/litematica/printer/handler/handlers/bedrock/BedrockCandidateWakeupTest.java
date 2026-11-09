@@ -119,9 +119,7 @@ class BedrockCandidateWakeupTest {
 
             f.move(0.51D, 64.0D, 0.5D);
             f.step(1);
-            assertFalse(f.engine.canSubmitInCurrentWindow(), "Pump the real closed tick in the 6/2 cadence");
-            f.step(2);
-            assertTrue(f.engine.canSubmitInCurrentWindow(), "The preserved cursor must receive an open window");
+            assertTrue(f.engine.canSubmitInCurrentWindow(), "Scanning need not wait for a construction-start window");
 
             assertSame(session, f.session("bedrock:BEDROCK"));
             assertEquals(before, f.world.headProbes, "Movement cannot replay the already modeled prefix");
@@ -189,9 +187,13 @@ class BedrockCandidateWakeupTest {
             tick(tick);
             world.tick = tick;
             scan.beginTick(world, null, tick);
+            var preprocess = BedrockHandler.class.getDeclaredMethod("preprocess");
+            preprocess.setAccessible(true);
+            preprocess.invoke(handler);
             var run = FeatureModuleBase.class.getDeclaredMethod("runIterationIfNeeded");
             run.setAccessible(true);
-            run.invoke(handler);
+            try { run.invoke(handler); }
+            finally { BedrockController.finishTick(true); }
         }
 
         void finishInitialPass() throws Exception {

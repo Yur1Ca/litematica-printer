@@ -7,6 +7,8 @@ import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.InventoryAvailabilityTracker;
 import me.aleksilassila.litematica.printer.handler.TickContext;
 import me.aleksilassila.litematica.printer.handler.handlers.BedrockHandler;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
+import me.aleksilassila.litematica.printer.integration.inventory.PlayerInventoryProvider;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
@@ -15,6 +17,7 @@ import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.inventory.InventoryMenu;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -36,23 +39,17 @@ class BedrockResourceBoundaryTest {
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
     @Test
-    void defersContinuationWhenRestockStartsInSameTick() throws Exception {
-        this.assertContinuationWaitsForEarlierModule(EnumSet.of(
-                ResourceLease.MAIN_HAND, ResourceLease.INVENTORY, ResourceLease.CONTAINER), false);
-    }
-
-    @Test
-    void iterationCompletionAlsoDefersContinuationWhenRestockStartsInSameTick() throws Exception {
-        this.assertContinuationWaitsForEarlierModule(EnumSet.of(
-                ResourceLease.MAIN_HAND, ResourceLease.INVENTORY, ResourceLease.CONTAINER), true);
+    void observesWithoutMutatingWhenRestockStartsInSameTick() throws Exception {
+        this.assertObservationRespectsEarlierOwner(EnumSet.of(
+                ResourceLease.MAIN_HAND, ResourceLease.INVENTORY, ResourceLease.CONTAINER));
     }
 
     @ParameterizedTest @EnumSource(ResourceLease.class)
-    void defersContinuationForEachConflictingResource(ResourceLease resource) throws Exception {
-        this.assertContinuationWaitsForEarlierModule(EnumSet.of(resource), false);
+    void observesWithoutMutatingForEachConflictingResource(ResourceLease resource) throws Exception {
+        this.assertObservationRespectsEarlierOwner(EnumSet.of(resource));
     }
 
-    private void assertContinuationWaitsForEarlierModule(EnumSet<ResourceLease> resources, boolean finishIteration) throws Exception {
+    private void assertObservationRespectsEarlierOwner(EnumSet<ResourceLease> resources) throws Exception {
         boolean oldWork = Configs.Core.WORK_SWITCH.getBooleanValue();
         boolean oldLag = Configs.Core.LAG_CHECK.getBooleanValue();
         boolean oldAvailability = Configs.Core.RENDER_ONLY_HOLDING_ITEMS.getBooleanValue();
@@ -62,12 +59,15 @@ class BedrockResourceBoundaryTest {
             Configs.Core.RENDER_ONLY_HOLDING_ITEMS.setBooleanValue(false);
             var broker = new ActionBroker(f.runtime, new ActionManager());
             set(f.runtime, PrinterRuntime.class, "actionBroker", broker);
+            set(f.runtime, PrinterRuntime.class, "materialRequests",
+                    new MaterialRequestCoordinator(java.util.List.of(new PlayerInventoryProvider(f.client))));
             set(f.runtime, PrinterRuntime.class, "inventoryAvailability", new InventoryAvailabilityTracker());
             set(f.runtime, PrinterRuntime.class, "missingMaterials", new MissingMaterialTracker());
             set(f.runtime, PrinterRuntime.class, "inventorySwitchGuard",
                     new InventorySwitchGuard(f.client, f.runtime::currentTick));
             set(f.client.player, Player.class, "inventoryMenu",
                     new InventoryMenu(f.client.player.getInventory(), true, f.client.player));
+            set(f.client.player, Player.class, "abilities", new Abilities());
             f.client.player.containerMenu = f.client.player.inventoryMenu;
 
             var engine = f.engine();
@@ -86,10 +86,8 @@ class BedrockResourceBoundaryTest {
             set(reservedGuiSlot, FeatureModuleBase.class, "id", "gui");
             reservedGuiSlot.input = () -> { };
             var bedrock = f.allocate(ContinuationModule.class);
-            bedrock.finishIteration = finishIteration;
             set(bedrock, FeatureModuleBase.class, "id", "bedrock");
             set(bedrock, FeatureModuleBase.class, "actionBroker", broker);
-            set(bedrock, BedrockHandler.class, "candidatePlanner", new BedrockCandidatePlanner(null, null));
 
             Class<?> schedulerType = Class.forName("me.aleksilassila.litematica.printer.handler.TickScheduler");
             var constructor = schedulerType.getDeclaredConstructor(ImmutableList.class, PrinterRuntime.class);
@@ -102,7 +100,8 @@ class BedrockResourceBoundaryTest {
             tick.invoke(scheduler);
             assertTrue(broker.isResourceHeld(resources.iterator().next()));
             assertTrue(f.mode.hits.isEmpty(), "Existing bedrock work must not place through another owner's lease");
-            assertEquals(Long.MIN_VALUE, get(engine, BedrockEngine.class, "lastProcessedTick"));
+            assertEquals(8L, get(engine, BedrockEngine.class, "lastProcessedTick"),
+                    "An inventory owner prevents mutations without pausing existing observation");
             assertEquals(1, sync.pendingCount(), "The inventory owner cannot cancel the dispatched observation");
 
             broker.releaseOwner(RESTOCK_OWNER);
@@ -125,12 +124,11 @@ class BedrockResourceBoundaryTest {
     }
 
     static class ContinuationModule extends BedrockHandler {
-        boolean finishIteration;
         ContinuationModule() { super(null); }
         // Keep the real continuation entry while bypassing unrelated schematic/HUD setup.
         @Override public void tick(TickContext context) {
-            if (this.finishIteration) this.stopIteration(false);
-            else this.canIterate();
+            this.updateVariables(context);
+            this.preprocess();
         }
     }
 }

@@ -34,7 +34,8 @@ final class BedrockInitialPackets {
     }
 
     static Preparation placeBatch(Minecraft client, BedrockInventorySession inventory,
-            List<BedrockPlacer.PistonRequest> requests, Predicate<BlockPos> cleanupPending) {
+            List<BedrockPlacer.PistonRequest> requests, Predicate<BlockPos> cleanupPending,
+            int newStarts, Predicate<BedrockPlacer.PistonRequest> started) {
         var player = client.player;
         var level = client.level;
         if (requests == null || requests.isEmpty() || player == null || level == null || client.gameMode == null
@@ -43,7 +44,6 @@ final class BedrockInitialPackets {
         if (!inventory.preparePistons()) return Preparation.EMPTY;
         var eligible = new ArrayList<BedrockPlacer.PistonRequest>();
         var placements = new LinkedHashMap<BlockPos, BedrockPlacer.PreparedPistonPlacement>();
-        boolean needsTorch = false;
         for (var request : requests) {
             if (request == null || request.pistonPos() == null || request.facing() == null
                     || request.facing().getAxis() != Direction.Axis.Y || placements.containsKey(request.pistonPos())) continue;
@@ -52,32 +52,35 @@ final class BedrockInitialPackets {
             var torch = request.torchPlacement();
             if (torch != null) {
                 if (!canPrepareTorch(client, torch, cleanupPending)) continue;
-                needsTorch |= BlockUtils.isReplaceable(level.getBlockState(torch.getTorchPos()));
             }
             eligible.add(request);
             placements.put(request.pistonPos(), piston);
         }
         if (eligible.isEmpty()) return Preparation.EMPTY;
         int torchSlot = findTorchSlot(player, inventory);
-        if (needsTorch && torchSlot < 0) {
-            inventory.prepareMaterial(Items.REDSTONE_TORCH);
-            return Preparation.EMPTY;
-        }
         int availableTorches = torchSlot < 0 ? 0 : inventory.availableCount(torchSlot);
         int availablePistons = inventory.availablePistons();
         var accepted = new ArrayList<BedrockPlacer.PistonRequest>();
         var frozenPistons = new ArrayList<BedrockPlacer.PreparedPistonPlacement>();
         var power = new LinkedHashMap<BlockPos, BedrockTorchPlacement>();
         var torches = new LinkedHashMap<BlockPos, BlockHitResult>();
+        int selectedStarts = 0;
         for (var request : eligible) {
             if (accepted.size() >= availablePistons) break;
+            boolean newStart = !started.test(request);
+            if (newStart && selectedStarts >= newStarts) continue;
             var torch = request.torchPlacement();
+            if (torch != null && BlockUtils.isReplaceable(level.getBlockState(torch.getTorchPos()))
+                    && !torches.containsKey(torch.getTorchPos()) && torches.size() >= availableTorches) {
+                // Power remains a later material action; an available priming piston need not wait for it.
+                request = new BedrockPlacer.PistonRequest(request.pistonPos(), request.facing(), null);
+                torch = null;
+            }
+            var previous = torch == null ? null : power.get(torch.getTorchPos());
+            if (previous != null && (!previous.getSupportPos().equals(torch.getSupportPos())
+                    || previous.getClickedFace() != torch.getClickedFace())) continue;
             if (torch != null) {
-                var previous = power.get(torch.getTorchPos());
-                if (previous != null && (!previous.getSupportPos().equals(torch.getSupportPos())
-                        || previous.getClickedFace() != torch.getClickedFace())) continue;
                 if (BlockUtils.isReplaceable(level.getBlockState(torch.getTorchPos())) && !torches.containsKey(torch.getTorchPos())) {
-                    if (torches.size() >= availableTorches) continue;
                     var face = torch.getClickedFace();
                     var hit = new BlockHitResult(Vec3.atCenterOf(torch.getSupportPos()).add(
                             face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5),
@@ -87,6 +90,7 @@ final class BedrockInitialPackets {
                 power.put(torch.getTorchPos(), torch);
             }
             accepted.add(request);
+            if (newStart) selectedStarts++;
             frozenPistons.add(placements.get(request.pistonPos()));
         }
         if (accepted.isEmpty()) return Preparation.EMPTY;
@@ -177,8 +181,13 @@ final class BedrockInitialPackets {
             if (placement == null || placement.hit() == null || placement.look() == null) return List.of();
         }
         var packets = new ArrayList<Packet<?>>();
+        PlayerLook lastLook = null;
         for (var placement : placements) {
-            packets.add(NetworkUtils.createLookPacketIgnoringQueuedLook(player, placement.look()));
+            var look = placement.look();
+            if (lastLook == null || look.yaw != lastLook.yaw || look.pitch != lastLook.pitch) {
+                packets.add(NetworkUtils.createLookPacketIgnoringQueuedLook(player, look));
+                lastLook = look;
+            }
             var use = NetworkUtils.createPacket(sequence -> {
                 //#if MC > 11802
                 return new ServerboundUseItemOnPacket(InteractionHand.OFF_HAND, placement.hit(), sequence);

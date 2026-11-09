@@ -74,7 +74,7 @@ class BedrockInventorySessionTest {
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void aRealInventoryMoveAndRestoredEquipmentKeepTheirIndependentBoundaries(boolean inventoryFirst) throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.player().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
             f.validateInitial(session);
             assertTrue(tool(session, false));
@@ -82,9 +82,10 @@ class BedrockInventorySessionTest {
             int oldMarker = lastEquipmentMarker(f);
             call(session, "acknowledgeToolTick", new Class<?>[]{Object.class, int.class}, f.transport, oldMarker);
             assertFalse(settling(session));
-            f.preparationFence(session);
-
             preparationSent(session, true);
+            assertEquals(oldMarker, lastEquipmentMarker(f), "Preparation records the hand change; the dispatcher chooses the warmup phase");
+            call(session, "prewarmCriticalTool", new Class<?>[0]);
+            f.preparationFence(session);
 
             int newMarker = lastEquipmentMarker(f);
             assertTrue(newMarker > oldMarker, "Restoring the same final hotbar signature cannot reuse pre-Torch confirmation");
@@ -106,7 +107,7 @@ class BedrockInventorySessionTest {
     @Test void ordinaryPoweredPreparationWaitsOnlyForFreshEquipmentWithoutRequestingAMenuReply() throws Exception {
         try (var f = new Fixture()) {
             f.player().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             assertTrue(tool(session, false));
             assertFalse((boolean) call(session, "prepareCriticalToolTick", new Class<?>[0]));
@@ -114,6 +115,8 @@ class BedrockInventorySessionTest {
             call(session, "acknowledgeToolTick", new Class<?>[]{Object.class, int.class}, f.transport, oldMarker);
 
             preparationSent(session, true);
+            assertEquals(oldMarker, lastEquipmentMarker(f), "Material preparation must not select the tool on its own");
+            call(session, "prewarmCriticalTool", new Class<?>[0]);
 
             int marker = lastEquipmentMarker(f);
             assertTrue(marker > oldMarker);
@@ -129,7 +132,7 @@ class BedrockInventorySessionTest {
 
     @Test void preparationWarmupCannotMoveAnInventoryToolThroughItsOutstandingSnapshot() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             f.player().getInventory().setItem(11, new ItemStack(Items.DIAMOND_PICKAXE));
             f.actions.toolSource = 11;
@@ -137,6 +140,7 @@ class BedrockInventorySessionTest {
             int before = f.transport.packets.size();
 
             preparationSent(session, true);
+            call(session, "prewarmCriticalTool", new Class<?>[0]);
 
             assertEquals(0, f.actions.toolMoves);
             assertEquals(before, f.transport.packets.size());
@@ -150,7 +154,7 @@ class BedrockInventorySessionTest {
 
     @Test void lateFullContentsCannotCauseASecondRelativeOffhandSwapBeforeItsOwnReply() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             var stale = f.contents(new ItemStack(Items.REDSTONE_TORCH, 55), new ItemStack(Items.PISTON, 38));
             f.apply(stale, 48);
@@ -176,7 +180,7 @@ class BedrockInventorySessionTest {
 
     @Test void anExistingPredictedPistonNeedsOneInitialAuthoritativeSnapshot() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             assertFalse(pistons(session));
             assertTrue(settling(session));
             assertEquals(0, f.actions.offhandSwaps);
@@ -190,14 +194,13 @@ class BedrockInventorySessionTest {
 
     @Test void materialSelectionUsesAbsoluteMainHandSlotsAndResendsTheSelectedSlotEveryTime() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 32));
             f.validateInitial(session);
 
             assertTrue(material(session, Items.REDSTONE_TORCH));
             assertTrue(material(session, Items.REDSTONE_TORCH));
 
-            assertEquals(InteractionHand.MAIN_HAND, call(session, "placementHand", new Class<?>[0]));
             assertTrue(f.hand().is(Items.REDSTONE_TORCH));
             assertTrue(f.player().getInventory().getItem(40).is(Items.PISTON));
             assertEquals(0, f.actions.offhandSwaps);
@@ -208,7 +211,7 @@ class BedrockInventorySessionTest {
 
     @Test void aRealMaterialMoveIsFencedEvenWhenTheSelectorReportsNotReady() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             f.player().getInventory().setItem(10, new ItemStack(Items.SLIME_BLOCK, 16));
             f.actions.notReadyAfterMaterialMove = true;
@@ -230,7 +233,7 @@ class BedrockInventorySessionTest {
     @Test void criticalAndCleanupToolMovesWaitForTheirOrderedInventoryReply() throws Exception {
         for (boolean cleanup : new boolean[]{false, true}) {
             try (var f = new Fixture()) {
-                var session = f.session(true);
+                var session = f.session();
                 f.validateInitial(session);
                 f.player().getInventory().setItem(11, new ItemStack(Items.DIAMOND_PICKAXE));
                 f.actions.toolSource = 11;
@@ -249,7 +252,7 @@ class BedrockInventorySessionTest {
 
     @Test void cleanupDoesNotRequireHavingAPistonInTheOffhand() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.player().getInventory().setItem(40, ItemStack.EMPTY);
             f.player().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
             assertFalse(tool(session, true));
@@ -261,7 +264,7 @@ class BedrockInventorySessionTest {
 
     @Test void anExternalToolMoveCannotBeMistakenForAnAlreadySettledMatchingTool() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             f.player().getInventory().setItem(11, new ItemStack(Items.DIAMOND_PICKAXE));
             f.actions.move(11, 0);
@@ -280,7 +283,7 @@ class BedrockInventorySessionTest {
 
     @Test void changingConnectionOrResettingTheSessionRequiresFreshVerification() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.validateInitial(session);
             var replacement = f.allocate(BedrockPlacementRegressionTest.CaptureTransport.class);
             replacement.packets = new ArrayList<>();
@@ -297,7 +300,7 @@ class BedrockInventorySessionTest {
 
     @Test void aCarriedStackBlocksTheInventoryTransactionBeforeSelectionOrPackets() throws Exception {
         try (var f = new Fixture()) {
-            var session = f.session(true);
+            var session = f.session();
             f.player().inventoryMenu.setCarried(new ItemStack(Items.STONE));
             assertFalse(pistons(session));
             assertFalse(material(session, Items.REDSTONE_TORCH));
@@ -307,23 +310,11 @@ class BedrockInventorySessionTest {
         }
     }
 
-    @Test void legacyPreparationRetainsItsExistingHandAndDoesNotAddInitialVerification() throws Exception {
-        try (var f = new Fixture()) {
-            var session = f.session(false);
-            assertTrue(pistons(session));
-            assertEquals(InteractionHand.OFF_HAND, call(session, "placementHand", new Class<?>[0]));
-            assertTrue(f.transport.packets.isEmpty());
-            f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 8));
-            assertTrue(material(session, Items.REDSTONE_TORCH));
-            assertEquals(1, f.actions.offhandSwaps);
-        }
-    }
-
     static class Actions implements InvocationHandler {
         final Fixture f;
         int offhandSwaps, materialMoves, toolMoves;
         int toolSource;
-        boolean lastCleanup, notReadyAfterMaterialMove;
+        boolean lastCleanup, notReadyAfterMaterialMove, markMaterialGuard;
         Actions(Fixture fixture) { f = fixture; }
         int source(Item item) {
             for (int i = 0; i < 36; i++) if (f.player().getInventory().getItem(i).is(item)) return i;
@@ -355,8 +346,14 @@ class BedrockInventorySessionTest {
                     int slot = source(item);
                     if (slot < 0) yield false;
                     boolean moved = !Inventory.isHotbarSlot(slot);
-                    if (moved) { materialMoves++; move(slot, 5); slot = 5; }
-                    InventoryUtils.setSelectedSlot(f.player().getInventory(), slot);
+                    if (moved) {
+                        materialMoves++;
+                        move(slot, 5);
+                        slot = 5;
+                        if (markMaterialGuard) me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get()
+                                .inventorySwitchGuard().markSwitchIfNeeded(item);
+                    }
+                    InventoryUtils.setHotbarSlot(slot, f.player().getInventory());
                     yield !moved || !notReadyAfterMaterialMove;
                 }
                 case "toolRequiresInventorySwap" -> !f.hand().is(Items.DIAMOND_PICKAXE)
@@ -396,13 +393,13 @@ class BedrockInventorySessionTest {
         }
         Player player() { return client.player; }
         ItemStack hand() { return player().getInventory().getItem(InventoryUtils.getSelectedSlot(player().getInventory())); }
-        Object session(boolean dedicated) throws Exception {
+        Object session() throws Exception {
             var type = assertDoesNotThrow(() -> Class.forName(BedrockPlacer.class.getPackageName() + ".BedrockInventorySession"),
                     "Bedrock needs a session that owns confirmed material preparation");
             var access = Class.forName(type.getName() + "$InventoryAccess");
-            var constructor = type.getDeclaredConstructor(Minecraft.class, boolean.class, access);
+            var constructor = type.getDeclaredConstructor(Minecraft.class, access);
             constructor.setAccessible(true);
-            return constructor.newInstance(client, dedicated, Proxy.newProxyInstance(access.getClassLoader(), new Class<?>[]{access}, actions));
+            return constructor.newInstance(client, Proxy.newProxyInstance(access.getClassLoader(), new Class<?>[]{access}, actions));
         }
         List<ItemStack> contents(ItemStack offhand, ItemStack source) {
             var contents = new ArrayList<>(player().inventoryMenu.slots.stream().map(slot -> slot.getItem().copy()).toList());

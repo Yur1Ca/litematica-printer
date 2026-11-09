@@ -8,6 +8,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 
 import java.util.LinkedHashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.LongSupplier;
 
@@ -43,6 +45,7 @@ final class BedrockAdmissionController {
     private int cleanupPressure;
     private int blockedCleanupDemand;
     private int submissionBudget;
+    private final Map<BlockPos, BlockPos> cleanupDependencies = new HashMap<>();
 
     BedrockAdmissionController(
             Minecraft client,
@@ -77,9 +80,11 @@ final class BedrockAdmissionController {
         this.cleanupPressure = 0;
         this.blockedCleanupDemand = 0;
         this.submissionBudget = 0;
+        this.cleanupDependencies.clear();
     }
 
     void beginTick(ClientLevel level) {
+        this.cleanupDependencies.keySet().removeIf(pos -> !this.isPositionOnRetryCooldown(pos));
         this.blockedCleanupDemand = 0;
         this.cleanupPressure = this.cleanup.samplePressure(level, this.targets::isReserved);
     }
@@ -165,6 +170,7 @@ final class BedrockAdmissionController {
         if (pendingCleanup != null) {
             this.stats.lastReason = "pending_cleanup";
             this.setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            this.cleanupDependencies.put(stablePos, pendingCleanup);
             this.noteSubmitRejected("pending_cleanup");
             return false;
         }
@@ -175,6 +181,7 @@ final class BedrockAdmissionController {
             this.noteSubmitRejected("machine_overlap");
             return false;
         }
+        this.cleanup.transferOwnership(target.getReservedPositions());
         this.targets.add(target);
         this.stats.acceptedThisTick++;
         this.submissionBudget--;
@@ -208,9 +215,21 @@ final class BedrockAdmissionController {
 
     void setRetryCooldown(BlockPos pos, int ticks) {
         if (this.client.level != null && pos != null && ticks > 0) {
+            this.cleanupDependencies.remove(pos);
             this.cooldownUtils.setCooldown(this.client.level, RETRY_COOLDOWN_KEY, pos, ticks);
             this.scanActivity.recordRetry(this.tickClock.getAsLong(), ticks);
         }
+    }
+
+    void onServerBlockUpdate(BlockPos changed) {
+        var level = this.client.level;
+        if (level == null || !BedrockEnvironment.isChunkLoaded(level, changed)
+                || BedrockTargetBlocks.isCleanupResidue(level.getBlockState(changed))) return;
+        this.cleanupDependencies.entrySet().removeIf(entry -> {
+            if (!entry.getValue().equals(changed)) return false;
+            this.cooldownUtils.removeCooldown(level, RETRY_COOLDOWN_KEY, entry.getKey());
+            return true;
+        });
     }
 
     int configuredThroughput() {
@@ -222,7 +241,7 @@ final class BedrockAdmissionController {
     }
 
     int configuredInterval() {
-        return Math.max(1, Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue());
+        return Math.max(0, Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue());
     }
 
     int submitCap() {
@@ -327,11 +346,6 @@ final class BedrockAdmissionController {
         // Existing reservations drain normally when a mode change reduces the total cap.
         if (this.targets.findSideExclusive() != null) {
             return AcceptProbe.reject("side_lane_busy");
-        }
-        if (this.stats.confirmedSuccesses == 0
-                && this.configuredThroughput() <= 1
-                && !this.targets.isEmpty()) {
-            return AcceptProbe.reject("startup_serial");
         }
         if (this.tickClock.getAsLong() < this.nextAcceptTick) {
             return AcceptProbe.reject("accept_backpressure");

@@ -110,10 +110,6 @@ final class BedrockTargetMachine {
         return this.slimePos;
     }
 
-    int lastRepowerTick() {
-        return this.lastRepowerTick;
-    }
-
     boolean canRepowerNow(int tickTimes) {
         return this.lastRepowerTick < 0
                 || tickTimes - this.lastRepowerTick >= REPOWER_INTERVAL_TICKS;
@@ -147,7 +143,7 @@ final class BedrockTargetMachine {
         this.deferredInitialTorch = false;
     }
 
-    boolean isInventorySettling() { return this.placer.isInventorySettling(); }
+    boolean isInventorySettling() { return this.placer.isInventoryPreparationPending(); }
 
     boolean canBuildInitialMachine() {
         if (!BedrockInventory.hasAtLeast(Blocks.PISTON.asItem(), 1)) return false;
@@ -158,10 +154,7 @@ final class BedrockTargetMachine {
                 || BedrockInventory.hasAtLeast(Blocks.SLIME_BLOCK.asItem(), 1);
     }
 
-    boolean ensureTorchPlacement(
-            Predicate<BedrockTorchPlacement> reservedByOther,
-            Runnable markThroughput
-    ) {
+    boolean ensureTorchPlacement(Predicate<BedrockTorchPlacement> reservedByOther) {
         // Keeping an installed source is observation, not new construction. The
         // lifecycle's canMutatePower gate still protects another in-flight event.
         if (BedrockEnvironment.isTorchPlacementUsable(this.level, this.torchPlacement)
@@ -225,7 +218,6 @@ final class BedrockTargetMachine {
                 return false;
             }
             this.footprint.recordTemporary(this.slimePos);
-            markThroughput.run();
         }
         this.torchSupportPos = this.torchSupportFromPlacement();
         return true;
@@ -239,14 +231,13 @@ final class BedrockTargetMachine {
                 && this.level.getBlockState(this.torchPos()).getValue(RedstoneTorchBlock.LIT);
     }
 
-    boolean tryRepowerTorch(int tickTimes, Runnable markThroughput) {
+    boolean tryRepowerTorch(int tickTimes) {
         if (!BedrockInventory.hasAtLeast(Blocks.REDSTONE_TORCH.asItem(), 1)) return false;
         if (this.lastRepowerTick >= 0 && tickTimes - this.lastRepowerTick < REPOWER_INTERVAL_TICKS) {
             return false;
         }
         if (this.torchSupportPos == null || !this.placeTorch()) return false;
         this.lastRepowerTick = tickTimes;
-        markThroughput.run();
         return true;
     }
 

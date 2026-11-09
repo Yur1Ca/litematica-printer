@@ -1,6 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.core.BlockPos;
@@ -21,7 +22,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -54,15 +54,15 @@ class BedrockPreparationWaitTest {
             assertEquals(1, f.transport.packets.stream().filter(ServerboundContainerClickPacket.class::isInstance).count());
             assertEquals(1, f.markers());
             assertTrue(f.capture.hits.isEmpty(), "Inventory preparation must return before any useItemOn call");
-            assertEquals(BedrockTarget.Status.NEEDS_WAITING, target.getStatus(),
-                    "Opening an inventory fence during ensureTorchPlacement is waiting, not a failed target");
+            assertEquals(BedrockTarget.Status.UNINITIALIZED, target.getStatus(),
+                    "The pure world phase stays uninitialized while the separate inventory fence owns waiting");
             f.assertOwned(target);
             int sent = f.transport.packets.size();
 
             for (int tick = 2; tick <= 5; tick++) {
                 f.advance(tick);
                 assertTrue(f.ownerPlacer.isInventorySettling());
-                assertNotEquals(BedrockTarget.Status.FAILED, target.getStatus());
+                assertEquals(BedrockTarget.Status.UNINITIALIZED, target.getStatus());
                 f.assertOwned(target);
                 assertEquals(1, f.actions.materialMoves, "Unacknowledged ticks cannot repeat a relative SWAP");
                 assertEquals(sent, f.transport.packets.size());
@@ -110,6 +110,29 @@ class BedrockPreparationWaitTest {
         }
     }
 
+    @Test void backgroundCalibrationDefersAColdMaterialMoveWithoutFailingItsMachine() throws Exception {
+        try (var f = new Fixture()) {
+            var session = (BedrockInventorySession) get(f.ownerPlacer, BedrockPlacer.class, "inventory");
+            int stack = f.player().getInventory().getItem(40).getCount();
+            session.recordRawUses(stack - 2, -1, 0);
+            f.apply(f.contents(new ItemStack(Items.PISTON, stack), ItemStack.EMPTY), 50);
+            session.maintainInventory(4);
+            assertFalse(session.isSettling());
+            long markers = f.markers();
+            var target = f.addSlimeTarget();
+
+            f.advance(1);
+
+            f.assertOwned(target);
+            assertNotEquals(BedrockTarget.Status.FAILED, target.getStatus(),
+                    "A background calibration owns only this cold material move, not the machine's validity");
+            assertFalse(session.isSettling());
+            assertEquals(0, f.actions.materialMoves);
+            assertEquals(markers, f.markers());
+            assertTrue(f.capture.hits.isEmpty());
+        }
+    }
+
     @Test void aMissingMachineLayoutWithoutAnInventoryFenceIsImmediatelyFailed() throws Exception {
         try (var f = new Fixture()) {
             for (Direction direction : Direction.values()) {
@@ -152,7 +175,9 @@ class BedrockPreparationWaitTest {
         final BedrockPlacer ownerPlacer;
         final BedrockTargetRegistry targets;
         final BedrockTargetExecutor executor;
+        final BedrockThroughputScheduler<BlockPos> starts;
 
+        @SuppressWarnings("unchecked")
         Fixture() throws Exception {
             world = allocate(EmptyEntityWorld.class);
             world.blocks = level.blocks;
@@ -173,7 +198,8 @@ class BedrockPreparationWaitTest {
             ownerPlacer = (BedrockPlacer) get(engine, BedrockEngine.class, "placer");
             targets = (BedrockTargetRegistry) get(engine, BedrockEngine.class, "targets");
             executor = (BedrockTargetExecutor) get(engine, BedrockEngine.class, "targetExecutor");
-            var session = (BedrockInventorySession) session(true);
+            starts = (BedrockThroughputScheduler<BlockPos>) get(engine, BedrockEngine.class, "throughputScheduler");
+            var session = (BedrockInventorySession) session();
             set(ownerPlacer, BedrockPlacer.class, "inventory", session);
             validateInitial(session);
             player().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
@@ -195,7 +221,11 @@ class BedrockPreparationWaitTest {
 
         void advance(long now) throws Exception {
             tick(now);
-            executor.processPreparation(world, 1, false, new LinkedHashSet<>(), true);
+            // This isolated lifecycle fixture intentionally does not run Engine inventory maintenance.
+            starts.beginTick(now, Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue(),
+                    Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue(), true);
+            executor.observeAndRetire(world);
+            executor.advance(world, true);
         }
 
         void assertOwned(BedrockTarget target) {

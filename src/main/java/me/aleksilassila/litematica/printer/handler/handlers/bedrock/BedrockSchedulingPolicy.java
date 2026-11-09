@@ -36,8 +36,4 @@ final class BedrockSchedulingPolicy {
                 && status != BedrockTarget.Status.RETRACTED;
     }
 
-    static boolean isFastLane(BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.EXTENDED
-                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
-    }
 }

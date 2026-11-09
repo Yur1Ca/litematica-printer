@@ -36,6 +36,7 @@ class BedrockRestockCleanupTest {
         try (var f = new BedrockPlacementRegressionTest.Fixture()) {
             var target = f.target(TARGET, priming, f.placer);
             f.machine(priming);
+            f.synchronizeInventory();
             assertTrue(f.place(target.getPistonPos(), priming.getOpposite()));
             var sentHit = f.mode.hits.get(0);
             assertEquals(TARGET, sentHit.getBlockPos());
@@ -182,7 +183,7 @@ class BedrockRestockCleanupTest {
             var state = (replacement ? Blocks.STONE : Blocks.BEDROCK).defaultBlockState();
             f.level.blocks.put(TARGET, state);
             var cleanup = (BedrockCleanupCoordinator) get(f.engine, BedrockEngine.class, "cleanup");
-            cleanup.cleanupBlockOrQueue(TARGET, false, pos -> false);
+            cleanup.enqueueAuthoritative(TARGET);
             cleanup.process(pos -> false, 4);
             assertSame(state, f.level.getBlockState(TARGET));
             cleanup.onServerBlockUpdate(TARGET);

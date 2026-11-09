@@ -42,7 +42,8 @@ class BedrockBatchPipelineRegressionTest {
             target.deferInitialTorch();
             f.level.blocks.put(target.getPistonPos(), Blocks.PISTON.defaultBlockState()
                     .setValue(PistonBaseBlock.FACING, Direction.UP));
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH, 16));
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.REDSTONE_TORCH, 16));
+            f.synchronizeInventory();
 
             prepare(target);
 

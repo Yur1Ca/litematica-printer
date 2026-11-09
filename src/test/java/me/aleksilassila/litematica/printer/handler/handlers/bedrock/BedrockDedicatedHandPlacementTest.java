@@ -37,14 +37,14 @@ class BedrockDedicatedHandPlacementTest {
             f.client.gameMode = mode;
             var constructor = Arrays.stream(BedrockPlacer.class.getDeclaredConstructors())
                     .filter(c -> Arrays.equals(c.getParameterTypes(),
-                            new Class<?>[]{Minecraft.class, BedrockNetworkSync.class, boolean.class})).findFirst().orElse(null);
-            assertNotNull(constructor, "The runtime must opt into an inventory session with a dedicated piston hand");
+                            new Class<?>[]{Minecraft.class, BedrockNetworkSync.class})).findFirst().orElse(null);
+            assertNotNull(constructor, "The placer always owns the production inventory session");
             constructor.setAccessible(true);
-            var placer = (BedrockPlacer) constructor.newInstance(f.client, null, true);
+            var placer = (BedrockPlacer) constructor.newInstance(f.client, null);
 
             assertFalse(placer.placeSimple(new BlockPos(0, 64, 0), Direction.UP, Items.STICK),
                     "Validate the inventory before the first mutation of a session");
-            InventoryRecoveryFence.received(f.transport);
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeInventory(placer, f.client);
             f.transport.packets.clear();
             assertTrue(placer.placeSimple(new BlockPos(0, 64, 0), Direction.UP, Items.STICK));
 

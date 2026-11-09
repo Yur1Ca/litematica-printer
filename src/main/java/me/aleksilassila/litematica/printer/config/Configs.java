@@ -443,9 +443,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     }
 
     public static class Bedrock {
-        public static final ConfigInteger BEDROCK_INTERVAL = integer("bedrockInterval")
-                .defaultValue(2)
-                .range(1, 20)
+        public static final ConfigInteger BEDROCK_INTERVAL = integer("bedrockStartInterval")
+                .defaultValue(0)
+                .range(0, 20)
                 .build();
 
         public static final ConfigInteger BEDROCK_BLOCKS_PER_TICK = integer("bedrockBlocksPerTick")
@@ -458,7 +458,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .build();
 
         public static final ConfigBoolean BEDROCK_MULTIPLAYER_ADAPTIVE = bool("bedrockMultiplayerAdaptive")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         public static final ConfigStringList BEDROCK_WHITELIST = stringList("bedrockWhitelist")
@@ -481,7 +481,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 投影轻松放置协议
         public static final ConfigBoolean EASY_PLACE_PROTOCOL = bool("easyPlaceProtocol")
-                .defaultValue(false)
+                .defaultValue(true)
                 .build();
 
         // 凭空放置

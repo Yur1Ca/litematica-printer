@@ -323,7 +323,7 @@ public class Render2D {
         lines.add(new HudLine(hud("bedrock.counts", bedrock.confirmedSuccesses(), totalFailures,
                 bedrock.verticalActiveTargets(), bedrock.verticalActiveCap(), bedrock.sideTargets(), bedrock.sideCap(),
                 bedrock.cleanupQueueSize(), bedrock.cleanupPressure()), new Color(255, 255, 255, 255)));
-        lines.add(new HudLine(hud("bedrock.throughput", bedrock.configuredThroughput(), Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue(),
+        lines.add(new HudLine(hud("bedrock.throughput", bedrock.configuredThroughput(), formatBedrockInterval(),
                 bedrock.acceptedThisTick(), bedrock.submitCap(), bedrock.rejectedThisTick(),
                 formatScanState(RuntimeAccess.get().modules().bedrock()), status), new Color(255, 255, 255, 255)));
         lines.add(new HudLine(hud("bedrock.network", bedrock.pendingServerUpdates(), bedrock.adaptiveBackoffs(),
@@ -539,11 +539,16 @@ public class Render2D {
                             ? hud("settings.unlimited")
                             : Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() + "/t",
                     Configs.Break.BREAK_INTERVAL.getIntegerValue());
-            case BEDROCK -> hud("settings.place",
+            case BEDROCK -> hud("settings.bedrock",
                     Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue(),
-                    hud("settings.interval", Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue()), "");
+                    formatBedrockInterval());
             case TOTAL -> hud("state.unknown_value");
         };
+    }
+
+    private String formatBedrockInterval() {
+        int interval = Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
+        return interval == 0 ? hud("bedrock.interval.auto") : hud("bedrock.interval.ticks", interval);
     }
 
     private String formatRttSettings(HudStatsManager.Mode mode) {

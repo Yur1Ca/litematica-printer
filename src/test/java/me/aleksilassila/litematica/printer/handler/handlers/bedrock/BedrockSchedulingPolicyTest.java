@@ -16,14 +16,6 @@ class BedrockSchedulingPolicyTest {
     }
 
     @Test
-    void urgentLaneContainsOnlyExecuteAndRepowerStates() {
-        assertTrue(BedrockSchedulingPolicy.isFastLane(BedrockTarget.Status.EXTENDED));
-        assertTrue(BedrockSchedulingPolicy.isFastLane(BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE));
-        assertFalse(BedrockSchedulingPolicy.isFastLane(BedrockTarget.Status.UNINITIALIZED));
-        assertFalse(BedrockSchedulingPolicy.isFastLane(BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE));
-    }
-
-    @Test
     void cleanupLimitScalesWithoutLosingBlockedDemandBonus() {
         assertEquals(48, BedrockSchedulingPolicy.cleanupLimit(6, 0, 48, 32));
         assertEquals(80, BedrockSchedulingPolicy.cleanupLimit(6, 100, 48, 32));

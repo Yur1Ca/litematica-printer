@@ -179,6 +179,14 @@ class BedrockCleanupInventorySessionTest {
                         me.aleksilassila.litematica.printer.runtime.PrinterRuntime.class, "epoch",
                         me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL);
             }
+            long previousStarts = starts(f);
+            assertFalse(f.cleanup(PISTON), "A new context must complete its own inventory or equipment boundary first");
+            assertEquals(previousStarts, starts(f), "The old context cannot authorize another START");
+            assertFalse(f.active(), "The previous context's fallback must release its native OPEN ownership");
+            if (change.equals("reset")) {
+                me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeInventory(f.placer, f.client);
+            }
+            assertTrue(me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeSelectedTool(f.placer, f.client));
             assertTrue(f.cleanup(PISTON));
             assertFalse(f.active(), "A new context must use the normal first-attempt instant path");
             assertEquals(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, f.actions().getLast());
@@ -320,12 +328,18 @@ class BedrockCleanupInventorySessionTest {
             clock.border = traceLevel.border;
             client.level = clock;
             client.gameMode = mode;
-            var ctor = BedrockPlacer.class.getDeclaredConstructor(Minecraft.class);
+            var ctor = BedrockPlacer.class.getDeclaredConstructor(Minecraft.class,
+                    Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockNetworkSync"));
             ctor.setAccessible(true);
-            placer = ctor.newInstance(client);
+            placer = ctor.newInstance(client, null);
+            me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.synchronizeInventory(placer, client);
+            assertTrue(me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess.acknowledgeSelectedTool(placer, client));
+            connection.packets.clear();
+            transport.packets.clear();
+            transport.batches.clear();
         }
 
-        boolean cleanup(BlockPos pos) { return BedrockBreaker.breakBlock(pos, Direction.DOWN, false, placer); }
+        boolean cleanup(BlockPos pos) { return BedrockBreaker.breakBlock(pos, Direction.DOWN, placer); }
         boolean active() throws Exception {
             var method = BedrockPlacer.class.getDeclaredMethod("hasActiveCleanupMining");
             method.setAccessible(true);
@@ -354,10 +368,10 @@ class BedrockCleanupInventorySessionTest {
             f.client.gameMode = mode;
             set(f.traceLevel, Level.class, "dimension", Level.OVERWORLD);
             var constructor = Arrays.stream(BedrockPlacer.class.getDeclaredConstructors())
-                    .filter(candidate -> candidate.getParameterCount() == 3).findFirst();
+                    .filter(candidate -> candidate.getParameterCount() == 2).findFirst();
             assertTrue(constructor.isPresent(), "Dedicated cleanup needs its inventory session");
             constructor.get().setAccessible(true);
-            var placer = (BedrockPlacer) constructor.get().newInstance(f.client, null, true);
+            var placer = (BedrockPlacer) constructor.get().newInstance(f.client, null);
             // Exercise vanilla's real client-side SWAP prediction. Matching the
             // hand alone must not release the later authoritative response fence.
             f.player.inventory.setItem(9, f.player.inventory.getItem(0));
@@ -401,10 +415,10 @@ class BedrockCleanupInventorySessionTest {
         if (entry.equals("breaker")) return null;
         if (entry.equals("coordinator")) {
             var type = Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockCleanupCoordinator");
-            var ctor = Arrays.stream(type.getDeclaredConstructors()).filter(c -> c.getParameterCount() == 5).findFirst();
+            var ctor = Arrays.stream(type.getDeclaredConstructors()).filter(c -> c.getParameterCount() == 4).findFirst();
             assertTrue(ctor.isPresent(), "Queued cleanup must retain its owning placer");
             ctor.get().setAccessible(true);
-            Object result = ctor.get().newInstance(f.client, new CooldownUtils(), null, (BooleanSupplier) () -> false, placer);
+            Object result = ctor.get().newInstance(f.client, null, (BooleanSupplier) () -> false, placer);
             var add = type.getDeclaredMethod("add", BlockPos.class, boolean.class);
             add.setAccessible(true); add.invoke(result, PISTON, false);
             return result;
@@ -422,15 +436,15 @@ class BedrockCleanupInventorySessionTest {
                                 Object cleanup, int tick) throws Exception {
         if (entry.equals("breaker")) {
             var method = assertDoesNotThrow(() -> BedrockBreaker.class.getDeclaredMethod("breakBlock",
-                    BlockPos.class, Direction.class, boolean.class, BedrockPlacer.class),
+                    BlockPos.class, Direction.class, BedrockPlacer.class),
                     "Cleanup mining needs the owning placer's tool preparation boundary");
-            method.invoke(null, PISTON, Direction.DOWN, false, placer);
+            method.invoke(null, PISTON, Direction.DOWN, placer);
         } else if (entry.equals("coordinator")) {
             var method = cleanup.getClass().getDeclaredMethod("process", Predicate.class, int.class);
             method.setAccessible(true); method.invoke(cleanup, (Predicate<BlockPos>) pos -> false, 1);
         } else {
-            var method = cleanup.getClass().getDeclaredMethod("cleanupRecoveryResidue", int.class, Set.class);
-            method.setAccessible(true); method.invoke(cleanup, tick, Set.of());
+            var method = cleanup.getClass().getDeclaredMethod("cleanupRecoveryResidue", Set.class);
+            method.setAccessible(true); method.invoke(cleanup, Set.of());
         }
     }
 

@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
+import me.aleksilassila.litematica.printer.handler.TickContext;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockCandidatePlanner;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
@@ -24,6 +25,8 @@ public class BedrockHandler extends FeatureModuleBase {
             ResourceLease.CONTAINER, ResourceLease.INTERACTION
     };
     private final BedrockCandidatePlanner candidatePlanner;
+    private boolean materialsPrepared;
+    private boolean controllerTickStarted;
 
     public BedrockHandler(PrinterRuntime runtime) {
         super(runtime, "bedrock", PrintModeType.BEDROCK, Configs.Hotkeys.BEDROCK, null, true);
@@ -41,36 +44,50 @@ public class BedrockHandler extends FeatureModuleBase {
     }
 
     @Override
+    public void tick(TickContext context) {
+        this.controllerTickStarted = false;
+        try {
+            super.tick(context);
+        } finally {
+            if (this.controllerTickStarted) {
+                this.controllerTickStarted = false;
+                BedrockController.finishTick(this.canMutateController());
+            }
+        }
+    }
+
+    @Override
+    protected void preprocess() {
+        // Service work which already owns its materials before a new supply request
+        // can acquire its inventory/hand leases or start a strong reconciliation.
+        BedrockController.beginTick(this.canMutateController());
+        this.controllerTickStarted = true;
+        this.materialsPrepared = this.canMutateController() && BedrockController.prepareMaterials();
+    }
+
+    @Override
     protected boolean canExecute() {
         if (player.isCreative()) {
             BedrockController.clearHorizontalLookState();
             MessageUtils.setOverlayMessage(I18n.BEDROCK_CREATIVE_MODE.getName());
             return false;
         }
-        if (!this.canAdvanceController()
-                || player.containerMenu != player.inventoryMenu
-                || !player.containerMenu.getCarried().isEmpty()
-                || me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
+        if (!this.canMutateController()) {
             return false;
         }
-        boolean prepared = BedrockController.prepareMaterials();
         String warning = BedrockInventory.warningMessage();
         if (warning != null) {
             MessageUtils.setOverlayMessage(me.aleksilassila.litematica.printer.utils.minecraft.StringUtils.translatable(warning));
-            if (prepared && !BedrockController.hasActiveWork()) {
+            if (this.materialsPrepared && !BedrockController.hasActiveWork()) {
                 BedrockController.clearHorizontalLookState();
                 return false;
             }
         }
-        return prepared;
+        return this.materialsPrepared;
     }
 
     @Override
     protected boolean canIterate() {
-        if (!this.canAdvanceController()) {
-            return false;
-        }
-        BedrockController.tick();
         if (this.candidatePlanner.refreshEligibility(this.level, this.player)) this.requestFullScan();
         // A full active-target lane may temporarily reject new submissions, but it must not
         // prevent already discovered candidates from reaching the controller. Previously this
@@ -97,6 +114,8 @@ public class BedrockHandler extends FeatureModuleBase {
 
     @Override
     protected void onRuntimeReset() {
+        this.materialsPrepared = false;
+        this.controllerTickStarted = false;
         this.candidatePlanner.reset();
         BedrockController.reset();
     }
@@ -151,14 +170,13 @@ public class BedrockHandler extends FeatureModuleBase {
         }
     }
 
-    @Override
-    protected void stopIteration(boolean interrupt) {
-        if (!interrupt && this.canAdvanceController()) {
-            BedrockController.tick();
+    private boolean canMutateController() {
+        if (this.player == null || this.player.getAbilities().instabuild
+                || this.player.containerMenu != this.player.inventoryMenu
+                || !this.player.containerMenu.getCarried().isEmpty()
+                || me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get().inventorySwitchGuard().isWaiting()) {
+            return false;
         }
-    }
-
-    private boolean canAdvanceController() {
         // Existing machines act before the candidate runner's resource checks. A previous
         // feature may also acquire inventory ownership after the shared scheduler precheck.
         for (ResourceLease resource : CONTINUATION_RESOURCES) {

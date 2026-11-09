@@ -71,70 +71,6 @@ class BedrockRecoverySupplyGateTest {
         }
     }
 
-    @Test void aDispatchedCriticalAllowsOnlyObservationOfLaterTargetsInTheSameTick() throws Exception {
-        try (var f = new BedrockRestockTest.Fixture()) {
-            var target = addRecovery(f);
-            var critical = markCriticalDispatched(f);
-            var executor = (BedrockTargetExecutor) BedrockPlacementRegressionTest.get(
-                    f.engine, BedrockEngine.class, "targetExecutor");
-
-            executor.process(f.level, 4, false, new java.util.LinkedHashSet<>(), null, true);
-
-            assertEquals(0, target.cleanupCalls, "A reverse USE cannot be followed by an ordinary cleanup tool swap");
-            f.tick(1);
-            critical.beginTick(1);
-            executor.process(f.level, 4, false, new java.util.LinkedHashSet<>(), null, true);
-            assertEquals(1, target.cleanupCalls, "Independent cleanup resumes on the next tick");
-        }
-    }
-
-    @Test void aDispatchedCriticalKeepsReadOnlyAdmissionInTheCurrentWindow() throws Exception {
-        try (var f = new BedrockRestockTest.Fixture()) {
-            var critical = markCriticalDispatched(f);
-            var admission = BedrockPlacementRegressionTest.get(f.engine, BedrockEngine.class, "admission");
-            BedrockPlacementRegressionTest.set(admission, BedrockAdmissionController.class, "submissionBudget", 3);
-
-            assertTrue(f.engine.canSubmitInCurrentWindow(), "The raw USE blocks mutation, not target reservation");
-
-            f.tick(1);
-            critical.beginTick(1);
-            assertTrue(f.engine.canSubmitInCurrentWindow());
-        }
-    }
-
-    @Test void dispatchDuringTheLoopPreventsTheFollowingTargetsPreparation() throws Exception {
-        try (var f = new BedrockRestockTest.Fixture()) {
-            var first = new ActionProbe(f, TARGET, () -> {
-                try { markCriticalDispatched(f); }
-                catch (Exception failure) { throw new AssertionError(failure); }
-            });
-            first.setStatus(BedrockTarget.Status.EXTENDED);
-            var second = new ActionProbe(f, TARGET.east(4), () -> { });
-            second.setStatus(BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE);
-            f.targets.add(first);
-            f.targets.add(second);
-            var executor = (BedrockTargetExecutor) BedrockPlacementRegressionTest.get(
-                    f.engine, BedrockEngine.class, "targetExecutor");
-
-            executor.process(f.level, 4, true, new java.util.LinkedHashSet<>(), null, true);
-
-            assertEquals(1, first.executionCalls);
-            assertEquals(0, second.executionCalls,
-                    "The phase must be checked between targets, not only at the beginning of a process pass");
-            assertTrue(f.mode.hits.isEmpty());
-        }
-    }
-
-    private static BedrockCriticalExecutor markCriticalDispatched(BedrockRestockTest.Fixture f) throws Exception {
-        var critical = (BedrockCriticalExecutor) BedrockPlacementRegressionTest.get(
-                f.engine, BedrockEngine.class, "criticalExecutor");
-        critical.beginTick(f.runtime.currentTick());
-        // The real packet-flow tests establish this count only after an accepted batch.
-        BedrockPlacementRegressionTest.set(critical, BedrockCriticalExecutor.class, "reservedPistons", 1);
-        BedrockPlacementRegressionTest.set(f.engine, BedrockEngine.class, "lastProcessedTick", f.runtime.currentTick());
-        return critical;
-    }
-
     private static MaterialRequestCoordinator emptySources() {
         return new MaterialRequestCoordinator(List.of(new InventoryProvider() {
             @Override public String id() { return "empty_recovery_source"; }
@@ -157,26 +93,6 @@ class BedrockRecoverySupplyGateTest {
         return target;
     }
 
-    private static final class ActionProbe extends BedrockTarget {
-        private final Runnable onExecute;
-        int executionCalls;
-
-        ActionProbe(BedrockRestockTest.Fixture fixture, BlockPos pos, Runnable onExecute) throws Exception {
-            super(pos, fixture.level, fixture.target(pos, Direction.UP, fixture.enginePlacer).layout(),
-                    new BedrockTorchPlacement(pos.east(), Direction.UP), null,
-                    new BedrockCriticalExecutor(fixture.enginePlacer), fixture.enginePlacer, null);
-            fixture.level.blocks.put(pos, Blocks.BEDROCK.defaultBlockState());
-            this.onExecute = onExecute;
-        }
-
-        @Override public Status tick(boolean allowExecute, boolean allowInitialize) {
-            this.executionCalls++;
-            this.onExecute.run();
-            this.markThroughputAction();
-            return this.getStatus();
-        }
-    }
-
     /** Only the mining transport and its later world confirmation are simulated. */
     private static final class RecoveryProbe extends BedrockTarget {
         private final BedrockRestockTest.Fixture fixture;
@@ -194,7 +110,6 @@ class BedrockRecoverySupplyGateTest {
             this.fixture.level.blocks.remove(this.getTorchPos());
             this.fixture.level.blocks.remove(this.getHeadPos());
             this.fixture.level.blocks.remove(this.getPistonPos());
-            this.markThroughputAction();
         }
     }
 }

@@ -15,6 +15,7 @@ public final class InventorySwitchGuard {
     private Item pendingItem;
     private int pendingDamage = -1;
     private boolean matchDamage;
+    private long generation;
     private final SwitchConfirmationWindow confirmationWindow = new SwitchConfirmationWindow(MAX_SETTLE_TICKS);
 
     public InventorySwitchGuard(Minecraft client, LongSupplier tickClock) {
@@ -33,6 +34,7 @@ public final class InventorySwitchGuard {
         pendingItem = item;
         pendingDamage = -1;
         matchDamage = false;
+        this.generation++;
         this.confirmationWindow.begin(this.tickClock.getAsLong());
         return true;
     }
@@ -45,6 +47,7 @@ public final class InventorySwitchGuard {
         pendingItem = stack.getItem();
         matchDamage = stack.isDamageableItem();
         pendingDamage = matchDamage ? stack.getDamageValue() : -1;
+        this.generation++;
         this.confirmationWindow.begin(this.tickClock.getAsLong());
         return true;
     }
@@ -56,10 +59,20 @@ public final class InventorySwitchGuard {
         return this.confirmationWindow.isWaiting(this.tickClock.getAsLong(), this.isMainHandReady());
     }
 
+    /** Identifies the current predicted switch without approving a later one. */
+    public long receipt() { return this.pendingItem == null ? -1L : this.generation; }
+
+    public boolean confirmReceipt(long receipt) {
+        if (receipt < 0L || receipt != this.generation || this.pendingItem == null) return false;
+        this.clear();
+        return true;
+    }
+
     private void clear() {
         pendingItem = null;
         pendingDamage = -1;
         matchDamage = false;
+        this.generation++;
         this.confirmationWindow.clear();
     }
 

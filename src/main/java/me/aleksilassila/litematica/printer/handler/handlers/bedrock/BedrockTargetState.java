@@ -7,13 +7,11 @@ final class BedrockTargetState {
     private int stuckTicks;
     private int executeTick = -1;
     private int initializeTick = -1;
-    private boolean throughputConsumed;
     private BedrockTarget.Status status = BedrockTarget.Status.UNINITIALIZED;
     private long lastAdvancedTick = Long.MIN_VALUE;
 
     void beginTick(long now) {
         if (this.lastAdvancedTick == now) return;
-        this.throughputConsumed = false;
         if (this.lastAdvancedTick != Long.MIN_VALUE && now > this.lastAdvancedTick) {
             this.tickTimes += (int) Math.min(Integer.MAX_VALUE - this.tickTimes, now - this.lastAdvancedTick);
         }
@@ -77,11 +75,4 @@ final class BedrockTargetState {
         this.status = status;
     }
 
-    boolean consumedThroughput() {
-        return this.throughputConsumed;
-    }
-
-    void markThroughputAction() {
-        this.throughputConsumed = true;
-    }
 }

@@ -31,6 +31,10 @@ final class BedrockTargetRegistry {
         this.targets.add(target);
     }
 
+    boolean containsOwner(BlockPos owner) {
+        return this.targets.stream().anyMatch(target -> target != null && target.getBedrockPos().equals(owner));
+    }
+
     Iterator<BedrockTarget> iterator() {
         return this.targets.iterator();
     }
@@ -165,17 +169,6 @@ final class BedrockTargetRegistry {
     BedrockTarget findSideExclusive() {
         for (BedrockTarget target : this.targets) {
             if (target != null && target.isHorizontalLayout()) {
-                return target;
-            }
-        }
-        return null;
-    }
-
-    BedrockTarget findSideLookTarget() {
-        for (BedrockTarget target : this.targets) {
-            if (target != null
-                    && target.isHorizontalLayout()
-                    && target.hasPendingHorizontalLook()) {
                 return target;
             }
         }

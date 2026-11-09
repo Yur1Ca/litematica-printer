@@ -26,7 +26,8 @@ class BedrockSimplePlacementRegressionTest {
         try (var f = new BedrockPlacementRegressionTest.Fixture()) {
             // A non-block item keeps the transport-boundary fixture independent of world writes.
             // The production choice of prediction mode is shared by every simple material.
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.STICK, 16));
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.STICK, 16));
+            f.synchronizeInventory();
             var mode = captureGameMode(f);
 
             assertThrows(PlacementCaptured.class, () -> f.placer.placeSimple(BEDROCK, Direction.UP, Items.STICK));
@@ -40,7 +41,8 @@ class BedrockSimplePlacementRegressionTest {
     @Test void slimeSupportUsesAStableAnchorWhenTheSameRequestArrivesAfterPlacement() throws Exception {
         try (var f = new BedrockPlacementRegressionTest.Fixture()) {
             BlockPos slime = BEDROCK.east();
-            f.client.player.getInventory().setItem(40, new ItemStack(Items.SLIME_BLOCK, 16));
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.SLIME_BLOCK, 16));
+            f.synchronizeInventory();
             var mode = captureGameMode(f);
             var constructor = BedrockMachineLayout.class.getDeclaredConstructor(BlockPos.class, Direction.class);
             constructor.setAccessible(true);
@@ -50,7 +52,7 @@ class BedrockSimplePlacementRegressionTest {
                     new BedrockTorchPlacement(slime, Direction.UP), slime, f.placer);
 
             // Stop at the outbound boundary so the fixture never invokes BlockItem's local world writes.
-            assertThrows(PlacementCaptured.class, () -> machine.ensureTorchPlacement(placement -> false, () -> { }));
+            assertThrows(PlacementCaptured.class, () -> machine.ensureTorchPlacement(placement -> false));
             assertEquals(1, mode.hits.size());
             BlockHitResult request = mode.hits.get(0);
             assertEquals(slime, f.serverPlacementPosition(request));

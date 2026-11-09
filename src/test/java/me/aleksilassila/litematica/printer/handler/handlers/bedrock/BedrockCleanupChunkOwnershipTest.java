@@ -96,8 +96,7 @@ class BedrockCleanupChunkOwnershipTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(strings = {"enqueueAuthoritative", "cleanupBlockOrQueue"})
-    void retirementCanFirstTransferOwnershipWhileTheChunkIsAlreadyUnloaded(String entry) throws Exception {
+    @Test void retirementCanFirstTransferOwnershipWhileTheChunkIsAlreadyUnloaded() throws Exception {
         try (var f = new Fixture()) {
             assertTrue(f.cleanup.isEmpty());
             f.world.loaded = false;
@@ -106,8 +105,7 @@ class BedrockCleanupChunkOwnershipTest {
             assertTrue(f.world.getBlockState(PISTON).isAir());
             int sent = f.transport.packets.size();
 
-            if (entry.equals("enqueueAuthoritative")) f.cleanup.enqueueAuthoritative(PISTON);
-            else f.cleanup.cleanupBlockOrQueue(PISTON, false, pos -> false);
+            f.cleanup.enqueueAuthoritative(PISTON);
 
             assertTrue(f.cleanup.contains(PISTON),
                     "Retirement must retain its supplied footprint even before a loaded residue was ever observed");
@@ -140,7 +138,7 @@ class BedrockCleanupChunkOwnershipTest {
             assertFalse(enginePlacer.prepareCriticalToolTick());
             enginePlacer.acknowledgeToolTick(transport, 0);
             assertFalse(enginePlacer.isInventorySettling());
-            cleanup = new BedrockCleanupCoordinator(client, new CooldownUtils(), null, () -> false, enginePlacer);
+            cleanup = new BedrockCleanupCoordinator(client, null, () -> false, enginePlacer);
             transport.packets.clear();
         }
 

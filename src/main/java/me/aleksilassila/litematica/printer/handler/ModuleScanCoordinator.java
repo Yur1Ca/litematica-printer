@@ -50,6 +50,7 @@ final class ModuleScanCoordinator {
     @Nullable private BlockPos lastCenterSection;
     private long lastDirtyVersion;
     private int pendingDirtyRegionCount;
+    private boolean lazyProbeInProgress;
 
     ModuleScanCoordinator(
             Host host,
@@ -70,6 +71,7 @@ final class ModuleScanCoordinator {
     }
 
     void reset() {
+        this.lazyProbeInProgress = false;
         this.lifecycle.setState(ScanState.FULL);
         this.lifecycle.idlePolicy().reset();
         this.lastSourceBox = null;
@@ -81,6 +83,7 @@ final class ModuleScanCoordinator {
     }
 
     void requestFullScan() {
+        this.lazyProbeInProgress = false;
         this.lifecycle.setState(ScanState.FULL);
         this.lifecycle.idlePolicy().reset();
         this.clearDirtyQueue();
@@ -150,6 +153,7 @@ final class ModuleScanCoordinator {
     }
 
     private boolean runFull(PrinterBox interactionBox, boolean activeWork) {
+        this.lazyProbeInProgress = false;
         FeatureModuleBase.IterationOutcome outcome = this.host.runIteration(interactionBox);
         if (outcome.scanPaused()) {
             this.lifecycle.setState(ScanState.FULL);
@@ -177,21 +181,19 @@ final class ModuleScanCoordinator {
         }
         if (this.lifecycle.state() == ScanState.LAZY) {
             int probeInterval = Math.max(40, Configs.Core.LAZY_ENTER_TICKS.getIntegerValue() * 10);
-            if (!this.lifecycle.idlePolicy().shouldRunLazyProbe(probeInterval)) {
+            if (!this.lazyProbeInProgress && !this.lifecycle.idlePolicy().shouldRunLazyProbe(probeInterval)) {
                 return false;
             }
             FeatureModuleBase.IterationOutcome outcome = this.host.runIteration(interactionBox);
             this.pendingDirtyRegionCount = 0;
-            if (outcome.scanPaused()) {
-                // A time-budget pause keeps the same cursor. It is not a new world/selection
-                // revision and must not promote a completed lazy feature into a fresh full pass.
-                this.lifecycle.setState(ScanState.LAZY);
-                return true;
-            }
             if (this.lifecycle.idlePolicy().recordLazyProbe(outcome.didWork(), outcome.foundCandidate())) {
+                this.lazyProbeInProgress = false;
                 this.lifecycle.setState(ScanState.FULL);
                 return outcome.interrupt();
             }
+            // Only a new probe waits for the idle interval. An unfinished probe keeps its cursor
+            // and resumes next tick without promoting an empty scan to FULL.
+            this.lazyProbeInProgress = outcome.interrupt() || outcome.scanPaused();
             this.lifecycle.setState(ScanState.LAZY);
             return true;
         }
@@ -201,6 +203,7 @@ final class ModuleScanCoordinator {
     }
 
     private boolean runPartial(PrinterBox interactionBox) {
+        this.lazyProbeInProgress = false;
         if (this.activeDirtyBox == null) {
             if (this.dirtyQueue.isEmpty()) {
                 this.refreshDirtyQueue(interactionBox);

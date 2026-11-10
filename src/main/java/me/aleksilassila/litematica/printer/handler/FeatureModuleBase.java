@@ -199,6 +199,10 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     protected void stopIteration(boolean interrupt) {
     }
 
+    /** Retains a consumed candidate whose timer or input owner has not become ready yet. */
+    protected void onIterationDeferred(BlockPos pos) {
+    }
+
     protected void onRuntimeReset() {
     }
 

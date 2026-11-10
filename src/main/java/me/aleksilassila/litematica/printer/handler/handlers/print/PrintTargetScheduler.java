@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /** Owns ordinary print candidates and short-lived retries; workflow stages live elsewhere. */
 public final class PrintTargetScheduler {
@@ -66,8 +67,13 @@ public final class PrintTargetScheduler {
         return !this.retryTargets.contains(pos);
     }
 
-    public void retainWithin(List<PrinterBox> sourceBoxes) {
-        this.retryTargets.removeIf(pos -> sourceBoxes.stream().noneMatch(box -> box.contains(pos)));
+    public void removeRetry(BlockPos pos) {
+        this.retryTargets.remove(pos);
+    }
+
+    public void retainWithin(List<PrinterBox> sourceBoxes, Predicate<BlockPos> permitted) {
+        this.retryTargets.removeIf(pos -> !permitted.test(pos)
+                || sourceBoxes.stream().noneMatch(box -> box.contains(pos)));
     }
 
     public Iterable<BlockPos> sortedPositions(List<PrinterBox> boxes, ClientLevel level,
@@ -83,6 +89,8 @@ public final class PrintTargetScheduler {
         } else if (result.shouldRetryTarget()) {
             if (this.sortedMode == Boolean.TRUE) this.sortedTargets.requeue(pos);
             else this.retryTargets.add(pos.immutable());
+        } else {
+            this.retryTargets.remove(pos);
         }
     }
 }

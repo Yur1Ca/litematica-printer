@@ -54,9 +54,37 @@ class PrintTargetSchedulerTest {
         targets.setSortedMode(false);
         targets.onResult(pos, PrintPlacementResult.deferred(false), false);
 
-        targets.retainWithin(List.of(new PrinterBox(0, 0, 0, 5, 5, 5)));
+        targets.retainWithin(List.of(new PrinterBox(0, 0, 0, 5, 5, 5)), posInRange -> true);
 
         assertFalse(targets.hasRunnableWork());
+        assertTrue(targets.acceptScanCandidate(pos));
+    }
+
+    @Test
+    void materialUnavailableStopsAnEarlierTransientRetry() {
+        PrintTargetScheduler targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(null), () -> {});
+        BlockPos pos = new BlockPos(1, 2, 3);
+        targets.setSortedMode(false);
+        targets.onResult(pos, PrintPlacementResult.deferred(false), false);
+
+        targets.onResult(pos, PrintPlacementResult.materialUnavailable(false), false);
+
+        assertFalse(targets.hasRunnableWork(), "Missing material must wait for an inventory wake-up");
+        assertTrue(targets.retainedTargets().isEmpty());
+        assertTrue(targets.acceptScanCandidate(pos));
+    }
+
+    @Test
+    void worldBlockedStopsAnEarlierTransientRetry() {
+        PrintTargetScheduler targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(null), () -> {});
+        BlockPos pos = new BlockPos(1, 2, 3);
+        targets.setSortedMode(false);
+        targets.onResult(pos, PrintPlacementResult.deferred(false), false);
+
+        targets.onResult(pos, PrintPlacementResult.worldBlocked(), false);
+
+        assertFalse(targets.hasRunnableWork(), "An unsupported falling target must wait for a world update");
+        assertTrue(targets.retainedTargets().isEmpty());
         assertTrue(targets.acceptScanCandidate(pos));
     }
 }

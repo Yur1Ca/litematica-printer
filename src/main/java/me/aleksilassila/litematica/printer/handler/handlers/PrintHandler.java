@@ -165,7 +165,8 @@ public class PrintHandler extends FeatureModuleBase {
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         WorldSchematic schematic = this.litematica.schematicWorld();
-        this.targets.retainWithin(this.getScanSourceBoxes(playerInteractionBox));
+        this.targets.retainWithin(this.getScanSourceBoxes(playerInteractionBox),
+                pos -> this.canReachIterationPosition(pos) && this.isInSelectionRange(pos));
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
         List<BlockPos> retainedTargets = this.targets.retainedTargets();
         Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
@@ -196,12 +197,15 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     public boolean canIterationBlockPos(BlockPos blockPos) {
+        this.targets.removeRetry(blockPos);
         this.action = null;
         this.printTaskAction = null;
+        this.ctx = null;
         WorldSchematic schematic = this.litematica.schematicWorld();
         if (schematic == null) return false;
         if (!PrintPlanner.canInspect(this.hudStats.isPrintPlacementPending(blockPos),
                 InteractionUtils.getRuntime().isRecentlyBroken(blockPos), this.printTasks.isActiveTaskPos(blockPos))) {
+            this.onIterationDeferred(blockPos);
             return false;
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
@@ -233,6 +237,15 @@ public class PrintHandler extends FeatureModuleBase {
         this.action = action.get();
         this.printTaskAction = this.printTasks.createActionHandle(ctx, this.action);
         return true;
+    }
+
+    @Override
+    protected void onIterationDeferred(BlockPos pos) {
+        boolean workflow = this.printTasks.isActiveTaskPos(pos);
+        this.targets.onResult(pos, PrintPlacementResult.deferred(false), workflow);
+        if (workflow && this.ctx != null && this.ctx.blockPos.equals(pos)) {
+            this.printTasks.onActionDeferred(this.ctx);
+        }
     }
 
     private void updatePrintSkipCache() {

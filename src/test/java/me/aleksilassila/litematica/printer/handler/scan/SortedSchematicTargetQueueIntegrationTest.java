@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import me.aleksilassila.litematica.printer.handler.handlers.print.SortedSchematicTargetQueue;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.Bootstrap;
@@ -74,6 +75,31 @@ class SortedSchematicTargetQueueIntegrationTest {
             fixture.tick(50);
             assertTrue(drain(queue.iterable(fixture.boxes, fixture.level, fixture.schematic, fixture.player, 7)).isEmpty());
             assertEquals(ScanAvailability.COMPLETE, queue.availability());
+        }
+    }
+
+    @Test void aChangedSourceAtTheLastOldCandidateKeepsItsFollowUpPass() throws Exception {
+        try (var fixture = new ScanIntegrationFixture(257)) {
+            var oldBoxes = List.of(new PrinterBox(0, 0, 0, 15, 0, 15));
+            var expandedBoxes = List.of(new PrinterBox(0, 0, 0, 15, 1, 15));
+            fixture.tick(10);
+            assertEquals(255, drain(fixture.cache.iterable("print_sorted", oldBoxes,
+                    fixture.level, fixture.schematic, fixture.player, 255, ScanIntent.PRINT, pos -> true)).size());
+            var queue = new SortedSchematicTargetQueue(fixture.engine());
+
+            assertEquals(1, drain(queue.iterable(
+                    expandedBoxes, fixture.level, fixture.schematic, fixture.player, 1)).size());
+
+            assertTrue(queue.hasPendingWork(),
+                    "The old cursor ending does not complete a newer source revision");
+            List<BlockPos> following = new ArrayList<>();
+            for (int tick = 11; tick <= 13 && queue.hasPendingWork(); tick++) {
+                fixture.tick(tick);
+                following.addAll(drain(queue.iterable(
+                        expandedBoxes, fixture.level, fixture.schematic, fixture.player, 0)));
+            }
+            assertTrue(following.contains(new BlockPos(0, 1, 0)),
+                    "The newly exposed target must not depend on a future world update");
         }
     }
 

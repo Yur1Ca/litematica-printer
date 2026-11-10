@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import net.minecraft.core.BlockPos;
 
+import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Consumes one feature candidate stream without owning its scan lifecycle. */
@@ -41,13 +42,14 @@ final class ModuleIterationRunner {
         boolean bufferedCandidates = positions instanceof ScanCandidateIterable source
                 && source.isBuffered()
                 && source.availability() == ScanAvailability.READY;
-        for (BlockPos pos : positions) {
+        Iterator<BlockPos> iterator = positions.iterator();
+        while (true) {
             if (!bufferedCandidates && ++budgetChecks % BUDGET_CHECK_INTERVAL == 0
                     && System.nanoTime() - iterationStartNanos - actionExecutionNanos >= budgetNanos) {
                 interrupt = true;
                 break;
             }
-            if (scanGuardLimit > 0 && totalIterCount++ >= scanGuardLimit) {
+            if (scanGuardLimit > 0 && totalIterCount >= scanGuardLimit) {
                 interrupt = true;
                 break;
             }
@@ -55,6 +57,10 @@ final class ModuleIterationRunner {
                 interrupt = true;
                 break;
             }
+            // hasNext() may advance a live scan; check every iteration guard before probing it.
+            if (!iterator.hasNext()) break;
+            BlockPos pos = iterator.next();
+            totalIterCount++;
             GuiBlockInfo gui = module.createGuiBlockInfo(trackGui, pos);
             if (prefilteredReachAndSelection || module.canReachIterationPosition(pos)) {
                 if (gui != null) gui.interacted = true;
@@ -75,6 +81,7 @@ final class ModuleIterationRunner {
             if (gui != null) gui.posInSelectionRange = true;
             if (!prefilteredCooldown && module.isBlockPosOnCooldown(pos)) {
                 foundCandidate = true;
+                module.onIterationDeferred(pos);
                 module.guiBuffer().add(gui);
                 continue;
             }
@@ -83,6 +90,7 @@ final class ModuleIterationRunner {
                 if (module.actionBroker.isResourceHeldByOther(
                         me.aleksilassila.litematica.printer.core.action.ResourceLease.MAIN_HAND,
                         module.getId())) {
+                    module.onIterationDeferred(pos);
                     interrupt = true;
                     break;
                 }

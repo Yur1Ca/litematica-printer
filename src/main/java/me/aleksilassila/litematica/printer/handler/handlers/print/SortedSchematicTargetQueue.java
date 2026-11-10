@@ -151,9 +151,9 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
                 }
             }
             this.hasMoreSource = targets.size() >= collectLimit;
-            if (candidates instanceof ScanCandidateIterable scanSource
-                    && scanSource.availability() == ScanAvailability.PAUSED) {
-                this.hasMoreSource = true;
+            if (candidates instanceof ScanCandidateIterable scanSource) {
+                if (scanSource.availability() == ScanAvailability.PAUSED) this.hasMoreSource = true;
+                else if (scanSource.availability() == ScanAvailability.COMPLETE) this.hasMoreSource = false;
             }
         } finally {
             this.scanEngine.timing().finish("print", Stage.PRINT_COLLECTION, collectionStart);

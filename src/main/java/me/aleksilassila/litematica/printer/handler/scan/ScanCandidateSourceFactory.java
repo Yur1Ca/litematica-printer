@@ -204,6 +204,9 @@ final class ScanCandidateSourceFactory {
                         BlockPos result = this.next;
                         this.next = null;
                         this.prepared = false;
+                        if (!session.hasPendingSource(tickTime)) {
+                            state[0] = ScanAvailability.COMPLETE;
+                        }
                         return result;
                     }
                 };

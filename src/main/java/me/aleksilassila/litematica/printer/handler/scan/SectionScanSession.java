@@ -192,7 +192,8 @@ final class SectionScanSession {
 
     boolean hasPendingSource(long tickTime) {
         return this.canScan(tickTime)
-                && (!this.dirtyPositions.isEmpty() || !this.distanceCursor.isComplete());
+                && (this.cursorRevision != this.sourceRevision
+                || !this.dirtyPositions.isEmpty() || !this.distanceCursor.isComplete());
     }
 
     boolean wasPaused() {
@@ -348,7 +349,7 @@ final class SectionScanSession {
 
             this.metrics.scannedBlocks++;
             if (this.intent == ScanIntent.CUSTOM) {
-                return new Candidate(new BlockPos(x, y, z), (byte) 0);
+                return this.candidate(x, y, z, (byte) 0, tickTime);
             }
             byte flags;
             long classifyStart = this.metrics.timing.start();
@@ -362,9 +363,19 @@ final class SectionScanSession {
                 this.metrics.timing.finish(this.metrics.owner, Stage.CLASSIFICATION, classifyStart);
             }
             if (flags != 0) {
-                return new Candidate(new BlockPos(x, y, z), flags);
+                return this.candidate(x, y, z, flags, tickTime);
             }
         }
+    }
+
+    private Candidate candidate(int x, int y, int z, byte flags, long tickTime) {
+        if (this.distanceCursor.isComplete() && this.dirtyPositions.isEmpty()
+                && this.cursorRevision == this.sourceRevision) {
+            // The consumer may stop after this candidate. Do not spend the next tick merely
+            // discovering that this pass ended; same-tick restarts remain forbidden.
+            this.finishPass(tickTime);
+        }
+        return new Candidate(new BlockPos(x, y, z), flags);
     }
 
     private BlockPos pollDirtyPositionBefore(long sourceDistanceSqr) {

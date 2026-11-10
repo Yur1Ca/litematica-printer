@@ -62,6 +62,25 @@ class SparseScanLifecycleTest {
         assertFalse(session.belongsTo(RuntimeEpoch.INITIAL));
     }
 
+    @Test void consumingTheLastCandidateDoesNotRequireAnEmptyTickBeforeTheNextPass() throws Exception {
+        var boxes = List.of(new PrinterBox(BlockPos.ZERO));
+        var session = session(readyIndex(List.of(BlockPos.ZERO)), ScanIntent.PRINT,
+                region(0, 0, 0, 1), boxes, new ScanMetricsAccumulator());
+        var observation = new Observation();
+        assertEquals(BlockPos.ZERO, session.next(observation, 20, () -> false, pos -> true, true).pos());
+
+        // A per-tick execution limit can stop the consumer immediately after the last candidate.
+        // Do not drain or query the session again until the following tick.
+        var nextTickCandidate = session.next(observation, 21, () -> false, pos -> true, true);
+        assertNotNull(nextTickCandidate, "Finishing the previous pass must not consume the next tick");
+        assertEquals(BlockPos.ZERO, nextTickCandidate.pos());
+        assertNull(session.next(observation, 21, () -> false, pos -> true, true),
+                "The scanner must still prevent another complete pass in the same tick");
+        assertFalse(session.canScan(21));
+        assertEquals(BlockPos.ZERO, session.next(observation, 22, () -> false, pos -> true, true).pos());
+        session.close();
+    }
+
     @Test void dirtyPositionWinsAnEqualDistanceBeforeAnExistingSparseCandidate() throws Exception {
         var boxes = List.of(new PrinterBox(-2, 0, -2, 2, 0, 2));
         var session = session(readyIndex(List.of(new BlockPos(-1, 0, 0))), ScanIntent.PRINT,

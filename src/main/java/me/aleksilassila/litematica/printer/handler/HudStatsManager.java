@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.handler;
 
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
-import me.aleksilassila.litematica.printer.printer.RttReplayController;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -18,12 +17,10 @@ import java.util.function.LongSupplier;
 public final class HudStatsManager implements RuntimeComponent {
     private static final long RATE_WINDOW_NANOS = 1_000_000_000L;
     private static final int DEFAULT_CONFIRM_TIMEOUT_TICKS = 10;
-    private static final int RTT_CONFIRM_SAFETY_TICKS = 2;
     private static final int FALLBACK_CONFIRM_CHECKS_PER_MODE = 8;
 
     private final Minecraft client;
     private final LongSupplier tickClock;
-    private final RttReplayController rttReplayController;
     private final EnumMap<Mode, ModeStats> stats = new EnumMap<>(Mode.class);
     private final PrintConfirmationTracker printConfirmationTracker = new PrintConfirmationTracker();
     private final Map<BlockPos, Long> pendingMineTargets = new LinkedHashMap<>();
@@ -34,12 +31,10 @@ public final class HudStatsManager implements RuntimeComponent {
 
     public HudStatsManager(
             Minecraft client,
-            LongSupplier tickClock,
-            RttReplayController rttReplayController
+            LongSupplier tickClock
     ) {
         this.client = client;
         this.tickClock = tickClock;
-        this.rttReplayController = rttReplayController;
         for (Mode mode : Mode.values()) {
             this.stats.put(mode, new ModeStats());
         }
@@ -99,7 +94,7 @@ public final class HudStatsManager implements RuntimeComponent {
             return;
         }
         long now = this.tickClock.getAsLong();
-        this.printConfirmationTracker.track(pos, expectedState, now, this.getConfirmationTimeoutTicks());
+        this.printConfirmationTracker.track(pos, expectedState, now, DEFAULT_CONFIRM_TIMEOUT_TICKS);
     }
 
     public boolean isPrintPlacementPending(BlockPos pos) {
@@ -114,7 +109,7 @@ public final class HudStatsManager implements RuntimeComponent {
             return;
         }
         long now = this.tickClock.getAsLong();
-        this.pendingMineTargets.put(pos.immutable(), now + this.getConfirmationTimeoutTicks());
+        this.pendingMineTargets.put(pos.immutable(), now + DEFAULT_CONFIRM_TIMEOUT_TICKS);
     }
 
     public void trackExpectedBlockChange(Mode mode, BlockPos pos, BlockState originalState) {
@@ -124,7 +119,7 @@ public final class HudStatsManager implements RuntimeComponent {
         long now = this.tickClock.getAsLong();
         PendingStateChange pending = new PendingStateChange(
                 originalState,
-                now + this.getConfirmationTimeoutTicks()
+                now + DEFAULT_CONFIRM_TIMEOUT_TICKS
         );
         if (mode == Mode.FILL) {
             this.pendingFillTargets.put(pos.immutable(), pending);
@@ -182,21 +177,6 @@ public final class HudStatsManager implements RuntimeComponent {
     public Snapshot snapshot(Mode mode) {
         long now = this.tickClock.getAsLong();
         return this.stats.get(mode).snapshot(now);
-    }
-
-    static int confirmationTimeoutTicksFor(int rttTicks) {
-        return Math.max(
-                DEFAULT_CONFIRM_TIMEOUT_TICKS,
-                Math.max(0, rttTicks) + RTT_CONFIRM_SAFETY_TICKS
-        );
-    }
-
-    private int getConfirmationTimeoutTicks() {
-        return confirmationTimeoutTicksFor(
-                this.rttReplayController == null
-                        ? 0
-                        : this.rttReplayController.getExtraIntervalTicks(100)
-        );
     }
 
     private void confirmStateChange(

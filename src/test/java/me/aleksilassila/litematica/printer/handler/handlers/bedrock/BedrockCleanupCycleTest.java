@@ -10,6 +10,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Set;
 
@@ -111,6 +113,21 @@ class BedrockCleanupCycleTest {
             assertTrue(f.cleanup.contains(PISTON));
             assertEquals(0, f.cleanup.reachableCycleCount(),
                     "A cycle with neither queue ownership nor a live watch must have retired, not attach to a later block");
+        }
+    }
+
+    @ParameterizedTest @ValueSource(ints = {40, 41})
+    void latePlacementUsesTheExistingFixedWatchWindow(int updateTick) throws Exception {
+        try (var f = new Fixture()) {
+            f.cleanup.enqueueCycle(OWNER, Set.of(PISTON), false);
+            assertFalse(f.cleanup.contains(PISTON));
+
+            f.world.tick = updateTick;
+            f.world.blocks.put(PISTON, Blocks.PISTON.defaultBlockState());
+            f.cleanup.onServerBlockUpdate(PISTON);
+
+            assertEquals(updateTick == 40, f.cleanup.contains(PISTON),
+                    "Late owned placements remain observable through tick 40 without extending the watch");
         }
     }
 
@@ -233,7 +250,7 @@ class BedrockCleanupCycleTest {
             world.loaded = true;
             set(world, Level.class, "dimension", Level.OVERWORLD);
             client.level = world;
-            cleanup = new BedrockCleanupCoordinator(client, null, () -> false, enginePlacer);
+            cleanup = new BedrockCleanupCoordinator(client, () -> false, enginePlacer);
         }
 
         void air(BlockPos pos) {

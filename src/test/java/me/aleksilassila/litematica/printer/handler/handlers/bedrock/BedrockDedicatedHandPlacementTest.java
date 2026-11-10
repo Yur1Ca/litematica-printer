@@ -37,10 +37,10 @@ class BedrockDedicatedHandPlacementTest {
             f.client.gameMode = mode;
             var constructor = Arrays.stream(BedrockPlacer.class.getDeclaredConstructors())
                     .filter(c -> Arrays.equals(c.getParameterTypes(),
-                            new Class<?>[]{Minecraft.class, BedrockNetworkSync.class})).findFirst().orElse(null);
+                            new Class<?>[]{Minecraft.class})).findFirst().orElse(null);
             assertNotNull(constructor, "The placer always owns the production inventory session");
             constructor.setAccessible(true);
-            var placer = (BedrockPlacer) constructor.newInstance(f.client, null);
+            var placer = (BedrockPlacer) constructor.newInstance(f.client);
 
             assertFalse(placer.placeSimple(new BlockPos(0, 64, 0), Direction.UP, Items.STICK),
                     "Validate the inventory before the first mutation of a session");

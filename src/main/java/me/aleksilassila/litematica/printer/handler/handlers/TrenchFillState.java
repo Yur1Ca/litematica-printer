@@ -86,12 +86,12 @@ final class TrenchFillState {
         return ready;
     }
 
-    boolean canSend(long now, int interval, int limit, boolean globalAvailable) {
+    boolean canSend(long now, int interval, int limit) {
         this.beginTick(now);
         if (limit > 0 && this.sentThisTick >= limit) return false;
         if (this.sentThisTick > 0) return true;
-        return (interval <= 0 || this.lastSentTick == Long.MIN_VALUE
-                || now - this.lastSentTick >= interval) && globalAvailable;
+        return interval <= 0 || this.lastSentTick == Long.MIN_VALUE
+                || now - this.lastSentTick >= interval;
     }
 
     void updateTargets(List<PrinterBox> sourceBoxes, Set<BlockPos> discovered,
@@ -155,8 +155,8 @@ final class TrenchFillState {
         return attempt;
     }
 
-    boolean completeQueued(BlockPos pos, Object attempt, long now, boolean sent) {
-        if (attempt == null || this.queuedAttempts.get(pos) != attempt) return false;
+    void completeQueued(BlockPos pos, Object attempt, long now, boolean sent) {
+        if (attempt == null || this.queuedAttempts.get(pos) != attempt) return;
         this.queuedAttempts.remove(pos);
         if (sent) {
             this.markInFlight(pos, now, true);
@@ -164,7 +164,6 @@ final class TrenchFillState {
             this.inFlight.remove(pos);
             this.defer(pos, now + 2L);
         }
-        return true;
     }
 
     void markInFlight(BlockPos pos, long now, boolean sent) {

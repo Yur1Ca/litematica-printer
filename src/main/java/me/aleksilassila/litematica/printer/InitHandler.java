@@ -66,7 +66,6 @@ public class InitHandler implements IInitializationHandler {
         Core.LAG_CHECK.setValueChangeCallback(b -> ConfigUi.refresh());
         Core.RENDER_HUD.setValueChangeCallback(b -> ConfigUi.refresh());
         Core.MISSING_MATERIAL_HUD.setValueChangeCallback(b -> ConfigUi.refresh());
-        Configs.Placement.RTT_ADAPTIVE_INTERVAL.setValueChangeCallback(b -> ConfigUi.refresh());
         Break.BREAK_USE_DELAYED_DESTROY.setValueChangeCallback(b -> ConfigUi.refresh());
         Special.REMOTE_TAKE.setValueChangeCallback(b -> {
             ConfigUi.refresh();

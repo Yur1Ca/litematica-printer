@@ -54,7 +54,7 @@ class TrenchFillBatchReadinessTest {
             assertFalse(skip.get());
             assertTrue(f.queued.isEmpty());
             assertEquals(0, f.sentThisTick());
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
             assertFalse(canAttempt(f, UNSUPPORTED, 109));
         }
     }

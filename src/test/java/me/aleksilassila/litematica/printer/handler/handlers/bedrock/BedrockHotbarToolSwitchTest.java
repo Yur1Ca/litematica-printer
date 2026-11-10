@@ -137,7 +137,7 @@ class BedrockHotbarToolSwitchTest {
                 public boolean toolRequiresInventorySwap(BlockState state, boolean cleanup) { return false; }
                 public boolean selectTool(BlockState state, boolean cleanup) { return true; }
             });
-            owner = new BedrockPlacer(client, null);
+            owner = new BedrockPlacer(client);
             set(owner, BedrockPlacer.class, "inventory", session);
             assertFalse(session.preparePistons());
             client.player.inventoryMenu.initializeContents(client.player.inventoryMenu.getStateId() + 1,

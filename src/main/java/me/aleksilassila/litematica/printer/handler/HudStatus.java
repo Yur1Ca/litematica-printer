@@ -19,7 +19,6 @@ public final class HudStatus {
     public static final String WAITING_LOOK = "waiting_look";
     public static final String PLACEMENT_NOT_SENT = "placement_not_sent";
     public static final String WAITING_ITEM_SYNC = "waiting_item_sync";
-    public static final String RTT_THROTTLED = "rtt_throttled";
     public static final String MOVED_STALE = "moved_stale";
     public static final String HELD_ITEM_CHANGED = "held_item_changed";
     public static final String RESERVE_LIMIT = "reserve_limit";

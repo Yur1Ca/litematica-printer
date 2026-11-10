@@ -52,7 +52,7 @@ class TrenchFillStateTest {
         assertFalse(state.hasWork());
         state.updateTargets(List.of(), Set.of(pos), Set.of(), 1L, ignored -> true);
         assertTrue(state.canAttempt(pos, 1L));
-        assertTrue(state.canSend(1L, 20, 1, true));
+        assertTrue(state.canSend(1L, 20, 1));
     }
 
     @Test
@@ -90,16 +90,16 @@ class TrenchFillStateTest {
     void fillBatchRespectsPerTickLimitWithoutSerializingSameTick() {
         TrenchFillState state = new TrenchFillState();
 
-        assertTrue(state.canSend(10L, 2, 3, true));
+        assertTrue(state.canSend(10L, 2, 3));
         state.markInFlight(new BlockPos(1, 2, 3), 10L, true);
-        assertTrue(state.canSend(10L, 2, 3, false));
+        assertTrue(state.canSend(10L, 2, 3));
         state.markInFlight(new BlockPos(2, 2, 3), 10L, true);
         state.markInFlight(new BlockPos(3, 2, 3), 10L, true);
-        assertFalse(state.canSend(10L, 2, 3, false));
+        assertFalse(state.canSend(10L, 2, 3));
 
         state.beginTick(11L);
-        assertFalse(state.canSend(11L, 2, 3, true));
-        assertTrue(state.canSend(12L, 2, 3, true));
+        assertFalse(state.canSend(11L, 2, 3));
+        assertTrue(state.canSend(12L, 2, 3));
     }
 
     @Test
@@ -122,13 +122,13 @@ class TrenchFillStateTest {
 
         state.beginTick(100L);
         assertEquals(1, state.sentThisTick(), "The scheduler can send before mine preprocess begins");
-        assertFalse(state.canSend(100L, 0, 1, true));
+        assertFalse(state.canSend(100L, 0, 1));
         state.beginTick(100L);
         assertEquals(1, state.sentThisTick(), "Same-tick initialization must be idempotent");
 
         state.beginTick(101L);
         assertEquals(0, state.sentThisTick());
-        assertTrue(state.canSend(101L, 0, 1, true));
+        assertTrue(state.canSend(101L, 0, 1));
     }
 
 }

@@ -223,7 +223,7 @@ public final class BedrockBreaker {
             boolean changed = state.getBlock() != attempt.state.getBlock();
             long sentTick = attempt.stopTick < 0 ? attempt.startTick : attempt.stopTick;
             boolean timedOut = !attempt.retryNeeded && (attempt != this.active || attempt.stopTick >= 0)
-                    && now - sentTick >= this.placer.cleanupConfirmationTimeoutTicks();
+                    && now - sentTick >= BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS;
             if (changed || !this.canMine(attempt.pos)) {
                 if (attempt == this.active) {
                     if (!state.isAir()) this.abortActive();

@@ -8,7 +8,6 @@ import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.handlers.MineHandler;
 import me.aleksilassila.litematica.printer.integration.inventory.*;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
-import me.aleksilassila.litematica.printer.printer.PlacementRateController;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -69,7 +68,6 @@ class TrenchFillIntegrationTest {
     static class Fixture implements AutoCloseable {
         final ConfigStringList config = Configs.Mine.MINE_TRENCH_FILL_BLOCK_LIST;
         final List<String> oldFilters = List.copyOf(config.getStrings());
-        final boolean oldAdaptive = Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue();
         final Object oldClient = get(null, Minecraft.class, "instance");
         final Object oldRuntime = get(null, RuntimeAccess.class, "current");
         final sun.misc.Unsafe unsafe;
@@ -81,7 +79,6 @@ class TrenchFillIntegrationTest {
         final MineHandler handler = allocate(TrenchHandler.class);
         final Object state;
         final InventorySwitchGuard switchGuard;
-        final PlacementRateController rate = new PlacementRateController(null);
         final List<MaterialRequest> requests = new ArrayList<>();
         final List<Item[]> queued = new ArrayList<>();
         final ActionPort actions;
@@ -92,7 +89,6 @@ class TrenchFillIntegrationTest {
 
         Fixture() throws Exception {
             config.setStrings(List.of("minecraft:cobblestone"));
-            Configs.Placement.RTT_ADAPTIVE_INTERVAL.setBooleanValue(false);
             player.inventory = new Inventory(player, new EntityEquipment());
             player.abilities = new Abilities();
             set(player, Entity.class, "position", Vec3.ZERO);
@@ -126,8 +122,7 @@ class TrenchFillIntegrationTest {
             addTarget(level.tick);
             set(handler, FeatureModuleBase.class, "level", level);
             set(handler, FeatureModuleBase.class, "player", player);
-            set(handler, FeatureModuleBase.class, "placementRateController", rate);
-            set(handler, FeatureModuleBase.class, "hudStats", new HudStatsManager(client, () -> level.tick, null));
+            set(handler, FeatureModuleBase.class, "hudStats", new HudStatsManager(client, () -> level.tick));
             set(handler, FeatureModuleBase.class, "missingMaterials", new MissingMaterialTracker());
             actions = (ActionPort) Proxy.newProxyInstance(ActionPort.class.getClassLoader(), new Class<?>[]{ActionPort.class}, (p,m,a) -> {
                 if (m.getName().equals("queueClick")) {
@@ -221,10 +216,16 @@ class TrenchFillIntegrationTest {
             return (int) count.invoke(state);
         }
 
+        long lastSentTick() throws Exception {
+            var lastSent = state.getClass().getDeclaredMethod("lastSentTick");
+            lastSent.setAccessible(true);
+            return (long) lastSent.invoke(state);
+        }
+
         boolean canSend(long tick, int interval, int limit) throws Exception {
-            var send = state.getClass().getDeclaredMethod("canSend", long.class, int.class, int.class, boolean.class);
+            var send = state.getClass().getDeclaredMethod("canSend", long.class, int.class, int.class);
             send.setAccessible(true);
-            return (boolean) send.invoke(state, tick, interval, limit, true);
+            return (boolean) send.invoke(state, tick, interval, limit);
         }
 
         TrenchLevel changeWorld(long tick) throws Exception {
@@ -243,7 +244,6 @@ class TrenchFillIntegrationTest {
 
         @Override public void close() throws Exception {
             config.setStrings(oldFilters);
-            Configs.Placement.RTT_ADAPTIVE_INTERVAL.setBooleanValue(oldAdaptive);
             setPlayerUtilsClient(oldPlayerUtilsClient);
             set(null, Minecraft.class, "instance", oldClient);
             set(null, RuntimeAccess.class, "current", oldRuntime);
@@ -257,7 +257,7 @@ class TrenchFillIntegrationTest {
             assertFalse(f.execute());
             assertEquals(1, f.queued.size());
             assertArrayEquals(new Item[]{Items.COBBLESTONE}, f.queued.getFirst());
-            assertEquals(100L, f.rate.lastSentTick());
+            assertEquals(1, f.sentThisTick());
             assertFalse(f.canAttempt(130L));
             assertEquals(Blocks.LAVA.defaultBlockState(), f.level.targetState, "No speculative world write");
             assertEquals(64, f.player.getMainHandItem().getCount(), "No direct inventory mutation");
@@ -303,7 +303,7 @@ class TrenchFillIntegrationTest {
             assertTrue(f.execute());
             assertTrue(f.queued.isEmpty());
             assertTrue(f.requests.isEmpty());
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(0, f.sentThisTick());
         }
     }
 
@@ -314,7 +314,7 @@ class TrenchFillIntegrationTest {
             assertTrue(f.execute());
             assertEquals(1, f.queued.size());
             assertFalse(f.canAttempt(101L));
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(0, f.sentThisTick());
         }
     }
 }

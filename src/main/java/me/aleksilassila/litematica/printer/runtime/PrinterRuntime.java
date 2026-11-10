@@ -14,8 +14,6 @@ import me.aleksilassila.litematica.printer.handler.InventoryAvailabilityTracker;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
-import me.aleksilassila.litematica.printer.printer.RttReplayController;
-import me.aleksilassila.litematica.printer.printer.PlacementRateController;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
@@ -70,8 +68,6 @@ public final class PrinterRuntime {
     private final InventoryAvailabilityTracker inventoryAvailability;
     private final CooldownUtils cooldownUtils;
     private final InteractionUtils interactionUtils;
-    private final RttReplayController rttReplayController;
-    private final PlacementRateController placementRateController;
     private final MissingMaterialTracker missingMaterials;
     private final HudStatsManager hudStats;
     private final QuickShulkerAdapter quickShulkerAdapter;
@@ -113,13 +109,9 @@ public final class PrinterRuntime {
         this.scope.register(this.inventoryAvailability);
         this.interactionUtils = new InteractionUtils();
         this.scope.register(this.interactionUtils);
-        this.rttReplayController = new RttReplayController();
-        this.scope.register(this.rttReplayController);
-        this.placementRateController = new PlacementRateController(this.rttReplayController);
-        this.scope.register(this.placementRateController);
         this.missingMaterials = new MissingMaterialTracker();
         this.scope.register(this.missingMaterials);
-        this.hudStats = new HudStatsManager(client, this::currentTick, this.rttReplayController);
+        this.hudStats = new HudStatsManager(client, this::currentTick);
         this.scope.register(this.hudStats);
         this.quickShulkerAdapter = new QuickShulkerAdapter(this.actionBroker);
         this.scope.register(this.quickShulkerAdapter);
@@ -185,14 +177,6 @@ public final class PrinterRuntime {
 
     public InteractionUtils interactionUtils() {
         return this.interactionUtils;
-    }
-
-    public RttReplayController rttReplayController() {
-        return this.rttReplayController;
-    }
-
-    public PlacementRateController placementRateController() {
-        return this.placementRateController;
     }
 
     public MissingMaterialTracker missingMaterials() {

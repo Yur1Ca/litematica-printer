@@ -467,9 +467,8 @@ public class MineHandler extends FeatureModuleBase {
         if (!this.canReachTrenchTarget(pos)) return;
         long now = this.level.getGameTime();
         if (!this.trenchFill.canSend(now,
-                this.placementRateController.effectiveIntervalTicks(),
-                Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue(),
-                this.placementRateController.canSend(now))) {
+                Math.max(0, Configs.Placement.PLACE_INTERVAL.getIntegerValue()),
+                Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue())) {
             skipIteration.set(true);
             return;
         }
@@ -535,10 +534,7 @@ public class MineHandler extends FeatureModuleBase {
         if (!this.actionBroker.setQueueCompletionListener(completion -> {
             if (this.level != queuedLevel || this.player != queuedPlayer) return;
             long completedAt = queuedLevel.getGameTime();
-            if (this.trenchFill.completeQueued(queuedPos, attempt, completedAt, completion.isSent())
-                    && completion.isSent()) {
-                this.placementRateController.recordSent(completedAt);
-            }
+            this.trenchFill.completeQueued(queuedPos, attempt, completedAt, completion.isSent());
         })) {
             this.trenchFill.completeQueued(queuedPos, attempt, now, false);
             this.actionBroker.cancelQueue();

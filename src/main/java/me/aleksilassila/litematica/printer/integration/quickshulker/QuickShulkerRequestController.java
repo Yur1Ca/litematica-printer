@@ -29,8 +29,7 @@ public final class QuickShulkerRequestController {
     private final QuickShulkerContainerSession containerSession = new QuickShulkerContainerSession();
     private int shulkerCooldown = 0;
     private int openHandlerTimeout = 0;
-    private static final int OPEN_HANDLER_BASE_TIMEOUT_TICKS = 8;
-    private static final int OPEN_HANDLER_SAFETY_TICKS = 2;
+    private static final int OPEN_HANDLER_TIMEOUT_TICKS = 10;
     private static final int OPEN_HANDLER_MAX_TIMEOUT_TICKS = 40;
 
     private final HashSet<Item> lastNeedItemList = new LinkedHashSet<>();
@@ -388,11 +387,7 @@ public final class QuickShulkerRequestController {
                             }
                             ModLoadUtils.closeScreen++;
                             this.isOpenHandler = true;
-                            openHandlerTimeout = RuntimeAccess.get().rttReplayController().getWaitTimeoutTicks(
-                                    OPEN_HANDLER_BASE_TIMEOUT_TICKS,
-                                    OPEN_HANDLER_SAFETY_TICKS,
-                                    OPEN_HANDLER_MAX_TIMEOUT_TICKS
-                            );
+                            openHandlerTimeout = OPEN_HANDLER_TIMEOUT_TICKS;
                             shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;
                         } catch (Exception e) {

@@ -9,7 +9,6 @@ import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEngin
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
-import me.aleksilassila.litematica.printer.printer.RttReplayController;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -252,7 +251,6 @@ class InventoryAutomationGuardTest {
             set(null, Minecraft.class, "instance", client);
             set(runtime, PrinterRuntime.class, "actionBroker", broker);
             set(runtime, PrinterRuntime.class, "inventorySwitchGuard", switchGuard);
-            set(runtime, PrinterRuntime.class, "rttReplayController", new RttReplayController());
             RuntimeAccess.install(runtime);
         }
         public void close() throws Exception {

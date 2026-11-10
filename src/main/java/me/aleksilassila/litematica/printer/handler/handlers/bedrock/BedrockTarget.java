@@ -236,7 +236,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     @Override
-    public int postExecuteSyncTimeoutTicks() { return this.networkSync == null ? BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS : this.networkSync.confirmationTimeoutTicks(); }
+    public int postExecuteSyncTimeoutTicks() { return BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS; }
 
     @Override
     public void recordNetworkTimeout() { if (this.networkSync != null) this.networkSync.recordTimeout(this.bedrockPos); }

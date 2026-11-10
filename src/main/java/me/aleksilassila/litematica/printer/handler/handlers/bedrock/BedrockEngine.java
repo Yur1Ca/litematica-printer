@@ -55,16 +55,11 @@ public final class BedrockEngine implements RuntimeComponent {
     ) {
         this.client = client;
         this.tickClock = tickClock;
-        this.networkSync = new BedrockNetworkSync(
-                tickClock,
-                () -> me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get()
-                        .rttReplayController().getExtraIntervalTicks(100),
-                timing
-        );
-        this.placer = new BedrockPlacer(client, this.networkSync);
+        this.networkSync = new BedrockNetworkSync(tickClock, timing);
+        this.placer = new BedrockPlacer(client);
         this.criticalExecutor = new BedrockCriticalExecutor(this.placer);
         this.cleanup = new BedrockCleanupCoordinator(
-                client, this.networkSync, this::mutationsDeferred, this.placer);
+                client, this::mutationsDeferred, this.placer);
         this.admission = new BedrockAdmissionController(
                 client, this.targets, this.cleanup, this.stats, cooldownUtils, tickClock,
                 this.criticalExecutor, this.placer, litematica, this.networkSync);
@@ -352,7 +347,6 @@ public final class BedrockEngine implements RuntimeComponent {
                 this.stats.successRate(),
                 this.stats.lastReason,
                 this.networkSync.pendingCount(),
-                this.networkSync.adaptiveBackoffs(),
                 this.networkSync.serverUpdateTimeouts(),
                 this.networkSync.lastResult()
         );
@@ -380,7 +374,6 @@ public final class BedrockEngine implements RuntimeComponent {
             double successRate,
             String lastReason,
             int pendingServerUpdates,
-            int adaptiveBackoffs,
             int serverUpdateTimeouts,
             String lastNetworkResult
     ) {

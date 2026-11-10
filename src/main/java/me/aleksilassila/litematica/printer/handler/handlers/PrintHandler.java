@@ -73,8 +73,7 @@ public class PrintHandler extends FeatureModuleBase {
                 this.missingMaterials,
                 this.litematica,
                 this.fallingPlacements,
-                runtime.materialRequests(),
-                this.placementRateController);
+                runtime.materialRequests());
     }
 
     public SchematicBlockContext getContext() {
@@ -97,7 +96,7 @@ public class PrintHandler extends FeatureModuleBase {
         if (this.printTasks.hasActiveWorkflow()) {
             return 0;
         }
-        return this.placementRateController.effectiveIntervalTicks();
+        return Math.max(0, Configs.Placement.PLACE_INTERVAL.getIntegerValue());
     }
 
     @Override

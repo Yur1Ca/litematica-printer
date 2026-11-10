@@ -196,7 +196,7 @@ class BedrockPlacementRegressionTest {
             target.setHasTried(true);
             target.setExecuteTick(0);
             target.setStatus(BedrockTarget.Status.NEEDS_WAITING);
-            for (int tick = 0; tick <= 56; tick++) {
+            for (int tick = 0; tick <= target.postExecuteSyncTimeoutTicks(); tick++) {
                 f.tick(tick);
                 target.settleDispatchedAttempt(false);
             }
@@ -270,9 +270,9 @@ class BedrockPlacementRegressionTest {
             f.placer.preparePistonPlacementLook(side.getPistonPos(), Direction.WEST);
             f.level.blocks.remove(TARGET);
             var executor = new BedrockTargetExecutor(targets,
-                    new BedrockCleanupCoordinator(f.client, null, () -> false, f.placer), new BedrockRunStats(),
+                    new BedrockCleanupCoordinator(f.client, () -> false, f.placer), new BedrockRunStats(),
                     (pos, ticks) -> fail("Completed targets do not need a cooldown"),
-                    f.placer, new BedrockNetworkSync(f.runtime::currentTick, () -> 8), new BedrockCriticalExecutor(f.placer),
+                    f.placer, new BedrockNetworkSync(f.runtime::currentTick), new BedrockCriticalExecutor(f.placer),
                     new BedrockThroughputScheduler<>());
 
             executor.observeAndRetire(f.level);
@@ -474,7 +474,6 @@ class BedrockPlacementRegressionTest {
         final Object oldClient = get(null, Minecraft.class, "instance");
         final Object oldRuntime = get(null, RuntimeAccess.class, "current");
         final boolean oldRange = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue();
-        final boolean oldAdaptive = Configs.Bedrock.BEDROCK_MULTIPLAYER_ADAPTIVE.getBooleanValue();
         final Map<Field, Object> cachedClients = new LinkedHashMap<>();
         final Minecraft client;
         final TestLevel level;
@@ -531,7 +530,7 @@ class BedrockPlacementRegressionTest {
             set(null, Minecraft.class, "instance", client);
             runtime = allocate(PrinterRuntime.class);
             set(runtime, PrinterRuntime.class, "interactionUtils", new InteractionUtils());
-            set(runtime, PrinterRuntime.class, "hudStats", new HudStatsManager(client, runtime::currentTick, null));
+            set(runtime, PrinterRuntime.class, "hudStats", new HudStatsManager(client, runtime::currentTick));
             set(runtime, PrinterRuntime.class, "scope", new RuntimeScope());
             set(runtime, PrinterRuntime.class, "events", new RuntimeEventBus());
             set(runtime, PrinterRuntime.class, "epoch", RuntimeEpoch.INITIAL);
@@ -545,8 +544,7 @@ class BedrockPlacementRegressionTest {
             set(runtime, PrinterRuntime.class, "toolSwitchService",
                     new me.aleksilassila.litematica.printer.interaction.ToolSwitchService(client, tweakeroo, guard));
             Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(false);
-            Configs.Bedrock.BEDROCK_MULTIPLAYER_ADAPTIVE.setBooleanValue(true);
-            placer = new BedrockPlacer(client, new BedrockNetworkSync(runtime::currentTick, () -> 8));
+            placer = new BedrockPlacer(client);
         }
 
         <T> T allocate(Class<T> type) throws Exception { return type.cast(unsafe.allocateInstance(type)); }
@@ -576,12 +574,10 @@ class BedrockPlacementRegressionTest {
             ctor.setAccessible(true);
             return new BedrockTarget(pos, level, ctor.newInstance(pos, facing),
                     new BedrockTorchPlacement(pos.east(), Direction.UP), null,
-                    new BedrockCriticalExecutor(targetPlacer), targetPlacer, new BedrockNetworkSync(runtime::currentTick, () -> 40));
+                    new BedrockCriticalExecutor(targetPlacer), targetPlacer, new BedrockNetworkSync(runtime::currentTick));
         }
         BedrockEngine engine() throws Exception {
             var engine = new BedrockEngine(client, new CooldownUtils(), runtime::currentTick, new LitematicaAdapter());
-            var sync = get(engine, BedrockEngine.class, "networkSync");
-            set(sync, BedrockNetworkSync.class, "rttExtraTicks", (java.util.function.IntSupplier) () -> 8);
             set(runtime, PrinterRuntime.class, "bedrockEngine", engine);
             runtime.register(engine);
             return engine;
@@ -603,7 +599,6 @@ class BedrockPlacementRegressionTest {
             set(null, Minecraft.class, "instance", oldClient);
             set(null, RuntimeAccess.class, "current", oldRuntime);
             Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(oldRange);
-            Configs.Bedrock.BEDROCK_MULTIPLAYER_ADAPTIVE.setBooleanValue(oldAdaptive);
         }
     }
 

@@ -10,26 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class BedrockNetworkSyncTest {
     @Test
-    void keepsSingleplayerPathAtTheExistingTiming() {
-        assertEquals(16, BedrockNetworkSync.confirmationTimeoutTicks(true, 0));
-        assertEquals(1, BedrockNetworkSync.retryDelayTicks(true, 1, 0));
-        assertEquals(6, BedrockNetworkSync.retryDelayTicks(true, 6, 0));
-    }
-
-    @Test
-    void extendsConfirmationAndClampsRemoteRetryDelay() {
-        assertEquals(17, BedrockNetworkSync.confirmationTimeoutTicks(true, 1));
-        assertEquals(20, BedrockNetworkSync.confirmationTimeoutTicks(true, 4));
-        assertEquals(26, BedrockNetworkSync.confirmationTimeoutTicks(true, 10));
-        assertEquals(4, BedrockNetworkSync.retryDelayTicks(true, 1, 1));
-        assertEquals(10, BedrockNetworkSync.retryDelayTicks(true, 6, 10));
-        assertEquals(40, BedrockNetworkSync.retryDelayTicks(true, 6, 60));
-    }
-
-    @Test
     void lateUpdateIsObservedPerTargetAndDoesNotBlockAnotherTarget() {
         AtomicLong tick = new AtomicLong(100L);
-        BedrockNetworkSync sync = new BedrockNetworkSync(tick::get, () -> 0);
+        BedrockNetworkSync sync = new BedrockNetworkSync(tick::get);
         BlockPos first = new BlockPos(1, 2, 3);
         BlockPos second = new BlockPos(10, 2, 3);
 
@@ -48,20 +31,5 @@ class BedrockNetworkSyncTest {
         sync.confirmed(first);
         assertEquals(0, sync.pendingCount());
         assertEquals("confirmed", sync.lastResult());
-    }
-
-    @Test
-    void normalConfirmationDoesNotCountAsAdaptiveBackoff() {
-        assertEquals(6, BedrockNetworkSync.retryDelayTicks(true, 6, 0));
-        assertEquals(6, BedrockNetworkSync.retryDelayTicks(false, 6, 10));
-    }
-
-    @Test
-    void keepsLateCleanupUpdatesObservableWithoutChangingSingleplayer() {
-        assertEquals(0, BedrockNetworkSync.cleanupWatchTicks(false, 16));
-        assertEquals(0, BedrockNetworkSync.cleanupWatchTicks(true, 0));
-        assertEquals(48, BedrockNetworkSync.cleanupWatchTicks(true, 16));
-        assertEquals(168, BedrockNetworkSync.cleanupWatchTicks(true, 56));
-        assertEquals(200, BedrockNetworkSync.cleanupWatchTicks(true, 100));
     }
 }

@@ -181,10 +181,9 @@ class BedrockCleanupBatchTest {
             placer = (BedrockPlacer) get(executor, executor.getClass(), "placer");
             var type = Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockCleanupCoordinator");
             var ctor = type.getDeclaredConstructor(net.minecraft.client.Minecraft.class,
-                    Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockNetworkSync"),
                     BooleanSupplier.class, BedrockPlacer.class);
             ctor.setAccessible(true);
-            coordinator = ctor.newInstance(client, null, (BooleanSupplier) () -> false, placer);
+            coordinator = ctor.newInstance(client, (BooleanSupplier) () -> false, placer);
             var add = type.getDeclaredMethod("enqueueAuthoritative", BlockPos.class);
             add.setAccessible(true);
             for (var pos : positions) {

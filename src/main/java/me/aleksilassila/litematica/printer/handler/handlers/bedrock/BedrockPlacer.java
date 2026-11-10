@@ -29,16 +29,14 @@ import java.util.function.Predicate;
 
 public final class BedrockPlacer {
     private final Minecraft client;
-    private final BedrockNetworkSync networkSync;
     private final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
     private final BedrockInventorySession inventory;
     private final BedrockBreaker cleanupBreaker;
     private BooleanSupplier constructionAllowed;
     private Runnable constructionSent;
 
-    BedrockPlacer(Minecraft client, BedrockNetworkSync networkSync) {
+    BedrockPlacer(Minecraft client) {
         this.client = client;
-        this.networkSync = networkSync;
         this.inventory = new BedrockInventorySession(client);
         this.cleanupBreaker = new BedrockBreaker(client, this);
     }
@@ -116,11 +114,6 @@ public final class BedrockPlacer {
     boolean isCleanupPendingAt(BlockPos pos) { return this.cleanupBreaker != null && this.cleanupBreaker.isPendingAt(pos); }
 
     void onCleanupBlockUpdate(BlockPos pos) { this.cleanupBreaker.onServerBlockUpdate(pos); }
-
-    int cleanupConfirmationTimeoutTicks() {
-        return this.networkSync == null ? BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS
-                : this.networkSync.confirmationTimeoutTicks();
-    }
 
     void cancelPistonPlacement(BlockPos pistonPos) {
         if (pistonPos != null) this.clearPendingPistonLook(pistonPos);

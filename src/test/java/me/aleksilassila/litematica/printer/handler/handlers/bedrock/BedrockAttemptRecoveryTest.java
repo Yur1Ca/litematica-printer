@@ -82,7 +82,7 @@ class BedrockAttemptRecoveryTest {
 
     @Test void closingARecoveryRemovesTheOldPendingNetworkObservation() {
         var tick = new AtomicLong(100);
-        var sync = new BedrockNetworkSync(tick::get, () -> 0);
+        var sync = new BedrockNetworkSync(tick::get);
         sync.beginAttempt(TARGET, Set.of(TARGET, TARGET.above()));
         tick.set(105);
 
@@ -94,7 +94,7 @@ class BedrockAttemptRecoveryTest {
 
     @Test void aDeadlineWithoutAServerUpdateIsReportedAsTimeout() {
         var tick = new AtomicLong(100);
-        var sync = new BedrockNetworkSync(tick::get, () -> 0);
+        var sync = new BedrockNetworkSync(tick::get);
         sync.beginAttempt(TARGET, Set.of(TARGET));
         tick.set(116);
 

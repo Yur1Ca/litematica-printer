@@ -18,8 +18,8 @@ import java.util.function.BooleanSupplier;
 
 /** Owns residue positions and late-update watches; the placer owns actual mining attempts. */
 final class BedrockCleanupCoordinator {
+    private static final int CLEANUP_WATCH_TICKS = 40;
     private final Minecraft client;
-    private final BedrockNetworkSync networkSync;
     private final BooleanSupplier mutationsDeferred;
     private final BedrockPlacer placer;
     private final Set<BlockPos> queue = new LinkedHashSet<>();
@@ -28,10 +28,8 @@ final class BedrockCleanupCoordinator {
     private final Map<BlockPos, CleanupCycle> cycles = new HashMap<>();
     private boolean orderDirty;
 
-    BedrockCleanupCoordinator(Minecraft client, BedrockNetworkSync networkSync,
-                              BooleanSupplier mutationsDeferred, BedrockPlacer placer) {
+    BedrockCleanupCoordinator(Minecraft client, BooleanSupplier mutationsDeferred, BedrockPlacer placer) {
         this.client = client;
-        this.networkSync = networkSync;
         this.mutationsDeferred = mutationsDeferred;
         this.placer = placer;
     }
@@ -259,10 +257,8 @@ final class BedrockCleanupCoordinator {
     private void watch(BlockPos pos) {
         long now = this.currentTick();
         if (now == Long.MIN_VALUE) return;
-        int watchTicks = this.networkSync == null ? BedrockNetworkSync.MIN_CLEANUP_WATCH_TICKS
-                : Math.max(BedrockNetworkSync.MIN_CLEANUP_WATCH_TICKS, this.networkSync.cleanupWatchTicks());
         this.recentAuthoritativeCleanup.put(
-                pos.immutable(), now + watchTicks);
+                pos.immutable(), now + CLEANUP_WATCH_TICKS);
     }
 
     private long currentTick() {

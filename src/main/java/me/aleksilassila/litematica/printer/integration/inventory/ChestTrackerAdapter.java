@@ -53,9 +53,7 @@ import red.jackf.chesttracker.api.providers.ProviderUtils;
 public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComponent {
     private static final String LEASE_OWNER = "chest_tracker";
     private static final int MAX_SCAN_CANDIDATES = 64;
-    private static final int OPEN_TIMEOUT_BASE_TICKS = 8;
-    private static final int OPEN_TIMEOUT_SAFETY_TICKS = 2;
-    private static final int OPEN_TIMEOUT_MAX_TICKS = 60;
+    private static final int OPEN_TIMEOUT_TICKS = 10;
     private static final long REQUEST_TIMEOUT_TICKS = 200L;
     private static final long NOT_FOUND_COOLDOWN_TICKS = 400L;
 
@@ -376,14 +374,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         return REQUEST_TIMEOUT_TICKS;
     }
 
-    private long openTimeoutTicks() {
-        return RuntimeAccess.get().rttReplayController().getWaitTimeoutTicks(
-                OPEN_TIMEOUT_BASE_TICKS,
-                OPEN_TIMEOUT_SAFETY_TICKS,
-                OPEN_TIMEOUT_MAX_TICKS
-        );
-    }
-
     @Override
     public boolean blocksPrinterWhilePending() {
         return false;
@@ -491,7 +481,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
             if (open(candidate.pos())) {
                 this.targetPos = candidate.pos();
                 this.phase = Phase.WAITING_CONTENT;
-                this.openDeadline = gameTick() + openTimeoutTicks();
+                this.openDeadline = gameTick() + OPEN_TIMEOUT_TICKS;
                 return true;
             }
             this.invalidCandidates.add(candidate.pos());
@@ -744,7 +734,7 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         }
         this.targetPos = this.nestedReturn.sourcePos();
         this.phase = Phase.RESTORE_WAIT_CONTENT;
-        this.openDeadline = gameTick() + openTimeoutTicks();
+        this.openDeadline = gameTick() + OPEN_TIMEOUT_TICKS;
     }
 
     private void restoreNestedShulker(AbstractContainerMenu menu, int containerSize, LocalPlayer player) {

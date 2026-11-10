@@ -137,10 +137,9 @@ class BedrockCriticalFlowTest {
                     putStatic(field, client);
                 }
             }
-            var placerConstructor = BedrockPlacer.class.getDeclaredConstructor(Minecraft.class,
-                    Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockNetworkSync"));
+            var placerConstructor = BedrockPlacer.class.getDeclaredConstructor(Minecraft.class);
             placerConstructor.setAccessible(true);
-            var placer = placerConstructor.newInstance(client, null);
+            var placer = placerConstructor.newInstance(client);
             var preparePistons = BedrockPlacer.class.getDeclaredMethod("preparePistons");
             preparePistons.setAccessible(true);
             Transport.lastBatchTransport = null;

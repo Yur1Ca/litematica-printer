@@ -25,7 +25,7 @@ class TrenchFillQueueLifecycleTest {
 
             f.level.tick = 106;
             assertEquals(ActionPort.SendResult.SENT, f.completeWaiting(ActionPort.SendResult.SENT));
-            assertEquals(106L, f.rate.lastSentTick(), "Do not charge rate history to the earlier queue tick");
+            assertEquals(106L, f.lastSentTick(), "Do not charge rate history to the earlier queue tick");
             assertEquals(1, f.sentThisTick());
             // TickScheduler advances a queued look before MineHandler.preprocess starts this tick.
             f.beginTick(106);
@@ -47,7 +47,7 @@ class TrenchFillQueueLifecycleTest {
             assertNotNull(f.completionListener);
             f.level.tick = 106;
             f.completeWaiting(failure);
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
             assertEquals(0, f.sentThisTick());
             assertTrue(f.canAttempt(108), "A queue failure was never a server-side placement in flight");
         }
@@ -62,7 +62,7 @@ class TrenchFillQueueLifecycleTest {
             f.actions.cancelQueue();
             assertFalse(f.queuePresent);
             assertTrue(f.canAttempt(108));
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
         }
     }
 
@@ -98,11 +98,11 @@ class TrenchFillQueueLifecycleTest {
 
             oldCompletion.accept(ActionPort.SendResult.SENT);
             assertEquals(0, f.sentThisTick(), "A callback from an old scope cannot settle a new target at the same coordinates");
-            assertEquals(Long.MIN_VALUE, f.rate.lastSentTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
             assertFalse(f.canAttempt(200));
             f.completeWaiting(ActionPort.SendResult.SENT);
             assertEquals(1, f.sentThisTick());
-            assertEquals(200L, f.rate.lastSentTick());
+            assertEquals(200L, f.lastSentTick());
         }
     }
 
@@ -112,7 +112,7 @@ class TrenchFillQueueLifecycleTest {
             f.player.inventory.setItem(0, new ItemStack(Items.COBBLESTONE, 64));
             assertFalse(f.execute());
             assertEquals(1, f.sentThisTick());
-            assertEquals(100L, f.rate.lastSentTick());
+            assertEquals(100L, f.lastSentTick());
             assertFalse(f.queuePresent);
         }
     }

@@ -326,7 +326,7 @@ public class Render2D {
         lines.add(new HudLine(hud("bedrock.throughput", bedrock.configuredThroughput(), formatBedrockInterval(),
                 bedrock.acceptedThisTick(), bedrock.submitCap(), bedrock.rejectedThisTick(),
                 formatScanState(RuntimeAccess.get().modules().bedrock()), status), new Color(255, 255, 255, 255)));
-        lines.add(new HudLine(hud("bedrock.network", bedrock.pendingServerUpdates(), bedrock.adaptiveBackoffs(),
+        lines.add(new HudLine(hud("bedrock.network", bedrock.pendingServerUpdates(),
                 bedrock.serverUpdateTimeouts(), humanizeBedrockNetworkResult(bedrock.lastNetworkResult())),
                 new Color(255, 230, 150, 255)));
     }
@@ -532,8 +532,7 @@ public class Render2D {
         return switch (mode) {
             case PRINT, FILL, FLUID, COVER -> hud("settings.place",
                     Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue(),
-                    hud("settings.interval", Configs.Placement.PLACE_INTERVAL.getIntegerValue()),
-                    formatRttSettings(mode));
+                    hud("settings.interval", Configs.Placement.PLACE_INTERVAL.getIntegerValue()));
             case MINE -> hud("settings.mine",
                     Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue() == 0
                             ? hud("settings.unlimited")
@@ -549,15 +548,6 @@ public class Render2D {
     private String formatBedrockInterval() {
         int interval = Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
         return interval == 0 ? hud("bedrock.interval.auto") : hud("bedrock.interval.ticks", interval);
-    }
-
-    private String formatRttSettings(HudStatsManager.Mode mode) {
-        if (mode != HudStatsManager.Mode.PRINT
-                || !Configs.Placement.RTT_ADAPTIVE_INTERVAL.getBooleanValue()) {
-            return "";
-        }
-        var rate = RuntimeAccess.get().placementRateController();
-        return hud("settings.rtt", RuntimeAccess.get().rttReplayController().getEstimatedRttMillis(), rate.effectiveIntervalTicks());
     }
 
     private String humanizeBedrockReason(String reason) {

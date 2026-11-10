@@ -242,11 +242,9 @@ final class BedrockTargetExecutor {
         BedrockDiagnostics.trace(target, reason == null ? "retired" : "retired:" + reason);
         if (target.getStatus() == BedrockTarget.Status.FAILED
                 || target.getStatus() == BedrockTarget.Status.STUCK) {
-            int delay = this.networkSync.retryDelayTicks(FAILURE_RETRY_COOLDOWN_TICKS);
-            this.retryCooldown.accept(target.getBedrockPos(), delay);
+            this.retryCooldown.accept(target.getBedrockPos(), FAILURE_RETRY_COOLDOWN_TICKS);
         } else if ("out_of_range".equals(reason)) {
-            int delay = this.networkSync.retryDelayTicks(OUT_OF_RANGE_RETRY_COOLDOWN_TICKS);
-            this.retryCooldown.accept(target.getBedrockPos(), delay);
+            this.retryCooldown.accept(target.getBedrockPos(), OUT_OF_RANGE_RETRY_COOLDOWN_TICKS);
         }
         if (reason == null && !BedrockTargetBlocks.isTargetBlock(level.getBlockState(target.getBedrockPos()))) {
             this.networkSync.confirmed(target.getBedrockPos());

@@ -119,7 +119,7 @@ class BedrockAttemptObservationTest {
     @Test void disabledProfilingKeepsExistingTrackingWithoutSamples() {
         var tick = new AtomicLong(100);
         var timing = RuntimeTiming.disabled();
-        var sync = new BedrockNetworkSync(tick::get, () -> 0, timing);
+        var sync = new BedrockNetworkSync(tick::get, timing);
         sync.beginAttempt(TARGET, Set.of(TARGET));
         assertEquals(1, sync.pendingCount());
         tick.set(104);
@@ -134,7 +134,7 @@ class BedrockAttemptObservationTest {
     private static final class Fixture {
         final AtomicLong tick = new AtomicLong(100);
         final RuntimeTiming timing = new RuntimeTiming(true, () -> 0);
-        final BedrockNetworkSync sync = new BedrockNetworkSync(tick::get, () -> 0, timing);
+        final BedrockNetworkSync sync = new BedrockNetworkSync(tick::get, timing);
 
         long count(RuntimeTiming.Reason reason) {
             return this.timing.snapshot().counters().stream()

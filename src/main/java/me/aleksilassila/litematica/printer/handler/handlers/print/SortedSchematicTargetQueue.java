@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.Predicate;
 
 public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     private static final int MAX_SORT_BUFFER = 4096;
@@ -51,6 +52,12 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     }
 
     public Iterable<BlockPos> iterable(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+        return this.iterable(sourceBoxes, level, schematic, player, scanGuardLimit, true, pos -> true);
+    }
+
+    public Iterable<BlockPos> iterable(List<PrinterBox> sourceBoxes, ClientLevel level,
+                                       WorldSchematic schematic, LocalPlayer player, int scanGuardLimit,
+                                       boolean fillWhenBuffered, Predicate<BlockPos> candidateFilter) {
         if (!this.boxes.equals(sourceBoxes)) {
             this.queue.clear();
             this.queuedKeys.clear();
@@ -58,7 +65,7 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
             this.lastFillTick = Long.MIN_VALUE;
         }
         this.boxes = List.copyOf(sourceBoxes);
-        this.fill(sourceBoxes, level, schematic, player, scanGuardLimit);
+        this.fill(sourceBoxes, level, schematic, player, scanGuardLimit, fillWhenBuffered, candidateFilter);
         return this;
     }
 
@@ -94,12 +101,14 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         this.queue.removeIf(candidate -> ScanEngine.key(candidate) == key);
     }
 
-    private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+    private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic,
+                      LocalPlayer player, int scanGuardLimit, boolean fillWhenBuffered,
+                      Predicate<BlockPos> candidateFilter) {
         // Observe schematic replacement even after a clean queue has exhausted its old source.
         // Creating the iterable does not consume a candidate or advance its cursor.
         Iterable<BlockPos> candidates = this.scanEngine.iterable(
                 "print_sorted", sourceBoxes, level, schematic, player, scanGuardLimit,
-                ScanIntent.PRINT, pos -> true
+                ScanIntent.PRINT, pos -> true, candidateFilter
         );
         long printSourceRevision = this.scanEngine.printSourceRevision();
         if (printSourceRevision != this.lastPrintSourceRevision) {
@@ -109,6 +118,9 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
             this.lastFillTick = Long.MIN_VALUE;
             this.lastPrintSourceRevision = printSourceRevision;
         }
+        // Source identity changes are observed before returning old work, but ready work does
+        // not wait for candidate production. The owner replenishes after its execution slice.
+        if (!fillWhenBuffered && !this.queue.isEmpty()) return;
         long currentTick = level.getGameTime();
         long dirtyVersion = this.scanEngine.dirtyVersion();
         boolean dirtyChanged = dirtyVersion != this.lastDirtyVersion;
@@ -131,6 +143,10 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         this.lastFillTick = currentTick;
         this.lastDirtyVersion = dirtyVersion;
         int remainingBuffer = Math.max(1, targetBufferSize - this.queue.size());
+        if (!this.queue.isEmpty()) {
+            int refillSlice = configuredThroughput > 0 ? Math.max(16, configuredThroughput * 2) : 256;
+            remainingBuffer = Math.min(remainingBuffer, refillSlice);
+        }
         int collectLimit = scanGuardLimit > 0
                 ? Math.min(scanGuardLimit, remainingBuffer)
                 : remainingBuffer;

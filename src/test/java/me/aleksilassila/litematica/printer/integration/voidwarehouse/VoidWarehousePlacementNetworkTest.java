@@ -24,6 +24,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -36,6 +39,56 @@ class VoidWarehousePlacementNetworkTest {
     static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"DOWN, 0", "UP, 1", "NORTH, 2", "SOUTH, 3", "WEST, 4", "EAST, 5"})
+    void directionEncodingPreservesTheSharedOrdinalWire(Direction face, int wireId) {
+        var expected = legacyDirectionPayload(wireId);
+        var actual = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        try {
+            var payload = new PrinterPlacePayload(17, List.of("minecraft:stone"), BlockPos.ZERO,
+                    new BlockHitResult(Vec3.ZERO, face, BlockPos.ZERO, false), 42, "minecraft:overworld");
+
+            PrinterPlacePayload.CODEC.encode(actual, payload);
+
+            assertEquals(expected, actual, "Direction migration must preserve bytes understood by the server");
+            var decoded = PrinterPlacePayload.CODEC.decode(expected);
+            assertEquals(face, decoded.hit().getDirection());
+            assertEquals(42, decoded.expectedStateId());
+            assertEquals("minecraft:overworld", decoded.dimensionId());
+            assertFalse(expected.isReadable());
+        } finally {
+            expected.release();
+            actual.release();
+        }
+    }
+
+    @ParameterizedTest @ValueSource(ints = {-1, 6, Integer.MAX_VALUE})
+    void invalidDirectionOrdinalsRemainRejected(int wireId) {
+        var buffer = legacyDirectionPayload(wireId);
+        try {
+            assertThrows(ArrayIndexOutOfBoundsException.class, () -> PrinterPlacePayload.CODEC.decode(buffer));
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static RegistryFriendlyByteBuf legacyDirectionPayload(int wireId) {
+        var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        buffer.writeVarInt(17);
+        buffer.writeVarInt(1);
+        buffer.writeUtf("minecraft:stone", 256);
+        buffer.writeLong(0L); // Packed target and clicked BlockPos.ZERO.
+        buffer.writeLong(0L);
+        buffer.writeVarInt(wireId);
+        buffer.writeDouble(0.0D);
+        buffer.writeDouble(0.0D);
+        buffer.writeDouble(0.0D);
+        buffer.writeBoolean(false);
+        buffer.writeVarInt(42);
+        buffer.writeUtf("minecraft:overworld", 256);
+        return buffer;
     }
 
     @Test

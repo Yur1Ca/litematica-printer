@@ -173,7 +173,9 @@ class ModuleIterationContinuationTest {
         @Override protected int getScanGuardLimit() { return this.guardLimit; }
         @Override protected int getMaxEffectiveExecutionsPerTick() { return 0; }
         @Override protected boolean iterationPositionsPrefilterReachAndSelection() { return true; }
-        @Override protected Iterable<BlockPos> getIterationPositions(PrinterBox box) { return this.source; }
+        @Override protected Iterable<BlockPos> getIterationPositions(PrinterBox box) {
+            return ScanCandidateIterable.prepend(this.targets.retainedTargets(), this.source);
+        }
         @Override public boolean isBlockPosOnCooldown(BlockPos pos) { return this.cooling.contains(pos); }
 
         @Override

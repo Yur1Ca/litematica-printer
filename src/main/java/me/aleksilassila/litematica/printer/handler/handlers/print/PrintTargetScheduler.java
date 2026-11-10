@@ -60,7 +60,7 @@ public final class PrintTargetScheduler {
     }
 
     public List<BlockPos> retainedTargets() {
-        return this.sortedMode == Boolean.TRUE ? List.of() : new ArrayList<>(this.retryTargets);
+        return new ArrayList<>(this.retryTargets);
     }
 
     public boolean acceptScanCandidate(BlockPos pos) {
@@ -78,7 +78,14 @@ public final class PrintTargetScheduler {
 
     public Iterable<BlockPos> sortedPositions(List<PrinterBox> boxes, ClientLevel level,
                                                WorldSchematic schematic, LocalPlayer player, int guardLimit) {
-        return this.sortedTargets.iterable(boxes, level, schematic, player, guardLimit);
+        return this.sortedTargets.iterable(boxes, level, schematic, player, guardLimit,
+                false, this::acceptScanCandidate);
+    }
+
+    public void replenishSortedPositions(List<PrinterBox> boxes, ClientLevel level,
+                                         WorldSchematic schematic, LocalPlayer player, int guardLimit) {
+        this.sortedTargets.iterable(boxes, level, schematic, player, guardLimit,
+                true, this::acceptScanCandidate);
     }
 
     public void onResult(BlockPos pos, PrintPlacementResult result, boolean multiStage) {
@@ -87,8 +94,7 @@ public final class PrintTargetScheduler {
             this.retryTargets.remove(pos);
             this.sortedTargets.remove(pos);
         } else if (result.shouldRetryTarget()) {
-            if (this.sortedMode == Boolean.TRUE) this.sortedTargets.requeue(pos);
-            else this.retryTargets.add(pos.immutable());
+            this.retryTargets.add(pos.immutable());
         } else {
             this.retryTargets.remove(pos);
         }

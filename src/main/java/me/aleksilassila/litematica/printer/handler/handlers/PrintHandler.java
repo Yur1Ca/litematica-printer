@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
-import com.google.common.collect.Iterables;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.feature.print.PrintPlanner;
@@ -11,6 +10,7 @@ import me.aleksilassila.litematica.printer.guide.guides.RailGuide;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementResult;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskAction;
@@ -42,6 +42,7 @@ public class PrintHandler extends FeatureModuleBase {
     private PrintTaskAction printTaskAction;
 
     private SchematicBlockContext ctx;
+    @Nullable private PrinterBox iterationBox;
     private final PrintWorkflowScheduler printTasks;
     private final PrintTargetScheduler targets;
     private final PrintPlacementExecutor placementExecutor;
@@ -156,6 +157,7 @@ public class PrintHandler extends FeatureModuleBase {
         this.action = null;
         this.printTaskAction = null;
         this.ctx = null;
+        this.iterationBox = null;
         this.printTasks.clear();
         this.fallingPlacements.clear();
         this.targets.clear();
@@ -164,6 +166,7 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        this.iterationBox = playerInteractionBox;
         WorldSchematic schematic = this.litematica.schematicWorld();
         this.targets.retainWithin(this.getScanSourceBoxes(playerInteractionBox),
                 pos -> this.canReachIterationPosition(pos) && this.isInSelectionRange(pos));
@@ -171,7 +174,24 @@ public class PrintHandler extends FeatureModuleBase {
         List<BlockPos> retainedTargets = this.targets.retainedTargets();
         Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
         if (runnableTasks.isEmpty() && retainedTargets.isEmpty()) return normalPositions;
-        return Iterables.concat(runnableTasks, retainedTargets, normalPositions);
+        List<BlockPos> priority = new ArrayList<>(runnableTasks);
+        priority.addAll(retainedTargets);
+        return ScanCandidateIterable.prepend(priority, normalPositions);
+    }
+
+    @Override
+    protected void stopIteration(boolean interrupt) {
+        PrinterBox box = this.iterationBox;
+        this.iterationBox = null;
+        if (box == null || !Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()
+                || this.level == null || this.player == null) return;
+        WorldSchematic schematic = this.litematica.schematicWorld();
+        if (schematic == null) return;
+        List<PrinterBox> sourceBoxes = this.getScanSourceBoxes(box);
+        if (!sourceBoxes.isEmpty()) {
+            this.targets.replenishSortedPositions(sourceBoxes, this.level, schematic,
+                    this.player, this.getScanGuardLimit());
+        }
     }
 
     private Iterable<BlockPos> getNormalIterationPositions(

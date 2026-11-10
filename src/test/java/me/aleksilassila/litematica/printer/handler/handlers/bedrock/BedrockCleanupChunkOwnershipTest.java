@@ -30,7 +30,8 @@ class BedrockCleanupChunkOwnershipTest {
             int sent = f.transport.packets.size();
 
             f.world.loaded = false;
-            assertTrue(f.world.hasChunkAt(PISTON), "Native ClientLevel.hasChunk cannot establish cache presence");
+            assertTrue(f.world.hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4),
+                    "Native ClientLevel.hasChunk cannot establish cache presence");
             assertFalse(f.world.getChunkSource().hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4),
                     "The inherited ChunkSource.hasChunk probes the cache with FULL,false");
             assertTrue(f.world.getBlockState(PISTON).is(Blocks.VOID_AIR));
@@ -57,7 +58,7 @@ class BedrockCleanupChunkOwnershipTest {
             f.cleanup.beginTick(); // Expire even a watch refreshed by the add entry point.
             assertTrue(f.cleanup.contains(PISTON));
             f.world.loaded = true;
-            assertTrue(f.world.hasChunkAt(PISTON));
+            assertTrue(f.world.hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4));
             assertTrue(f.world.getChunkSource().hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4));
             assertTrue(f.world.getBlockState(PISTON).is(Blocks.PISTON));
             assertTrue(f.cleanup.samplePressure(f.world, pos -> false) > 0);
@@ -100,7 +101,7 @@ class BedrockCleanupChunkOwnershipTest {
         try (var f = new Fixture()) {
             assertTrue(f.cleanup.isEmpty());
             f.world.loaded = false;
-            assertTrue(f.world.hasChunkAt(PISTON));
+            assertTrue(f.world.hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4));
             assertFalse(f.world.getChunkSource().hasChunk(PISTON.getX() >> 4, PISTON.getZ() >> 4));
             assertTrue(f.world.getBlockState(PISTON).isAir());
             int sent = f.transport.packets.size();

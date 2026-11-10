@@ -115,9 +115,16 @@ class SortedSchematicTargetQueueIntegrationTest {
             queue.requeue(null);
             fixture.tick(11);
             List<BlockPos> expected = new ArrayList<>(List.of(retry));
-            expected.addAll(sortedBatch(orderedSource(300).subList(256, 300)));
-            assertEquals(expected, drain(queue.iterable(
+            expected.addAll(sortedBatch(orderedSource(300).subList(256, 272)));
+            List<BlockPos> actual = drain(queue.iterable(
+                    fixture.boxes, fixture.level, fixture.schematic, fixture.player, 0));
+            assertEquals(expected, actual, "A warm refill adds a bounded slice alongside the existing target");
+            fixture.tick(12);
+            actual.addAll(drain(queue.iterable(
                     fixture.boxes, fixture.level, fixture.schematic, fixture.player, 0)));
+            expected.addAll(sortedBatch(orderedSource(300).subList(272, 300)));
+            assertEquals(expected, actual);
+            assertEquals(45, new HashSet<>(actual).size(), "The retry and every following candidate remain unique");
         }
     }
 

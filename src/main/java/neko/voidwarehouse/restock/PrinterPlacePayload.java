@@ -34,7 +34,7 @@ public record PrinterPlacePayload(int nonce, List<String> candidates, BlockPos t
             }
             BlockPos target = buf.readBlockPos();
             BlockPos clicked = buf.readBlockPos();
-            Direction face = buf.readEnum(Direction.class);
+            Direction face = Direction.values()[buf.readVarInt()];
             Vec3 location = new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble());
             BlockHitResult hit = new BlockHitResult(location, face, clicked, buf.readBoolean());
             return new PrinterPlacePayload(nonce, List.copyOf(candidates), target, hit, buf.readVarInt(), buf.readUtf(256));
@@ -53,7 +53,7 @@ public record PrinterPlacePayload(int nonce, List<String> candidates, BlockPos t
             }
             buf.writeBlockPos(payload.target());
             buf.writeBlockPos(payload.hit().getBlockPos());
-            buf.writeEnum(payload.hit().getDirection());
+            buf.writeVarInt(payload.hit().getDirection().ordinal());
             Vec3 location = payload.hit().getLocation();
             buf.writeDouble(location.x);
             buf.writeDouble(location.y);

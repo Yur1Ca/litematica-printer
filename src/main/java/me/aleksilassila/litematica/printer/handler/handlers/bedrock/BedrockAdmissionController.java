@@ -403,9 +403,7 @@ final class BedrockAdmissionController {
             weight = 0;
         }
         this.stats.rejectedThisTick += weight;
-        boolean heavyPressure = this.cleanupPressure
-                >= BedrockSchedulingPolicy.highCleanupPressureThreshold(this.configuredThroughput());
-        if (heavyPressure || this.stats.rejectedThisTick >= Math.max(8, this.configuredThroughput())) {
+        if (this.stats.rejectedThisTick >= Math.max(8, this.configuredThroughput())) {
             this.nextAcceptTick = Math.max(
                     this.nextAcceptTick,
                     this.tickClock.getAsLong() + ACCEPT_BACKPRESSURE_TICKS

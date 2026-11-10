@@ -52,6 +52,7 @@ final class BedrockCriticalExecutor {
         var packets = new ArrayList<Packet<?>>();
         var reservedToolUses = new HashMap<Integer, Integer>();
         int selectedStarts = 0;
+        int lastCarriedSlot = -1;
         for (BedrockTarget target : candidates) {
             if (target == null || target.layout() == null || target.isHorizontalLayout() || target.hasTried()
                     || target.getStatus() != BedrockTarget.Status.EXTENDED || !target.canMutatePower()
@@ -71,7 +72,9 @@ final class BedrockCriticalExecutor {
             if (body.isEmpty()) continue;
             selected.add(target);
             if (newStart) selectedStarts++;
-            packets.addAll(body);
+            // Only a repeated slot header is redundant; retain every target's native LOOK and action sequence.
+            packets.addAll(lastCarriedSlot == toolSlot ? body.subList(1, body.size()) : body);
+            lastCarriedSlot = toolSlot;
             reservedToolUses.put(toolSlot, toolUses);
         }
         if (selected.isEmpty()) return List.of();

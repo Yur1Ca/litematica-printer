@@ -17,10 +17,6 @@ final class BedrockSchedulingPolicy {
         return Math.max(14, Math.max(1, throughput) + 6);
     }
 
-    static int highCleanupPressureThreshold(int throughput) {
-        return Math.max(20, Math.max(1, throughput) * 2);
-    }
-
     static int cleanupLimit(int throughput, int blockedCleanupDemand, int baseLimit, int bonusLimit) {
         int base = Math.max(baseLimit, Math.max(1, throughput) * 5);
         return base + Math.min(bonusLimit, Math.max(0, blockedCleanupDemand));

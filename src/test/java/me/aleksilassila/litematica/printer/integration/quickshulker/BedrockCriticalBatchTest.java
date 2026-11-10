@@ -11,7 +11,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -54,8 +56,26 @@ class BedrockCriticalBatchTest {
             assertEquals(2, preparations[0]);
             assertEquals(1, f.transport.batches.size());
             var packets = f.transport.batches.getFirst();
-            assertEquals(12, packets.size(), BedrockCriticalFlowTest.describe(packets));
+            assertEquals(11, packets.size(), BedrockCriticalFlowTest.describe(packets));
+            assertEquals(1, packets.stream().filter(ServerboundSetCarriedItemPacket.class::isInstance).count(),
+                    "The frozen batch needs its first slot selection, not another selection of the same slot");
+            assertEquals(2, packets.stream().filter(ServerboundMovePlayerPacket.class::isInstance).count(),
+                    "Each target keeps its native movement/ground/collision packet");
             assertEquals(2, packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
+            var actions = packets.stream().filter(packet -> packet instanceof ServerboundPlayerActionPacket
+                            || packet instanceof ServerboundUseItemOnPacket)
+                    .map(packet -> packet instanceof ServerboundPlayerActionPacket action
+                            ? action.getAction() + "@" + action.getPos()
+                            : "USE@" + ((ServerboundUseItemOnPacket) packet).getHitResult().getBlockPos())
+                    .toList();
+            assertEquals(List.of(
+                    "START_DESTROY_BLOCK@" + first.getTorchPos(),
+                    "START_DESTROY_BLOCK@" + first.getPistonPos(),
+                    "STOP_DESTROY_BLOCK@" + first.getPistonPos(), "USE@" + FIRST,
+                    "START_DESTROY_BLOCK@" + second.getTorchPos(),
+                    "START_DESTROY_BLOCK@" + second.getPistonPos(),
+                    "STOP_DESTROY_BLOCK@" + second.getPistonPos(), "USE@" + SECOND), actions,
+                    "Slot-header deduplication cannot omit or reorder any destructive or replacement action");
             assertEquals(0, packets.stream().filter(ServerboundContainerClickPacket.class::isInstance).count());
             assertEquals(0, packets.stream().filter(ServerboundClientCommandPacket.class::isInstance).count());
             assertTrue(f.player.inventory.getItem(40).isEmpty());
@@ -65,6 +85,27 @@ class BedrockCriticalBatchTest {
             assertEquals(BedrockTarget.Status.EXTENDED, second.getStatus());
             assertTrue(f.traceLevel.getBlockState(first.getPistonPos()).getValue(PistonBaseBlock.EXTENDED));
             assertFalse(settling(f), "A raw exploit batch cannot stall the pipeline on an unrelated menu snapshot");
+        }
+    }
+
+    @Test void eachSuccessiveCriticalBatchRetainsItsOwnInitialSlotSelection() throws Exception {
+        try (var f = new BedrockCriticalFlowTest.Fixture()) {
+            var first = target(f, FIRST, FIRST.east(), Direction.UP);
+            var second = target(f, SECOND, SECOND.east(), Direction.UP);
+
+            assertEquals(List.of(first), submit(f, List.of(first)));
+            assertEquals(List.of(second), submit(f, List.of(second)));
+
+            assertEquals(2, f.transport.batches.size());
+            for (var packets : f.transport.batches) {
+                assertInstanceOf(ServerboundSetCarriedItemPacket.class, packets.getFirst(),
+                        "A previous batch must not cache away this batch's initial slot selection");
+                assertEquals(1, packets.stream().filter(ServerboundSetCarriedItemPacket.class::isInstance).count());
+                assertEquals(1, packets.stream().filter(ServerboundMovePlayerPacket.class::isInstance).count());
+                assertEquals(1, packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
+            }
+            assertTrue(f.player.inventory.getItem(40).isEmpty());
+            assertFalse(settling(f));
         }
     }
 

@@ -159,10 +159,6 @@ public final class HudStatsManager implements RuntimeComponent {
                 this.printConfirmationTracker.resolve(pos, authoritativeState);
         if (printResolution == PrintConfirmationTracker.Resolution.MATCHED) {
             this.stats.get(Mode.PRINT).recordConfirmedUnit(now, 1);
-        } else if (printResolution == PrintConfirmationTracker.Resolution.MISMATCHED
-                && this.client.level != null) {
-            RuntimeAccess.get().cooldownUtils().removeCooldown(
-                    this.client.level, "print", pos);
         }
 
         if (authoritativeState.isAir() && this.pendingMineTargets.remove(pos) != null) {
@@ -197,19 +193,17 @@ public final class HudStatsManager implements RuntimeComponent {
         if (this.client.level == null) {
             return;
         }
-        flushExpiredPrintPlacements(this.client, now, maxChecksPerMode);
+        flushExpiredPrintPlacements(now, maxChecksPerMode);
         flushConfirmedMineClears(this.client, now, maxChecksPerMode);
         flushConfirmedBlockChanges(this.client, now, Mode.FILL, this.pendingFillTargets, maxChecksPerMode);
         flushConfirmedBlockChanges(this.client, now, Mode.FLUID, this.pendingFluidTargets, maxChecksPerMode);
         flushConfirmedBlockChanges(this.client, now, Mode.COVER, this.pendingCoverTargets, maxChecksPerMode);
     }
 
-    private void flushExpiredPrintPlacements(Minecraft client, long now, int maxChecks) {
+    private void flushExpiredPrintPlacements(long now, int maxChecks) {
         List<BlockPos> expired = this.printConfirmationTracker.expire(now, maxChecks);
         for (BlockPos pos : expired) {
             RuntimeAccess.get().scanEngine().invalidate(pos);
-            RuntimeAccess.get().cooldownUtils().removeCooldown(
-                    client.level, "print", pos);
         }
     }
 

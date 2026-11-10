@@ -71,7 +71,7 @@ public class ActionManager {
     }
 
     public enum SendResult {
-        /** Local useItemOn was accepted for dispatch; server placement is confirmed elsewhere. */
+        /** The interaction was accepted locally or its use packet was submitted; server confirmation is separate. */
         SENT,
         WAITING_FOR_LOOK,
         NO_QUEUED_ACTION,
@@ -256,7 +256,7 @@ public class ActionManager {
             return this.finish(click, SendResult.NO_GAME_MODE);
         }
 
-        boolean accepted = false;
+        boolean dispatched = false;
         this.printerInteractionActive = true;
         this.easyPlaceProtocolActive = click.useProtocol;
         this.activeEasyPlacePolicy = click.policy.easyPlaceProtocol();
@@ -275,16 +275,20 @@ public class ActionManager {
                 }
                 me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.placement(
                         player, click.target, click.side, click.expectedItems);
-                boolean interactionAccepted = gameModeExtension.litematica_printer$useItemOn(
-                        true,
-                        InteractionHand.MAIN_HAND,
-                        blockHitResult
-                ) != net.minecraft.world.InteractionResult.FAIL;
-                accepted |= interactionAccepted;
+                boolean interactionAccepted;
+                boolean interactionDispatched;
+                try (var send = NetworkUtils.trackUseItemOn(
+                        player.connection.getConnection(), InteractionHand.MAIN_HAND, blockHitResult)) {
+                    interactionAccepted = gameModeExtension.litematica_printer$useItemOn(
+                            true, InteractionHand.MAIN_HAND, blockHitResult) != net.minecraft.world.InteractionResult.FAIL;
+                    // Vanilla may send USE even when its local prediction returns FAIL.
+                    interactionDispatched = interactionAccepted || send.wasSent();
+                }
+                dispatched |= interactionDispatched;
                 if (interactionAccepted) {
                     this.armTaskAnvilScreenSuppression(click);
                 }
-                if (interactionAccepted && reserveAllowance != Integer.MAX_VALUE) {
+                if (interactionDispatched && reserveAllowance != Integer.MAX_VALUE) {
                     reserveAllowance--;
                 }
             }
@@ -299,7 +303,7 @@ public class ActionManager {
             this.activeEasyPlacePolicy = false;
             restoreShift(player, click, wasSneak);
         }
-        return this.finish(click, accepted ? SendResult.SENT : SendResult.INTERACTION_REJECTED);
+        return this.finish(click, dispatched ? SendResult.SENT : SendResult.INTERACTION_REJECTED);
     }
 
     protected boolean sendWarehousePlacement(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) {

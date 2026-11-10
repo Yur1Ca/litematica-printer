@@ -32,6 +32,7 @@ public class MixinConnection implements PacketBatchConnection {
     // Capture only the Packet argument: callback/listener parameters differ across supported versions.
     @ModifyVariable(method = "sendPacket", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Packet<?> printer$trackRecoveryInput(Packet<?> packet) {
+        me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils.observeUseItemOn(this, packet);
         me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.inputSent(this, packet);
         return packet;
     }

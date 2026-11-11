@@ -1,4 +1,4 @@
-//#if MC == 11802 || MC == 12006 || MC == 12101 || MC == 260100 || MC == 260300
+//#if MC == 260100 || MC == 260300
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockBreaker;
@@ -19,13 +19,9 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
-//#if MC > 12006
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
-//#endif
-//#if MC >= 260100
 import net.minecraft.world.entity.EntityEquipment;
-//#endif
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
@@ -75,21 +71,15 @@ class BedrockToolEligibilityTest {
 
     static class Connection extends ClientPacketListener {
         List<Packet<?>> packets;
-        //#if MC >= 12006
         Connection() { super(null, null, null); }
-        //#else
-        //$$ Connection() { super(null, null, null, null, null); }
-        //#endif
         @Override public void send(Packet<?> packet) { packets.add(packet); }
     }
 
     static class MiningPlayer extends LocalPlayer {
         //#if MC >= 260300
         //$$ MiningPlayer() { super(null, null, null, null, null, null, false, null, null); }
-        //#elseif MC >= 260100
-        MiningPlayer() { super(null, null, null, null, null, null, false, null); }
         //#else
-        //$$ MiningPlayer() { super(null, null, null, null, null, false, false); }
+        MiningPlayer() { super(null, null, null, null, null, null, false, null); }
         //#endif
         Inventory inventory;
         Abilities abilities;
@@ -101,54 +91,23 @@ class BedrockToolEligibilityTest {
         boolean aquaAffinity;
         double breakSpeed;
         MobEffectInstance haste;
-        //#if MC >= 12006
         @Override public boolean onGround() { return !airborne; }
-        //#else
-        //$$ @Override public boolean isOnGround() { return !airborne; }
-        //#endif
-        //#if MC >= 260100
         @Override public boolean hasEffect(Holder<MobEffect> effect) { return effect.equals(MobEffects.HASTE) && haste != null; }
         @Override public MobEffectInstance getEffect(Holder<MobEffect> effect) { return effect.equals(MobEffects.HASTE) ? haste : null; }
-        //#elseif MC >= 12006
-        //$$ @Override public boolean hasEffect(Holder<MobEffect> effect) { return effect.equals(MobEffects.DIG_SPEED) && haste != null; }
-        //$$ @Override public MobEffectInstance getEffect(Holder<MobEffect> effect) { return effect.equals(MobEffects.DIG_SPEED) ? haste : null; }
-        //#else
-        //$$ @Override public boolean hasEffect(MobEffect effect) { return effect == MobEffects.DIG_SPEED && haste != null; }
-        //$$ @Override public MobEffectInstance getEffect(MobEffect effect) { return effect == MobEffects.DIG_SPEED ? haste : null; }
-        //#endif
-        //#if MC >= 12006
         @Override public double getAttributeValue(Holder<Attribute> attribute) { return attribute.equals(Attributes.BLOCK_BREAK_SPEED) ? breakSpeed : 1; }
         @Override public AttributeInstance getAttribute(Holder<Attribute> attribute) {
             var instance = new AttributeInstance(attribute, ignored -> {});
             if (attribute.equals(Attributes.BLOCK_BREAK_SPEED)) instance.setBaseValue(breakSpeed);
-            //#if MC > 12006
             if (attribute.equals(Attributes.SUBMERGED_MINING_SPEED) && aquaAffinity) instance.setBaseValue(1);
-            //#endif
             return instance;
         }
-        //#endif
-        //#if MC <= 12006
-        //$$ @Override public ItemStack getItemBySlot(net.minecraft.world.entity.EquipmentSlot slot) {
-        //$$     if (slot == net.minecraft.world.entity.EquipmentSlot.MAINHAND) return getMainHandItem();
-        //$$     if (slot != net.minecraft.world.entity.EquipmentSlot.HEAD || !aquaAffinity) return ItemStack.EMPTY;
-        //$$     var helmet = new ItemStack(Items.DIAMOND_HELMET);
-        //$$     helmet.enchant(Enchantments.AQUA_AFFINITY, 1);
-        //$$     return helmet;
-        //$$ }
-        //#endif
         @Override public boolean isEyeInFluid(TagKey<Fluid> tag) { return submerged && tag.equals(FluidTags.WATER); }
     }
 
     static class MiningLevel extends ClientLevel implements NetworkUtils.SequenceExtension {
         MiningChunkCache chunks;
-        //#if MC >= 260100
         MiningLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
-        //#else
-        //$$ MiningLevel() { super(null, null, null, null, 0, 0, null, null, false, 0L); }
-        //#endif
-        //#if MC >= 12006
         @Override public net.minecraft.world.flag.FeatureFlagSet enabledFeatures() { return net.minecraft.world.flag.FeatureFlags.VANILLA_SET; }
-        //#endif
         @Override public BlockState getBlockState(BlockPos pos) {
             return pos.equals(BlockPos.ZERO) ? Blocks.BEDROCK.defaultBlockState()
                     : pos.equals(PISTON) ? Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.EXTENDED, true)
@@ -172,13 +131,8 @@ class BedrockToolEligibilityTest {
         MiningLevel world;
         net.minecraft.world.level.chunk.LevelChunk present;
         MiningChunkCache() { super(null, 0); }
-        //#if MC > 12004
         @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
                 net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
-        //#else
-        //$$ @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
-        //$$         net.minecraft.world.level.chunk.ChunkStatus status, boolean load) {
-        //#endif
             return load || world.isChunkCached(x, z) ? present : null;
         }
     }
@@ -202,11 +156,7 @@ class BedrockToolEligibilityTest {
             var unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
             unsafeField.setAccessible(true);
             unsafe = (sun.misc.Unsafe) unsafeField.get(null);
-            //#if MC >= 260100
             player.inventory = new Inventory(player, new EntityEquipment());
-            //#else
-            //$$ player.inventory = new Inventory(player);
-            //#endif
             set(player, net.minecraft.world.entity.player.Player.class, "inventory", player.inventory);
             player.abilities = new Abilities();
             player.breakSpeed = 1;
@@ -247,13 +197,9 @@ class BedrockToolEligibilityTest {
             //#if MC >= 260300
             //$$ tool.enchant(VanillaRegistries.createWorldLookup().lookupOrThrow(Registries.ENCHANTMENT)
             //$$         .getOrThrow(Enchantments.EFFICIENCY), efficiency);
-            //#elseif MC > 12006
+            //#else
             tool.enchant(VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT)
                     .getOrThrow(Enchantments.EFFICIENCY), efficiency);
-            //#elseif MC == 12006
-            //$$ tool.enchant(Enchantments.EFFICIENCY, efficiency);
-            //#else
-            //$$ tool.enchant(Enchantments.BLOCK_EFFICIENCY, efficiency);
             //#endif
             return tool;
         }
@@ -338,11 +284,7 @@ class BedrockToolEligibilityTest {
 
     @Test void losingHasteAfterAdmissionRequiresRecheckingCurrentProgress() throws Exception {
         try (var f = new Fixture(4)) {
-            //#if MC >= 260100
             f.player.haste = new MobEffectInstance(MobEffects.HASTE, 600, 1);
-            //#else
-            //$$ f.player.haste = new MobEffectInstance(MobEffects.DIG_SPEED, 600, 1);
-            //#endif
             assertTrue(f.admitted());
             assertTrue(f.ready());
             f.player.haste = null;
@@ -428,14 +370,9 @@ class BedrockToolEligibilityTest {
         }
     }
 
-    //#if MC >= 12006
     @Test void increasedBlockBreakAttributeCanMakeEfficiencyFourEligible() throws Exception {
         try (var f = new Fixture(4)) {
             f.player.breakSpeed = 2;
-            //#if MC == 12006
-            //$$ assertTrue(f.player.getDestroySpeed(Blocks.PISTON.defaultBlockState()) / 1.5F / 30 >= 0.7F,
-            //$$         "The vanilla Player calculation already accepts this tool");
-            //#endif
             assertTrue(f.admitted());
             assertTrue(f.ready());
         }
@@ -449,6 +386,5 @@ class BedrockToolEligibilityTest {
             f.assertBundleBlocked();
         }
     }
-    //#endif
 }
 //#endif

@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.utils;
 
-//#if MC >= 12100
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.component.DataComponents;
@@ -147,4 +146,3 @@ class VoidWarehouseTriggerItemTest {
         assertFalse(shulkerOnly.acceptsStack(named(Items.CRAFTING_TABLE, "虚空仓库")));
     }
 }
-//#endif

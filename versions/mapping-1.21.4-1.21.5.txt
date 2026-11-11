@@ -1,3 +1,0 @@
-fi.dy.masa.malilib.util.Color4f fi.dy.masa.malilib.util.data.Color4f
-fi.dy.masa.litematica.render.RenderUtils fi.dy.masa.malilib.render.RenderUtils
-net.minecraft.util.math.Direction getId() getIndex()

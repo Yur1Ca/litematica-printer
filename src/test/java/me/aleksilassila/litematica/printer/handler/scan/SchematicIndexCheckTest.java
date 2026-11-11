@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import com.sun.management.ThreadMXBean;
@@ -119,4 +118,3 @@ class SchematicIndexCheckTest {
         @Override public Collection<ChunkSchematic> values() { return this.values; }
     }
 }
-//#endif

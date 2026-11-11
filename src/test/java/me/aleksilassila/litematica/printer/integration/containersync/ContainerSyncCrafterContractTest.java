@@ -1,4 +1,3 @@
-//#if MC >= 12004
 package me.aleksilassila.litematica.printer.integration.containersync;
 
 import java.util.List;
@@ -116,4 +115,3 @@ class ContainerSyncCrafterContractTest {
         return null;
     }
 }
-//#endif

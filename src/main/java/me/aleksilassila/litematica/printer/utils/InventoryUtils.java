@@ -37,27 +37,15 @@ public class InventoryUtils {
     private static final Minecraft client = Minecraft.getInstance();
     private static final int OFFHAND_SLOT_INDEX = 40;
     public static int getSelectedSlot(Inventory inventory) {
-        //#if MC > 12104
         return inventory.getSelectedSlot();
-        //#else
-        //$$ return inventory.selected;
-        //#endif
     }
 
     public static void setSelectedSlot(Inventory inventory, int slot) {
-        //#if MC > 12101
         inventory.setSelectedSlot(slot);
-        //#else
-        //$$ inventory.selected = slot;
-        //#endif
     }
 
     public static NonNullList<ItemStack> getMainStacks(Inventory inventory) {
-        //#if MC > 12104
         return inventory.getNonEquipmentItems();
-        //#else
-        //$$ return inventory.items;
-        //#endif
     }
 
     public static boolean playerHasAccessToItem(LocalPlayer playerEntity, Item item) {
@@ -208,11 +196,7 @@ public class InventoryUtils {
         Player player = mc.player;
         if (player == null || player.containerMenu != player.inventoryMenu) return false;
 
-        //#if MC > 12004
         boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqualIgnoreNbt(stackReference, player.getMainHandItem());
-        //#else
-        //$$ boolean b = !VoidWarehouseTriggerItem.isTrigger(player.getMainHandItem()) && areStacksEqual(stackReference, player.getMainHandItem());
-        //#endif
         if (b) {
             return false;
         }

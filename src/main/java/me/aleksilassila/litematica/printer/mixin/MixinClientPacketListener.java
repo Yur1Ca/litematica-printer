@@ -14,9 +14,7 @@ import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulker
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.MenuType;
-//#if MC >= 12103
 import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
-//#endif
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -63,32 +61,15 @@ public abstract class MixinClientPacketListener {
     @Inject(at = @At("TAIL"), method = "handleContainerContent")
     public void onInventory(ClientboundContainerSetContentPacket packet, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
-        //#if MC >= 12105
         int containerId = packet.containerId();
-        //#else
-        //$$ int containerId = packet.getContainerId();
-        //#endif
-        //#if MC >= 12105
         var items = packet.items();
         var carried = packet.carriedItem();
-        //#else
-        //$$ var items = packet.getItems();
-        //$$ var carried = packet.getCarriedItem();
-        //#endif
         if ((Object) this != client.getConnection()) return;
-        //#if MC >= 12105
         ChestTrackerBridge.onContainerContent(containerId, packet.stateId(), items, carried);
-        //#else
-        //$$ ChestTrackerBridge.onContainerContent(containerId, packet.getStateId(), items, carried);
-        //#endif
         boolean currentContainer = client.player != null && containerId == client.player.containerMenu.containerId;
         QuickShulkerBridge.onInventoryContent(containerId, items, carried);
         if (!currentContainer) return;
-        //#if MC >= 12105
         RuntimeAccess.get().containerSync().content(containerId, packet.stateId(), items, carried);
-        //#else
-        //$$ RuntimeAccess.get().containerSync().content(containerId, packet.getStateId(), items, carried);
-        //#endif
     }
     @Inject(at = @At("TAIL"), method = "handleContainerSetSlot")
     private void printer$confirmQuickShulkerSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
@@ -96,13 +77,11 @@ public abstract class MixinClientPacketListener {
         QuickShulkerBridge.onSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
     }
 
-    //#if MC >= 12004
     @Inject(at = @At("TAIL"), method = "handleContainerSetData")
     private void printer$trackContainerSyncData(net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket packet, CallbackInfo ci) {
         if ((Object) this != Minecraft.getInstance().getConnection()) return;
         RuntimeAccess.get().containerSync().data(packet.getContainerId(), packet.getId());
     }
-    //#endif
 
     @Inject(at = @At("TAIL"), method = "handleContainerClose")
     private void printer$invalidateRecoveryMenu(net.minecraft.network.protocol.game.ClientboundContainerClosePacket packet, CallbackInfo ci) {
@@ -121,13 +100,11 @@ public abstract class MixinClientPacketListener {
         if (runtime != null) runtime.events().publish(
                 new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.InventorySynchronized(connection));
     }
-    //#if MC >= 12103
     @Inject(at = @At("TAIL"), method = "handleSetCursorItem")
     private void printer$trackCursor(ClientboundSetCursorItemPacket packet, CallbackInfo ci) {
         if ((Object) this != Minecraft.getInstance().getConnection()) return;
         QuickShulkerBridge.onSlotUpdate(-1, -1, packet.contents());
     }
-    //#endif
     @Inject(at = @At("TAIL"), method = "handleBlockUpdate")
     private void printer$logBlockReply(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
         QuickShulkerDiagnostics.blockReply(packet.getPos(), packet.getBlockState());

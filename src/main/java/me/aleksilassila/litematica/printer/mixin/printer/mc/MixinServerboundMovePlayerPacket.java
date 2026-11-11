@@ -12,11 +12,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 // leaving every packet byte-identical when no scoped/action look override exists.
 @Mixin(value = ServerboundMovePlayerPacket.class, priority = 1010)
 public class MixinServerboundMovePlayerPacket {
-    //#if MC > 12101
     @ModifyVariable(method = "<init>(DDDFFZZZZ)V", at = @At("HEAD"), ordinal = 0, argsOnly = true)
-    //#else
-    //$$ @ModifyVariable(method = "<init>(DDDFFZZZ)V", at = @At("HEAD"), ordinal = 0, argsOnly = true)
-    //#endif
     private static float modifyLookYaw(float yaw) {
         if (NetworkUtils.shouldBypassQueuedLookOverride()) {
             return yaw;
@@ -32,11 +28,7 @@ public class MixinServerboundMovePlayerPacket {
         return yaw;
     }
 
-    //#if MC > 12101
     @ModifyVariable(method = "<init>(DDDFFZZZZ)V", at = @At("HEAD"), ordinal = 1, argsOnly = true)
-    //#else
-    //$$ @ModifyVariable(method = "<init>(DDDFFZZZ)V", at = @At("HEAD"), ordinal = 1, argsOnly = true)
-    //#endif
     private static float modifyLookPitch(float pitch) {
         if (NetworkUtils.shouldBypassQueuedLookOverride()) {
             return pitch;

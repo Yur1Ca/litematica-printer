@@ -298,13 +298,7 @@ class RailRepairRegressionTest {
 
     static class Schematic extends WorldSchematic {
         Map<BlockPos, BlockState> states;
-        //#if MC == 11802
-        //$$ Schematic() { super(null, null, null); }
-        //#elseif MC >= 12006 && MC < 12102
-        //$$ Schematic() { super(null, null, null, null, null); }
-        //#else
         Schematic() { super(null, null, null, null); }
-        //#endif
         @Override public BlockState getBlockState(BlockPos pos) { return states.getOrDefault(pos, Blocks.AIR.defaultBlockState()); }
     }
     static class RailLevel extends TestLevel {

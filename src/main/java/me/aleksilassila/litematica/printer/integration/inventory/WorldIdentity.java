@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.inventory;
 
-//#if MC >= 12111
 import net.minecraft.client.Minecraft;
 
 /**
@@ -24,4 +23,3 @@ public final class WorldIdentity {
         return SelectedContainerCache.dimensionId(client);
     }
 }
-//#endif

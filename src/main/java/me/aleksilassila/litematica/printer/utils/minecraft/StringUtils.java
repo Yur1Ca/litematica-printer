@@ -11,27 +11,15 @@ public class StringUtils {
     public final static MutableComponent EMPTY = literal("");
 
     public static MutableComponent translatable(String key) {
-        //#if MC > 11802
         return Component.translatable(key);
-        //#else
-        //$$ return new net.minecraft.network.chat.TranslatableComponent(key);
-        //#endif
     }
 
     public static MutableComponent translatable(String key, Object... objects) {
-        //#if MC > 11802
         return Component.translatable(key, objects);
-        //#else
-        //$$ return new net.minecraft.network.chat.TranslatableComponent(key, objects);
-        //#endif
     }
 
     public static MutableComponent literal(String text) {
-        //#if MC > 11802
         return Component.literal(text);
-        //#else
-        //$$ return new net.minecraft.network.chat.TextComponent(text);
-        //#endif
     }
 
     public static MutableComponent nullToEmpty(@Nullable String string) {

@@ -161,11 +161,7 @@ final class BedrockInitialPackets {
         packets.add(new ServerboundSetCarriedItemPacket(torchSlot));
         for (var hit : torches) {
             var use = NetworkUtils.createPacket(sequence -> {
-                //#if MC > 11802
                 return new ServerboundUseItemOnPacket(InteractionHand.MAIN_HAND, hit, sequence);
-                //#else
-                //$$ return new ServerboundUseItemOnPacket(InteractionHand.MAIN_HAND, hit);
-                //#endif
             });
             if (use == null) return List.of();
             packets.add(use);
@@ -189,11 +185,7 @@ final class BedrockInitialPackets {
                 lastLook = look;
             }
             var use = NetworkUtils.createPacket(sequence -> {
-                //#if MC > 11802
                 return new ServerboundUseItemOnPacket(InteractionHand.OFF_HAND, placement.hit(), sequence);
-                //#else
-                //$$ return new ServerboundUseItemOnPacket(InteractionHand.OFF_HAND, placement.hit());
-                //#endif
             });
             if (use == null) return List.of();
             packets.add(use);

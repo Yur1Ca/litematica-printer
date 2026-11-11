@@ -100,33 +100,19 @@ final class MiningFeedback {
             return;
         }
         SoundType sound = state.getSoundType();
-        //#if MC > 11802
         this.client.getSoundManager().play(new SimpleSoundInstance(
                 sound.getHitSound(), net.minecraft.sounds.SoundSource.BLOCKS,
                 Math.max((sound.getVolume() + 1.0F) / 4.0F, 0.35F), sound.getPitch() * 0.5F,
                 SoundInstance.createUnseededRandom(), pos));
-        //#else
-        //$$ this.client.getSoundManager().play(new SimpleSoundInstance(
-        //$$         sound.getHitSound(), net.minecraft.sounds.SoundSource.BLOCKS,
-        //$$         Math.max((sound.getVolume() + 1.0F) / 4.0F, 0.35F), sound.getPitch() * 0.5F,
-        //$$         pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D));
-        //#endif
         this.hitSoundTicks += 1.0F;
     }
 
     void playBreakSound(BlockPos pos, BlockState state) {
         if (pos == null || state == null || state.isAir()) return;
         SoundType sound = state.getSoundType();
-        //#if MC > 11802
         this.client.getSoundManager().play(new SimpleSoundInstance(
                 sound.getBreakSound(), net.minecraft.sounds.SoundSource.BLOCKS,
                 Math.max((sound.getVolume() + 1.0F) / 2.0F, 0.7F), sound.getPitch() * 0.8F,
                 SoundInstance.createUnseededRandom(), pos));
-        //#else
-        //$$ this.client.getSoundManager().play(new SimpleSoundInstance(
-        //$$         sound.getBreakSound(), net.minecraft.sounds.SoundSource.BLOCKS,
-        //$$         Math.max((sound.getVolume() + 1.0F) / 2.0F, 0.7F), sound.getPitch() * 0.8F,
-        //$$         pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D));
-        //#endif
     }
 }

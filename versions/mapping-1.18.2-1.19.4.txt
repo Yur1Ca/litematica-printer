@@ -1,2 +1,0 @@
-com.mojang.math.Matrix4f org.joml.Matrix4f
-net.minecraft.core.Registry net.minecraft.core.registries.BuiltInRegistries

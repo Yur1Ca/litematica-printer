@@ -23,10 +23,8 @@ public class MessageUtils {
     public static void addMessage(Component message) {
         //#if MC > 260100
         //$$ Minecraft.getInstance().gui.hud.getChat().addClientSystemMessage(message);
-        //#elseif MC>=260000
-        Minecraft.getInstance().gui.getChat().addClientSystemMessage(message);
         //#else
-        //$$ Minecraft.getInstance().gui.getChat().addMessage(message);
+        Minecraft.getInstance().gui.getChat().addClientSystemMessage(message);
         //#endif
     }
 

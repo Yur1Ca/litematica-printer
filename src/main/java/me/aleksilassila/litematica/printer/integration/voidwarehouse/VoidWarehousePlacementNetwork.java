@@ -6,7 +6,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -36,13 +35,11 @@ import java.util.Map;
 import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-//#endif
 
 /** Direct warehouse placement has no inventory mutation or client block prediction. */
 public final class VoidWarehousePlacementNetwork {
     private VoidWarehousePlacementNetwork() { }
 
-    //#if MC >= 12111
     private static final VoidWarehousePlacementState<BlockPos> STATE = new VoidWarehousePlacementState<>();
     private static final VoidWarehousePlacementDiagnostics DIAGNOSTICS = new VoidWarehousePlacementDiagnostics();
     private static boolean initialized;
@@ -57,39 +54,19 @@ public final class VoidWarehousePlacementNetwork {
         if (initialized) return;
         // Identical neko.* payload classes are shared with the integrated server's global registry.
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(PrinterPlaceHelloPayload.TYPE, PrinterPlaceHelloPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(PrinterPlaceHelloPayload.TYPE, PrinterPlaceHelloPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) { }
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(PrinterPlacePayload.TYPE, PrinterPlacePayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(PrinterPlacePayload.TYPE, PrinterPlacePayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) { }
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(PrinterPlaceStatePayload.TYPE, PrinterPlaceStatePayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(PrinterPlaceStatePayload.TYPE, PrinterPlaceStatePayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) { }
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(PrinterPlaceHelloResultPayload.TYPE, PrinterPlaceHelloResultPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(PrinterPlaceHelloResultPayload.TYPE, PrinterPlaceHelloResultPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) { }
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(PrinterPlaceResultPayload.TYPE, PrinterPlaceResultPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(PrinterPlaceResultPayload.TYPE, PrinterPlaceResultPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) { }
         ClientPlayNetworking.registerGlobalReceiver(PrinterPlaceHelloResultPayload.TYPE,
                 VoidWarehousePlacementNetwork::receiveHello);
@@ -392,18 +369,4 @@ public final class VoidWarehousePlacementNetwork {
         connection = null;
         world = null;
     }
-    //#else
-    // The server capability exists only on 1.21.11+; earlier clients keep their normal placement path.
-    //$$ public static void init() { }
-    //$$ public static void tick() { }
-    //$$ public static boolean isAvailable() { return false; }
-    //$$ public static boolean isStatePlacementSupported() { return false; }
-    //$$ public static boolean isNegotiating() { return false; }
-    //$$ public static boolean isMaterialAvailable(Item[] candidates) { return false; }
-    //$$ public static boolean canRequest(Item[] candidates, BlockPos target) { return false; }
-    //$$ public static boolean isTargetAvailable(BlockPos target) { return false; }
-    //$$ public static boolean requestPlace(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) { return false; }
-    //$$ public static boolean requestStatePlace(Item[] candidates, BlockPos target, BlockHitResult physicalHit, int expectedStateId, BlockState requiredState) { return false; }
-    //$$ public static boolean isPending(BlockPos target) { return false; }
-    //#endif
 }

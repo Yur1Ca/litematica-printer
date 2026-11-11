@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -45,4 +44,3 @@ class SchematicSectionSnapshotsTest {
         }
     }
 }
-//#endif

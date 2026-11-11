@@ -26,9 +26,7 @@ class ContainerSyncTypesTest {
                 Arguments.of(Blocks.HOPPER, 5, MenuType.HOPPER),
                 Arguments.of(Blocks.DISPENSER, 9, MenuType.GENERIC_3x3),
                 Arguments.of(Blocks.DROPPER, 9, MenuType.GENERIC_3x3)
-                //#if MC >= 12004
                 , Arguments.of(Blocks.CRAFTER, 9, MenuType.CRAFTER_3x3)
-                //#endif
         );
     }
 

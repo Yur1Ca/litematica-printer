@@ -1,6 +1,5 @@
 package neko.voidwarehouse.restock;
 
-//#if MC >= 12111
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
@@ -69,5 +68,3 @@ public record PrinterPlacePayload(int nonce, List<String> candidates, BlockPos t
         return TYPE;
     }
 }
-
-//#endif

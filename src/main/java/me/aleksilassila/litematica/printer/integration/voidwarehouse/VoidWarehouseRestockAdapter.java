@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
@@ -437,4 +436,3 @@ public final class VoidWarehouseRestockAdapter implements InventoryProvider {
         return new MaterialReservation(request.token(), MaterialReservation.State.UNAVAILABLE);
     }
 }
-//#endif

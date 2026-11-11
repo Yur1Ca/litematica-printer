@@ -1,4 +1,3 @@
-//#if MC > 12104
 package me.aleksilassila.litematica.printer.render;
 
 import java.lang.reflect.Method;
@@ -147,4 +146,3 @@ public final class HighlightRenderFixture extends ClassLoader {
         }
     }
 }
-//#endif

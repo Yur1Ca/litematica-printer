@@ -1,6 +1,5 @@
 package neko.voidwarehouse.restock;
 
-//#if MC >= 12111
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -57,5 +56,3 @@ public record PrinterPlaceStatePayload(PrinterPlacePayload placement, String blo
         return TYPE;
     }
 }
-
-//#endif

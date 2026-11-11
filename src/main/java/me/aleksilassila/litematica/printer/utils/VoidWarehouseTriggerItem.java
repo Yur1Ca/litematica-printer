@@ -1,9 +1,7 @@
 package me.aleksilassila.litematica.printer.utils;
 
 import net.minecraft.network.chat.Component;
-//#if MC >= 12005
 import net.minecraft.core.component.DataComponents;
-//#endif
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -56,11 +54,7 @@ public final class VoidWarehouseTriggerItem {
         // 取名 API 分两条轨：1.20.5 起物品名变成组件（DataComponents.CUSTOM_NAME），
         // 更早只有 hasCustomHoverName() + getHoverName()（后者在没有自定义名时返回物品默认名）。
         // 不用 getCustomName()：那个方法名只有很新的版本才有。
-        //#if MC >= 12005
         Component customName = stack.get(DataComponents.CUSTOM_NAME);
-        //#else
-        //$$ Component customName = stack.hasCustomHoverName() ? stack.getHoverName() : null;
-        //#endif
         if (customName == null) {
             return false;
         }

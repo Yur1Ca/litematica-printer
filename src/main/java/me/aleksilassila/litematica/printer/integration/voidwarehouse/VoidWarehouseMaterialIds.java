@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
@@ -71,4 +70,3 @@ public final class VoidWarehouseMaterialIds {
         return key == null ? null : key.toString();
     }
 }
-//#endif

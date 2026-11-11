@@ -1,4 +1,4 @@
-//#if MC == 11802 || MC == 12001 || MC == 12104 || MC == 260100 || MC == 260300
+//#if MC == 260100 || MC == 260300
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -12,9 +12,7 @@ import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PredictiveAction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.*;
-//#if MC > 11802
 import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
-//#endif
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.*;
@@ -65,10 +63,8 @@ class MiningInteractionRegressionTest {
     static class Player extends LocalPlayer {
         //#if MC >= 260300
         //$$ Player() { super(null, null, null, null, null, null, false, null, null); }
-        //#elseif MC >= 260100
-        Player() { super(null, null, null, null, null, null, false, null); }
         //#else
-        //$$ Player() { super(null, null, null, null, null, false, false); }
+        Player() { super(null, null, null, null, null, null, false, null); }
         //#endif
         float speed;
         Abilities abilities;
@@ -84,27 +80,13 @@ class MiningInteractionRegressionTest {
         @Override public void resetAttackStrengthTicker() { }
     }
     static class Connection extends ClientPacketListener {
-        //#if MC >= 12006
         Connection() { super(null, null, null); }
-        //#elseif MC >= 12001
-        //$$ Connection() { super(null, null, null, null, null, null); }
-        //#else
-        //$$ Connection() { super(null, null, null, null, null); }
-        //#endif
         List<ServerboundPlayerActionPacket> packets;
         @Override public void send(Packet<?> p) { if (p instanceof ServerboundPlayerActionPacket a) packets.add(a); }
     }
     static class Sounds extends SoundManager {
-        //#if MC >= 12001
         Sounds() { super(null); }
-        //#else
-        //$$ Sounds() { super(null, null); }
-        //#endif
-        //#if MC >= 260100
         @Override public SoundEngine.PlayResult play(SoundInstance sound) { return null; }
-        //#else
-        //$$ @Override public void play(SoundInstance sound) { }
-        //#endif
     }
     static class Tutorial extends net.minecraft.client.tutorial.Tutorial {
         Tutorial() { super(null, null); }
@@ -112,17 +94,11 @@ class MiningInteractionRegressionTest {
     }
     static class PredictionBridge extends MixinClientLevel { }
     static class Level extends ClientLevel implements NetworkUtils.SequenceExtension {
-        //#if MC >= 12104
         Level() { super(null, null, null, null, 0, 0, null, false, 0, 0); }
-        //#else
-        //$$ Level() { super(null, null, null, null, 0, 0, null, null, false, 0L); }
-        //#endif
         BlockState state;
         long tick;
         WorldBorder border;
-        //#if MC > 11802
         BlockStatePredictionHandler predictions;
-        //#endif
         PredictionBridge bridge;
         Player player;
         @Override public BlockState getBlockState(BlockPos pos) { return state; }
@@ -132,17 +108,13 @@ class MiningInteractionRegressionTest {
         //#if MC >= 260300
         //$$ @Override public void addBreakingBlockEffects(BlockPos pos, Direction direction, boolean sound) { }
         //#endif
-        //#if MC > 11802
         @Override public void syncBlockState(BlockPos pos, BlockState authoritative, Vec3 oldPosition) { state = authoritative; }
-        //#endif
         @Override public Packet<ServerGamePacketListener> litematica_printer3$predict(PredictiveAction action) {
             return bridge.litematica_printer3$predict(action);
         }
         void predictDestroy(BlockPos pos) {
             // Same retain-before-change contract confirmed from ClientLevel.setBlock bytecode.
-            //#if MC > 11802
             if (predictions.isPredicting()) predictions.retainKnownServerState(pos, state, player);
-            //#endif
             state = Blocks.AIR.defaultBlockState();
         }
     }
@@ -175,11 +147,7 @@ class MiningInteractionRegressionTest {
         public boolean isInventorySwitchPending() { return false; }
         public void ensureCarriedItemSent() { }
         public ServerboundPlayerActionPacket actionPacket(ServerboundPlayerActionPacket.Action a, BlockPos p, Direction d, int s) {
-            //#if MC > 11802
             return new ServerboundPlayerActionPacket(a, p, d, s);
-            //#else
-            //$$ return new ServerboundPlayerActionPacket(a, p, d);
-            //#endif
         }
     }
     static class GameMode extends MultiPlayerGameMode implements MiningInteractionPort, MultiPlayerGameModeExtension {
@@ -242,32 +210,20 @@ class MiningInteractionRegressionTest {
             player.held = ItemStack.EMPTY;
             player.setId(42);
             player.abilities = new Abilities();
-            //#if MC >= 260100
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
-            //#else
-            //$$ player.inventory = new Inventory(player);
-            //#endif
             set(player, net.minecraft.world.entity.Entity.class, "position", Vec3.ZERO);
             connection.packets = new ArrayList<>();
             set(player, LocalPlayer.class, "connection", connection);
             level.state = Blocks.STONE.defaultBlockState();
             level.border = new WorldBorder();
             level.player = player;
-            //#if MC > 11802
             level.predictions = new BlockStatePredictionHandler();
             set(level, ClientLevel.class, "blockStatePredictionHandler", level.predictions);
-            //#endif
             level.bridge = new PredictionBridge();
-            //#if MC > 11802
             set(level.bridge, MixinClientLevel.class, "blockStatePredictionHandler", level.predictions);
-            //#endif
             client.player = player;
             client.level = level;
             var gameMode = alloc(GameMode.class);
-            //#if MC == 11802
-            //$$ set(gameMode, MultiPlayerGameMode.class, "unAckedActions",
-            //$$         new it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap<>());
-            //#endif
             gameMode.port = port;
             client.gameMode = gameMode;
             set(client.gameMode, MultiPlayerGameMode.class, "minecraft", client);
@@ -320,11 +276,9 @@ class MiningInteractionRegressionTest {
                 next.border = new WorldBorder();
                 next.player = player;
                 next.bridge = new PredictionBridge();
-                //#if MC > 11802
                 next.predictions = new BlockStatePredictionHandler();
                 set(next, ClientLevel.class, "blockStatePredictionHandler", next.predictions);
                 set(next.bridge, MixinClientLevel.class, "blockStatePredictionHandler", next.predictions);
-                //#endif
                 client.level = next;
                 level = next;
             }
@@ -779,7 +733,6 @@ class MiningInteractionRegressionTest {
         }
     }
 
-    //#if MC > 11802
     @Test void disablingPrinterDoesNotDiscardVanillasOutstandingPredictionRollback() throws Exception {
         try (var f = new Fixture(1.2f, false)) {
             f.mine();
@@ -791,7 +744,6 @@ class MiningInteractionRegressionTest {
             assertEquals(2, f.connection.packets.size());
         }
     }
-    //#endif
 
     static List<ServerboundPlayerActionPacket.Action> actions(Fixture f) {
         return f.connection.packets.stream().map(ServerboundPlayerActionPacket::getAction).toList();

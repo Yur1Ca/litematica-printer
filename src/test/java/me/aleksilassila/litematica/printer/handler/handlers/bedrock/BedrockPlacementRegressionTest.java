@@ -68,14 +68,12 @@ class BedrockPlacementRegressionTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
-        //#endif
     }
 
     @ParameterizedTest @EnumSource(Direction.class)
@@ -349,11 +347,7 @@ class BedrockPlacementRegressionTest {
         Map<BlockPos, BlockState> blocks;
         net.minecraft.world.level.border.WorldBorder border;
         TestChunkCache chunks;
-        //#if MC >= 12102
         TestLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
-        //#else
-        //$$ TestLevel() { super(null, null, null, null, 0, 0, null, null, false, 0L); }
-        //#endif
         @Override public BlockState getBlockState(BlockPos pos) { return blocks.getOrDefault(pos, Blocks.AIR.defaultBlockState()); }
         @Override public List<Entity> getEntities(Entity except, net.minecraft.world.phys.AABB bounds,
                                                   java.util.function.Predicate<? super Entity> filter) {
@@ -380,11 +374,7 @@ class BedrockPlacementRegressionTest {
             }
             return chunks;
         }
-        //#if MC >= 12102
         @Override public int getMinY() { return -64; }
-        //#else
-        //$$ @Override public int getMinBuildHeight() { return -64; }
-        //#endif
         @Override public int getHeight() { return 384; }
     }
 
@@ -393,13 +383,8 @@ class BedrockPlacementRegressionTest {
         TestLevel world;
         net.minecraft.world.level.chunk.LevelChunk present;
         TestChunkCache() { super(null, 0); }
-        //#if MC > 12004
         @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
                 net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
-        //#else
-        //$$ @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
-        //$$         net.minecraft.world.level.chunk.ChunkStatus status, boolean load) {
-        //#endif
             // A forced missing query also returns a non-null empty-chunk placeholder in vanilla.
             return world.isChunkCached(x, z) || load ? present : null;
         }
@@ -409,12 +394,8 @@ class BedrockPlacementRegressionTest {
         Inventory inventory;
         //#if MC >= 260300
         //$$ TestPlayer() { super(null, null, null, null, null, null, false, null, null); }
-        //#elseif MC >= 260100
-        TestPlayer() { super(null, null, null, null, null, null, false, null); }
-        //#elseif MC >= 12106
-        //$$ TestPlayer() { super(null, null, null, null, null, null, false); }
         //#else
-        //$$ TestPlayer() { super(null, null, null, null, null, false, false); }
+        TestPlayer() { super(null, null, null, null, null, null, false, null); }
         //#endif
         @Override public Inventory getInventory() { return inventory; }
         @Override public ItemStack getMainHandItem() { return inventory.getItem(InventoryUtils.getSelectedSlot(inventory)); }
@@ -424,13 +405,7 @@ class BedrockPlacementRegressionTest {
 
     static class TestConnection extends ClientPacketListener {
         CaptureTransport transport;
-        //#if MC >= 12002
         TestConnection() { super(null, null, null); }
-        //#elseif MC >= 11904
-        //$$ TestConnection() { super(null, null, null, null, null, null); }
-        //#else
-        //$$ TestConnection() { super(null, null, null, null, null); }
-        //#endif
         @Override public void send(Packet<?> packet) {
             if (this.transport != null) this.transport.capture(packet);
         }
@@ -494,11 +469,7 @@ class BedrockPlacementRegressionTest {
             level.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
             var player = allocate(TestPlayer.class);
             set(player, Entity.class, "level", level);
-            //#if MC >= 12105
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
-            //#else
-            //$$ player.inventory = new Inventory(player);
-            //#endif
             set(player, Player.class, "inventory", player.inventory);
             set(player, Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
             set(player, Player.class, "abilities", new net.minecraft.world.entity.player.Abilities());

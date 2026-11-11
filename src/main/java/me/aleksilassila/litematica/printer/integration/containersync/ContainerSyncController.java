@@ -170,11 +170,7 @@ public final class ContainerSyncController implements RuntimeComponent {
         candidate = -1; menu = null; phase = Phase.OPENING; requestedAt = now();
         openingInventoryRevision = client.player.inventoryMenu.getStateId();
         me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log("container-sync open target=" + target);
-        //#if MC < 11904
-        //$$ client.gameMode.useItemOn(client.player, client.level, InteractionHand.MAIN_HAND,
-        //#else
         client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND,
-        //#endif
                 new BlockHitResult(Vec3.atCenterOf(target), Direction.UP, target, false));
         // Ordered behind the open: rejection leaves menu 0 active and returns a full snapshot;
         // a successful open changes the server menu ID and ignores this menu-0 no-op.

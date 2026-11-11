@@ -10,7 +10,6 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 /**
  * 花簇
  */
-//#if MC >= 11904
 public class FlowerBedGuide extends Guide {
 
     public FlowerBedGuide(SchematicBlockContext context) {
@@ -27,4 +26,3 @@ public class FlowerBedGuide extends Guide {
         return Result.SKIP;
     }
 }
-//#endif

@@ -111,10 +111,8 @@ class VoidWarehousePlacementHitTest {
         var miss = BlockHitResult.miss(new Vec3(.5, 0, .5), Direction.DOWN, BlockPos.ZERO);
         Vec3 eye = new Vec3(5.9, 1.62, .5);
         assertSame(miss, VoidWarehousePlacementHit.adjustAirHit(BlockPos.ZERO, miss, eye, 5.5));
-        //#if MC >= 12111
         var border = new BlockHitResult(new Vec3(.5, 0, .5), Direction.DOWN, BlockPos.ZERO, false, true);
         assertSame(border, VoidWarehousePlacementHit.adjustAirHit(BlockPos.ZERO, border, eye, 5.5));
-        //#endif
     }
 
     @Test

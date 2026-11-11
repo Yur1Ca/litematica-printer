@@ -41,11 +41,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Shadow public abstract boolean destroyBlock(BlockPos pos);
     @Shadow protected abstract boolean sameDestroyTarget(BlockPos pos);
     @Shadow protected abstract void ensureHasSentCarriedItem();
-    //#if MC > 11802
     @Shadow public abstract InteractionResult useItemOn(LocalPlayer player, InteractionHand hand, BlockHitResult hit);
-    //#else
-    //$$ @Shadow public abstract InteractionResult useItemOn(LocalPlayer player, ClientLevel level, InteractionHand hand, BlockHitResult hit);
-    //#endif
 
     @Unique
     private MiningInteractionController litematica_printer$controller() {
@@ -58,11 +54,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         return this.litematica_printer$mining;
     }
 
-    //#if MC >= 260100
     @Inject(method = "handleContainerInput", at = @At("HEAD"), cancellable = true)
-    //#else
-    //$$ @Inject(method = "handleInventoryMouseClick", at = @At("HEAD"), cancellable = true)
-    //#endif
     private void printer$guardContainerSyncInput(CallbackInfo ci) {
         if (RuntimeAccess.get().containerSync().guardManualInput()
                 || RuntimeAccess.get().chestTrackerAdapter().guardManualInput()) ci.cancel();
@@ -95,19 +87,11 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     public InteractionResult litematica_printer$useItemOn(
             boolean localPrediction, InteractionHand hand, BlockHitResult hit) {
         if (localPrediction) {
-            //#if MC > 11802
             return this.useItemOn(this.minecraft.player, hand, hit);
-            //#else
-            //$$ return this.useItemOn(this.minecraft.player, this.minecraft.level, hand, hit);
-            //#endif
         }
         this.ensureHasSentCarriedItem();
         if (!this.minecraft.level.getWorldBorder().isWithinBounds(hit.getBlockPos())) return InteractionResult.FAIL;
-        //#if MC > 11802
         NetworkUtils.sendPacket(sequence -> new ServerboundUseItemOnPacket(hand, hit, sequence));
-        //#else
-        //$$ NetworkUtils.sendPacket(sequence -> new ServerboundUseItemOnPacket(hand, hit));
-        //#endif
         return InteractionResult.PASS;
     }
 
@@ -129,10 +113,6 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Override
     public ServerboundPlayerActionPacket actionPacket(
             ServerboundPlayerActionPacket.Action action, BlockPos pos, Direction direction, int sequence) {
-        //#if MC > 11802
         return new ServerboundPlayerActionPacket(action, pos, direction, sequence);
-        //#else
-        //$$ return new ServerboundPlayerActionPacket(action, pos, direction);
-        //#endif
     }
 }

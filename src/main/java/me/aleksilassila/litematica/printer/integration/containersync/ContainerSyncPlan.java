@@ -14,11 +14,7 @@ public record ContainerSyncPlan(List<ItemStack> initial, List<Step> steps, Probl
     public record Step(int slot, int button, int returnSlot, List<ItemStack> items, ItemStack cursor) { }
 
     public static boolean same(ItemStack a, ItemStack b) {
-        //#if MC >= 12006
         return ItemStack.isSameItemSameComponents(a, b);
-        //#else
-        //$$ return ItemStack.isSameItemSameTags(a, b);
-        //#endif
     }
 
     public static List<ItemStack> copy(List<ItemStack> stacks) {

@@ -35,11 +35,7 @@ public class DirectionUtils {
     }
 
     public static Vec3i getVector(Direction direction) {
-        //#if MC >= 12103
         return direction.getUnitVec3i();
-        //#else
-        //$$ return direction.getNormal();
-        //#endif
     }
 
     public static float sin(double d) {

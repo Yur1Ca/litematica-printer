@@ -129,19 +129,11 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             return;
         }
         ChunkManagerSchematic chunkManager = (ChunkManagerSchematic) schematic.getChunkSource();
-        //#if MC >= 12111
         for (ChunkSchematic chunk : chunkManager.getLoadedValueSet()) {
-        //#else
-        //$$ for (ChunkSchematic chunk : chunkManager.getLoadedChunks().values()) {
-        //#endif
             if (chunk == null) {
                 continue;
             }
-            //#if MC >= 260100
             schematic.scheduleChunkRenders(chunk.getPos().x(), chunk.getPos().z());
-            //#else
-            //$$ schematic.scheduleChunkRenders(chunk.getPos().x, chunk.getPos().z);
-            //#endif
         }
     }
 

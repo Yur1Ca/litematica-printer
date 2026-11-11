@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import io.netty.buffer.Unpooled;
 import neko.voidwarehouse.restock.PrinterPlaceHelloPayload;
 import neko.voidwarehouse.restock.PrinterPlaceHelloResultPayload;
@@ -93,13 +92,8 @@ class VoidWarehousePlacementNetworkTest {
 
     @Test
     void registersAllDirectionsAndPreservesExistingIntegratedServerCodecs() throws Exception {
-        //#if MC >= 260100
         var outbound = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.serverboundPlay();
         var inbound = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.clientboundPlay();
-        //#else
-        //$$ var outbound = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.playC2S();
-        //$$ var inbound = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.playS2C();
-        //#endif
         VoidWarehousePlacementNetwork.init();
         assertNotNull(outbound.get(PrinterPlaceHelloPayload.TYPE));
         assertNotNull(inbound.get(PrinterPlaceHelloResultPayload.TYPE));
@@ -408,4 +402,3 @@ class VoidWarehousePlacementNetworkTest {
         }
     }
 }
-//#endif

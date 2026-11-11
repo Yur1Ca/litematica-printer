@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import java.io.IOException;
@@ -91,4 +90,3 @@ class VoidWarehouseMixinContractTest {
         }
     }
 }
-//#endif

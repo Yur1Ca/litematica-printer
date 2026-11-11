@@ -272,12 +272,8 @@ public final class WaterPrintTask implements PrintTask {
     private static boolean canIceBecomeWaterSource(ClientLevel level, BlockPos pos) {
         BlockPos belowPos = pos.below();
         BlockState belowState = level.getBlockState(belowPos);
-        //#if MC > 11904
         return !belowState.getCollisionShape(level, belowPos, CollisionContext.empty()).isEmpty()
                 || !belowState.getFluidState().isEmpty();
-        //#else
-        //$$ return belowState.getMaterial().blocksMotion() || belowState.getMaterial().isLiquid();
-        //#endif
     }
 
     private static boolean shouldSkipWaterloggedTarget(BlockState requiredState) {

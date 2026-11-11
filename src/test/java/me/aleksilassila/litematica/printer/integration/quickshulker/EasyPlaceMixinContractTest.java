@@ -22,15 +22,10 @@ class EasyPlaceMixinContractTest {
             var json = JsonParser.parseReader(new InputStreamReader(in)).getAsJsonObject();
             var names = new ArrayList<String>();
             json.getAsJsonArray("mixins").forEach(value -> names.add(value.getAsString()));
-            //#if MC > 12100
             assertTrue(names.contains(MIXIN), "Rewritten Easy Place must enter the manual material request chain");
-            //#else
-            //$$ assertFalse(names.contains(MIXIN), "Older Litematica has no rewritten EasyPlaceUtils target");
-            //#endif
         }
     }
 
-    //#if MC > 12100
     @Test
     @SuppressWarnings("unchecked")
     void hookMatchesTheRealPickerAndCapturesItsRequiredStackBeforeItRuns() throws Exception {
@@ -101,5 +96,4 @@ class EasyPlaceMixinContractTest {
         }
         return null;
     }
-    //#endif
 }

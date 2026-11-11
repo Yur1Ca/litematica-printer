@@ -35,11 +35,7 @@ public class Guides {
 
         // 火把
         register(TorchGuide::new,
-                //#if MC > 12002
                 BaseTorchBlock.class
-                //#else
-                //$$ TorchBlock.class
-                //#endif
         );
 
         // 紫水晶芽
@@ -82,10 +78,8 @@ public class Guides {
         register(SignGuide::new,
                 StandingSignBlock.class,
                 WallSignBlock.class
-                //#if MC >= 12002
                 , WallHangingSignBlock.class
                 , CeilingHangingSignBlock.class
-                //#endif
         );
 
         // 旗帜
@@ -125,9 +119,7 @@ public class Guides {
         register(RailGuide::new, BaseRailBlock.class);
 
         // 合成器（MC 1.21+）
-        //#if MC >= 12003
         register(CrafterGuide::new, CrafterBlock.class);
-        //#endif
 
         // ============================================================
         // 交互指南（WRONG_STATE 处理为主）
@@ -180,15 +172,9 @@ public class Guides {
         register(DaylightDetectorGuide::new, DaylightDetectorBlock.class);
 
         // 花簇（MC 1.19.4+）
-        //#if MC >= 11904
         register(FlowerBedGuide::new,
-                //#if MC >= 12105
                 FlowerBedBlock.class
-                //#else
-                //$$ PinkPetalsBlock.class
-                //#endif
         );
-        //#endif
 
         // 藤蔓/发光地衣
         register(VineGuide::new, VineBlock.class, GlowLichenBlock.class);

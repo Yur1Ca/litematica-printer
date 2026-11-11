@@ -1,6 +1,5 @@
 package neko.voidwarehouse.restock;
 
-//#if MC >= 12111
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -69,4 +68,3 @@ public record PrinterQueryResultPayload(int nonce, int status, List<String> item
         return TYPE;
     }
 }
-//#endif

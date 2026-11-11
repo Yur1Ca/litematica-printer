@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import neko.voidwarehouse.restock.PrinterReturnDetailPayload;
 import neko.voidwarehouse.restock.PrinterReturnPayload;
 import neko.voidwarehouse.restock.PrinterReturnResultPayload;
@@ -85,13 +84,8 @@ public final class VoidWarehouseReturnNetwork {
      */
     private static void registerC2S() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(
                     PrinterReturnPayload.TYPE, PrinterReturnPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(
-            //$$         PrinterReturnPayload.TYPE, PrinterReturnPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 类型名与 codec 两端完全相同，谁注册的没有任何区别，直接用即可。
         }
@@ -106,13 +100,8 @@ public final class VoidWarehouseReturnNetwork {
      */
     private static void registerResultReceiver() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(
                     PrinterReturnResultPayload.TYPE, PrinterReturnResultPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(
-            //$$         PrinterReturnResultPayload.TYPE, PrinterReturnResultPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 同上
         }
@@ -128,13 +117,8 @@ public final class VoidWarehouseReturnNetwork {
      */
     private static void registerDetailReceiver() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(
                     PrinterReturnDetailPayload.TYPE, PrinterReturnDetailPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(
-            //$$         PrinterReturnDetailPayload.TYPE, PrinterReturnDetailPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 同上
         }
@@ -288,4 +272,3 @@ public final class VoidWarehouseReturnNetwork {
         return nonce;
     }
 }
-//#endif

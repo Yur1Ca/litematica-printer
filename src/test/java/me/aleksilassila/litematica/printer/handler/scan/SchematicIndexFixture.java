@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.ChunkManagerSchematic;
@@ -108,4 +107,3 @@ final class SchematicIndexFixture {
         throw new NoSuchFieldException(name);
     }
 }
-//#endif

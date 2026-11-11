@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import com.google.common.collect.ImmutableList;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.gui.GuiMaterialList;
@@ -93,13 +92,8 @@ public final class VoidWarehouseMaterialNetwork {
      */
     private static void registerC2S() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(
                     PrinterQueryPayload.TYPE, PrinterQueryPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(
-            //$$         PrinterQueryPayload.TYPE, PrinterQueryPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 类型名与 codec 两端完全相同，谁注册的没有任何区别，直接用即可。
         }
@@ -114,13 +108,8 @@ public final class VoidWarehouseMaterialNetwork {
      */
     private static void registerResultReceiver() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(
                     PrinterQueryResultPayload.TYPE, PrinterQueryResultPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(
-            //$$         PrinterQueryResultPayload.TYPE, PrinterQueryResultPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 同上
         }
@@ -356,4 +345,3 @@ public final class VoidWarehouseMaterialNetwork {
         return nonce;
     }
 }
-//#endif

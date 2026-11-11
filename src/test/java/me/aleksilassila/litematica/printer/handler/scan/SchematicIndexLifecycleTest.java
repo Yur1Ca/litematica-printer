@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.ChunkSchematicState;
@@ -80,4 +79,3 @@ class SchematicIndexLifecycleTest {
         assertEquals(List.of(SchematicIndexFixture.firstPosition(2).asLong()), SchematicIndexFixture.positions(index));
     }
 }
-//#endif

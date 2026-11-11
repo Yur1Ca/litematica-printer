@@ -13,14 +13,12 @@ class ContainerSyncPlanTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
-        //#endif
     }
 
     static ItemStack stone(int count) { return new ItemStack(Items.STONE, count); }
@@ -86,21 +84,8 @@ class ContainerSyncPlanTest {
 
     @Test void differentItemDataDoesNotSatisfyTemplate() {
         ItemStack named = stone(1);
-        //#if MC >= 12006
         named.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                //#if MC > 11802
                 net.minecraft.network.chat.Component.literal("template"));
-                //#else
-                //$$ new net.minecraft.network.chat.TextComponent("template"));
-                //#endif
-        //#else
-        //$$ named.setHoverName(
-        //#if MC > 11802
-        //$$         net.minecraft.network.chat.Component.literal("template"));
-        //#else
-        //$$         new net.minecraft.network.chat.TextComponent("template"));
-        //#endif
-        //#endif
         var plan = ContainerSyncPlan.create(List.of(named), List.of(ItemStack.EMPTY, stone(64)), RULES);
         assertEquals(ContainerSyncPlan.Problem.MISSING_ITEMS, plan.problem());
     }

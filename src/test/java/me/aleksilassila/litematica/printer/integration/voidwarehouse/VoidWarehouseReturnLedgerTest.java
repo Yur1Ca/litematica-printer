@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest.Source;
 import org.junit.jupiter.api.Test;
 
@@ -99,4 +98,3 @@ class VoidWarehouseReturnLedgerTest {
         );
     }
 }
-//#endif

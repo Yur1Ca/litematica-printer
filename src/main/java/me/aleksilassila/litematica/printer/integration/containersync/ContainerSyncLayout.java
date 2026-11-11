@@ -16,9 +16,7 @@ enum ContainerSyncLayout {
     SHULKER(27, MenuType.SHULKER_BOX, false),
     HOPPER(5, MenuType.HOPPER, false),
     DISPENSER(9, MenuType.GENERIC_3x3, false),
-    //#if MC >= 12004
     CRAFTER(9, MenuType.CRAFTER_3x3, true),
-    //#endif
     ;
 
     final int size;
@@ -40,9 +38,7 @@ enum ContainerSyncLayout {
         if (block instanceof HopperBlock) return HOPPER;
         // DropperBlock extends DispenserBlock; the controller still matches the exact selected block.
         if (block instanceof DispenserBlock) return DISPENSER;
-        //#if MC >= 12004
         if (block instanceof CrafterBlock) return CRAFTER;
-        //#endif
         return null;
     }
 
@@ -55,20 +51,16 @@ enum ContainerSyncLayout {
         for (int i = 0; i < size + 36; i++) {
             if ((menu.getSlot(i).container == inventory) != (i >= size)) return false;
         }
-        //#if MC >= 12004
         if (crafter) return menu instanceof net.minecraft.world.inventory.CrafterMenu
                 && menu.getSlot(size + 36) instanceof net.minecraft.world.inventory.NonInteractiveResultSlot;
-        //#endif
         return !crafter;
     }
 
     int disabledSlots(AbstractContainerMenu menu) {
         int mask = 0;
-        //#if MC >= 12004
         if (crafter && menu instanceof net.minecraft.world.inventory.CrafterMenu crafterMenu) {
             for (int slot = 0; slot < size; slot++) if (crafterMenu.isSlotDisabled(slot)) mask |= 1 << slot;
         }
-        //#endif
         return mask;
     }
 }

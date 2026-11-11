@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import java.util.List;
@@ -12,4 +11,3 @@ public interface VoidWarehouseRestockPort {
     default void requestInventorySync() { }
     void forget();
 }
-//#endif

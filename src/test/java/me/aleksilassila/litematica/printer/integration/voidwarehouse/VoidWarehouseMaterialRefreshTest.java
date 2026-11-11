@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import com.google.common.collect.ImmutableList;
@@ -203,4 +202,3 @@ class VoidWarehouseMaterialRefreshTest {
         }
     }
 }
-//#endif

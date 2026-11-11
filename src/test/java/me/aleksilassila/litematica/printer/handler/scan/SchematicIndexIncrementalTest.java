@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.ChunkSchematic;
@@ -273,4 +272,3 @@ class SchematicIndexIncrementalTest {
         }
     }
 }
-//#endif

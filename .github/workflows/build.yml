@@ -1,8 +1,7 @@
 name: build
 
 on:
-  # Automatic builds are limited to files that can change the produced JARs.
-  # CI and release workflow changes can still be verified with workflow_dispatch.
+  # Build production changes and changes to the CI/release paths themselves.
   push:
     branches: [master]
     paths:
@@ -17,6 +16,8 @@ on:
       - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
   pull_request:
     branches: [master]
     paths:
@@ -31,6 +32,8 @@ on:
       - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
   workflow_dispatch:
     inputs:
       validation:

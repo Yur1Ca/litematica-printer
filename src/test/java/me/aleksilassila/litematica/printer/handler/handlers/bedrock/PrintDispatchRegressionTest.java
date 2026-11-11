@@ -118,11 +118,7 @@ class PrintDispatchRegressionTest {
     }
 
     private static Packet<?> usePacket(InteractionHand hand, BlockHitResult hit, int sequence) {
-        //#if MC > 11802
         return new ServerboundUseItemOnPacket(hand, hit, sequence);
-        //#else
-        //$$ return new ServerboundUseItemOnPacket(hand, hit);
-        //#endif
     }
 
     private enum Emission {

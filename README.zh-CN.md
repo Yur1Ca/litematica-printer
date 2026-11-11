@@ -16,18 +16,18 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 - [Modrinth](https://modrinth.com/mod/litematica-printer-hana) 提供多版本 Wrapper JAR。需要启动器或 Mod Menu 识别更新时，推荐从这里安装。
 - [GitHub Releases](https://github.com/Yur1Ca/litematica-printer/releases) 同时提供各 Minecraft 版本的独立 JAR。
 - Actions 自动构建的 `devXXX` 为 **Alpha** 版本。
-- 手动创建的 Release 为 **Beta** 版本。
+- 从 `master` 手动运行 `release` 工作流，会向 GitHub Releases 和 Modrinth 发布 **Beta** 版本。
 - 目前没有正式版通道。
 
 ## 支持的 Minecraft 版本
 
-- 1.18.2
-- 1.19.4
-- 1.20.1、1.20.2、1.20.4、1.20.6
-- 1.21 至 1.21.11
-- 26.1.x、26.2、26.3
+`master` 只维护 Minecraft 26.1 及以上版本，目前构建以下三个目标：
 
-暂不支持 1.18.2 以下版本。处于同一兼容范围内的小版本可能可以直接使用，但不一定提供单独构建的 JAR。
+- 26.1.x
+- 26.2
+- 26.3
+
+[`old` 分支](https://github.com/Yur1Ca/litematica-printer/tree/old)保留拆分前的完整项目快照及旧版 Minecraft 支持，作为归档停止维护；自动构建和开发版发布仅针对 `master`。历史验证报告中的版本矩阵以报告当时的项目状态为准。
 
 ## 前置模组
 
@@ -42,9 +42,9 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 - [Tweakeroo](https://modrinth.com/mod/tweakeroo)
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
-- [Take It Out](https://modrinth.com/mod/takeitout)，仅用于受支持的 1.21.x 和 26.x 版本
-- [Chest Tracker](https://github.com/ponuing/ChestTracker)，仅用于有对应版本构建的 1.21.4+ 和 26.x 版本
-- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition)，服务端虚空仓库联动，打印机在 1.21.11 及以上版本支持
+- [Take It Out](https://modrinth.com/mod/takeitout)，需要有兼容当前 Minecraft 的版本
+- [Chest Tracker](https://github.com/ponuing/ChestTracker)，仅用于有对应版本构建的 Minecraft；目前没有匹配 26.3 的发布版，不要在 26.3 客户端加载 26.2 版本的模组
+- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition)，服务端虚空仓库联动，需要匹配当前服务端版本
 
 所有前置模组都需要选择与当前 Minecraft 版本匹配的版本。
 
@@ -72,7 +72,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 ### 物品联动
 
 - 容器同步：在热键设置中绑定“同步容器”，开启工作总开关，主手选空槽，指向模板箱子、木桶、潜影盒、漏斗、发射器、投掷器或合成器启动。按槽位同步 Litematica 区域选区内同类型、同容量的其他容器，双箱按一个整体处理。需要走到目标容器的正常交互范围内。
-- 合成器只同步物品，保留各目标的禁用槽位；模板要求向禁用格放物品时暂停，不计入合成结果预览格。适用于 1.20.4 起且世界中已启用合成器的版本。
+- 合成器只同步物品，保留各目标的禁用槽位；模板要求向禁用格放物品时暂停，不计入合成结果预览格。
 - 同步使用背包材料，多余物品回收到背包；缺料或空间不足时暂停，处理后按热键重试。运行时按热键或关闭工作总开关会停止新任务，并等待当前搬运安全收尾。主手、护甲、副手及受保护的快捷栏不参与搬运，不依赖远程取物联动。
 - 搬运中被服务器强制关箱时，会等待完整库存确认后暂停。鼠标物品由服务器处理，背包放不下时原版可能产生掉落物。
 
@@ -81,7 +81,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 - 在受支持版本中，仅从明确加入当前 Litematica 投影选区缓存的 Chest Tracker 容器远程取物。
 - 虚空仓库：缺料时从服务端仓库补货，并可将仓库库存计入材料列表的“已有数量”。需要服务端安装对应版本的 [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition)，同时开启 `voidWarehouse` 和 `voidWarehouseRestock` 两条 Carpet 规则。
 - 虚空仓库余料返还：补货发的是整组材料，用不完的零头会整批退回仓库 —— 收工时退一次，打印途中空槽只剩 3 个或更少时也会退。只退仓库确实给过的那部分，玩家自己的存量一格不动。
-- 虚空仓库直接放置：生存模式下，普通方块优先使用服务端仓库库存；服务端预扣一件材料并按原版流程放置，不用先向背包补一组，也不用预留背包空槽，玩家背包里已有的材料会保留。正常取消或放置失败会退料；进入放置后若第三方钩子抛异常、结果不明，会保守结算这一件材料。需要 Minecraft 1.21.11 及以上版本，服务端安装配套的 Neko-Carpet-Addition，并同时开启 `voidWarehouse`、`voidWarehouseRestock` 和新增的 `voidWarehouseDirectPlace` 规则；新增服务端规则默认 `false`。
+- 虚空仓库直接放置：生存模式下，普通方块优先使用服务端仓库库存；服务端预扣一件材料并按原版流程放置，不用先向背包补一组，也不用预留背包空槽，玩家背包里已有的材料会保留。正常取消或放置失败会退料；进入放置后若第三方钩子抛异常、结果不明，会保守结算这一件材料。需要服务端安装配套的 Neko-Carpet-Addition，并同时开启 `voidWarehouse`、`voidWarehouseRestock` 和新增的 `voidWarehouseDirectPlace` 规则；新增服务端规则默认 `false`。
 - 开启轻松放置协议时，精确仓库直放借助服务端 Servux 保留其支持的朝向与方块状态，并遵守 Servux 的轻松放置设置和玩家权限。打印机与 Neko-Carpet-Addition 均须更新到支持此功能的配套版本（R2），服务端安装 Servux 即可，客户端不需要增加依赖。旧服务端或未安装 Servux 时继续使用原有精确放置与补货流程，轻松放置协议可以一直保持开启。
 - 桶、工具、重复点击，以及门、床、告示牌等特殊方块物品继续走原有放置与补货流程；服务端不支持、仓库候选材料已空或直接点击被拒绝时也会回退。直接放置以服务端方块更新确认结果，材料列表的库存快照不会作为扣料依据；每 5 秒重新协商服务端规则，中途开启可自动恢复。
 - 在打印机设置中按需开启“虚空仓库补货”“虚空仓库直接放置”“材料列表计入虚空仓库库存”“余料退回虚空仓库”，四项客户端选项均默认关闭。直接放置有独立的客户端开关，回退流程是否向背包补货仍由“虚空仓库补货”控制。
@@ -144,7 +144,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 ## 编译
 
-完整构建多版本 Wrapper 时推荐使用 JDK 25。
+构建需要 JDK 25。以下命令会构建全部三个 Minecraft 目标和多版本 Wrapper：
 
 ```bash
 ./gradlew :fabricWrapper:build
@@ -157,7 +157,9 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 首次构建会下载 Minecraft 和模组依赖，需要能够正常访问对应 Maven 仓库。在中国大陆网络环境下，如果下载失败，请检查网络或代理配置。
 
-日常 push 的 Actions 会编译并打包全部支持版本，只运行 `versions/mainProject` 指定的主开发版本测试；PR 保留全版本测试，正式发布保留所选版本集合的完整验证。手动运行 `build` 工作流默认选择 `full`，也可选择 `main`。上述本地构建命令仍执行完整验证。`build` 工作流的 `gradle-profile` 产物记录各任务耗时，结合 Actions 步骤耗时可区分缓存恢复与编译、测试开销。
+日常 push 到 `master` 的 Actions 会编译并打包全部三个支持版本，只运行 `versions/mainProject` 指定的主开发版本测试（当前为 `26.1`）；PR 保留全版本测试。手动运行 `build` 工作流默认选择 `full`，也可选择 `main`。上述本地构建命令仍执行完整验证。`build` 工作流的 `gradle-profile` 产物记录各任务耗时，结合 Actions 步骤耗时可区分缓存恢复与编译、测试开销。
+
+发布 Beta 时，从 `master` 运行 `release` 工作流并填写 `target_release_tag`。工作流会执行完整验证，构建 Wrapper，将 Wrapper 和三个独立版本 JAR 上传到指定的 GitHub Release，并将 Wrapper 发布到 Modrinth。`master` 不再提供单独的旧版本发布集合。
 
 ## 感谢
 

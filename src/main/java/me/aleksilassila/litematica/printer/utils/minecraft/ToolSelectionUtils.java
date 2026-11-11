@@ -30,18 +30,12 @@ public final class ToolSelectionUtils {
         if (stack == null || stack.isEmpty()) {
             return false;
         }
-        //#if MC > 12006
         for (Holder<Enchantment> enchantment : stack.getEnchantments().keySet()) {
             Optional<ResourceKey<Enchantment>> enchantmentKey = enchantment.unwrapKey();
             if (enchantmentKey.isPresent() && enchantmentKey.get() == Enchantments.SILK_TOUCH) {
                 return true;
             }
         }
-        //#else
-        //$$ if (EnchantmentHelper.getItemEnchantmentLevel(Enchantments.SILK_TOUCH, stack) > 0) {
-        //$$     return true;
-        //$$ }
-        //#endif
         return false;
     }
 }

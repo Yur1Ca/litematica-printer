@@ -2,16 +2,11 @@ package me.aleksilassila.litematica.printer.utils.minecraft;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
-//#if MC >= 12105
 import net.minecraft.network.HashedStack;
-//#endif
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerInput;
-//#if MC < 12105
-//$$ import net.minecraft.world.item.ItemStack;
-//#endif
 
 /** Builds non-mutating requests for an authoritative player-inventory snapshot. */
 public final class InventorySyncPackets {
@@ -48,12 +43,7 @@ public final class InventorySyncPackets {
         // Slot -1 PICKUP is a vanilla no-op; revision -1 forces a full authoritative reply.
         // An empty changed-slot map makes no claims about earlier predicted inventory changes.
         ContainerInput input = ContainerInput.PICKUP;
-        //#if MC >= 12105
         return new ServerboundContainerClickPacket(player.inventoryMenu.containerId, -1,
                 (short) -1, (byte) 0, input, new Int2ObjectOpenHashMap<>(), HashedStack.EMPTY);
-        //#else
-        //$$ return new ServerboundContainerClickPacket(player.inventoryMenu.containerId, -1,
-        //$$         -1, 0, input, ItemStack.EMPTY, new Int2ObjectOpenHashMap<>());
-        //#endif
     }
 }

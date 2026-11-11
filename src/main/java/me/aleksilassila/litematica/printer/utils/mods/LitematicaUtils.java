@@ -21,9 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
-//#if MC < 11900
-//$$ import fi.dy.masa.malilib.util.SubChunkPos;
-//#endif
 
 @SuppressWarnings("BooleanMethodIsAlwaysInverted")
 public class LitematicaUtils {
@@ -61,11 +58,7 @@ public class LitematicaUtils {
      */
     public static boolean isSchematicBlock(BlockPos pos) {
         SchematicPlacementManager schematicPlacementManager = DataManager.getSchematicPlacementManager();
-        //#if MC < 11900
-        //$$ List<SchematicPlacementManager.PlacementPart> allPlacementsTouchingChunk = schematicPlacementManager.getAllPlacementsTouchingSubChunk(new SubChunkPos(pos));
-        //#else
         List<SchematicPlacementManager.PlacementPart> allPlacementsTouchingChunk = schematicPlacementManager.getAllPlacementsTouchingChunk(pos);
-        //#endif
 
         for (SchematicPlacementManager.PlacementPart placementPart : allPlacementsTouchingChunk) {
             //#if MC > 260100

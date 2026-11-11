@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
@@ -1056,4 +1055,3 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         return count;
     }
 }
-//#endif

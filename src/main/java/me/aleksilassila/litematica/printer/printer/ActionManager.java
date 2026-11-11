@@ -3,12 +3,8 @@ package me.aleksilassila.litematica.printer.printer;
 import java.util.function.Function;
 import me.aleksilassila.litematica.printer.feature.FeatureActionPolicies;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementPolicy;
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementNetwork;
-//#endif
-//#if MC > 12100
 import fi.dy.masa.litematica.util.EasyPlaceUtils;
-//#endif
 import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.printer.action.PlacementPolicy;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
@@ -35,12 +31,8 @@ import java.util.function.Predicate;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 
-//#if MC > 12105
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.world.entity.player.Input;
-//#else
-//$$ import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
-//#endif
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ActionManager {
@@ -261,12 +253,10 @@ public class ActionManager {
         this.easyPlaceProtocolActive = click.useProtocol;
         this.activeEasyPlacePolicy = click.policy.easyPlaceProtocol();
         boolean litematicaEasyPlaceWasHandling = false;
-        //#if MC > 12100
         litematicaEasyPlaceWasHandling = EasyPlaceUtils.isHandling();
         if (!litematicaEasyPlaceWasHandling) {
             EasyPlaceUtils.setHandling(true);
         }
-        //#endif
         try {
             BlockHitResult blockHitResult = new BlockHitResult(hitVec, click.side, click.target, false);
             for (int i = 0; i < click.repeatCount; i++) {
@@ -293,11 +283,9 @@ public class ActionManager {
                 }
             }
         } finally {
-            //#if MC > 12100
             if (!litematicaEasyPlaceWasHandling) {
                 EasyPlaceUtils.setHandling(false);
             }
-            //#endif
             this.printerInteractionActive = false;
             this.easyPlaceProtocolActive = false;
             this.activeEasyPlacePolicy = false;
@@ -307,21 +295,13 @@ public class ActionManager {
     }
 
     protected boolean sendWarehousePlacement(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) {
-        //#if MC >= 12111
         return VoidWarehousePlacementNetwork.requestPlace(candidates, target, hit, expectedStateId);
-        //#else
-        //$$ return false;
-        //#endif
     }
 
     protected boolean sendWarehouseStatePlacement(Item[] candidates, BlockPos target,
             BlockHitResult physicalHit, int expectedStateId, BlockState desiredState) {
-        //#if MC >= 12111
         return VoidWarehousePlacementNetwork.requestStatePlace(
                 candidates, target, physicalHit, expectedStateId, desiredState);
-        //#else
-        //$$ return false;
-        //#endif
     }
 
     private void armTaskAnvilScreenSuppression(QueuedClick click) {
@@ -414,12 +394,8 @@ public class ActionManager {
     }
 
     public void setShift(LocalPlayer player, boolean shift) {
-        //#if MC > 12105
         Input input = new Input(player.input.keyPresses.forward(), player.input.keyPresses.backward(), player.input.keyPresses.left(), player.input.keyPresses.right(), player.input.keyPresses.jump(), shift, player.input.keyPresses.sprint());
         ServerboundPlayerInputPacket packet = new ServerboundPlayerInputPacket(input);
-        //#else
-        //$$ ServerboundPlayerCommandPacket packet = new ServerboundPlayerCommandPacket(player, shift ? ServerboundPlayerCommandPacket.Action.PRESS_SHIFT_KEY : ServerboundPlayerCommandPacket.Action.RELEASE_SHIFT_KEY);
-        //#endif
         player.setShiftKeyDown(shift);
         NetworkUtils.sendPacket(packet);
     }

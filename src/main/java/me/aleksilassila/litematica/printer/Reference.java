@@ -39,9 +39,7 @@ public class Reference {
     public static final Item[] AXE_ITEMS = {Items.DIAMOND_AXE, Items.IRON_AXE, Items.GOLDEN_AXE, Items.NETHERITE_AXE, Items.STONE_AXE, Items.WOODEN_AXE};
 
     private static final Class<?>[] WRONG_STATE_BREAK_IGNORED_BLOCKS = {
-            //#if MC >= 12000
             ChiseledBookShelfBlock.class,
-            //#endif
             BrewingStandBlock.class,
             StainedGlassPaneBlock.class,
             VegetationBlock.class,

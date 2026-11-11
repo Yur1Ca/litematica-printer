@@ -2,9 +2,7 @@ package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.ChunkManagerSchematic;
 import fi.dy.masa.litematica.world.ChunkSchematic;
-//#if MC >= 12111
 import fi.dy.masa.litematica.world.ChunkSchematicState;
-//#endif
 import fi.dy.masa.litematica.world.WorldSchematic;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
@@ -61,15 +59,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
                 this.clear();
                 return changed;
             }
-            //#if MC >= 12111
             return buildSparseIndex ? this.ensureBuiltWithStableChunkStates(schematic, timing, owner)
                     : this.waitForDenseFallback(schematic);
-            //#else
-            // Litematica versions before 1.21.11 do not expose the LOADED -> FILLED transition.
-            // Their chunk identity and non-empty flag can become stable before population completes,
-            // so sparse indexing cannot prove that its snapshot is complete. Keep the dense cursor.
-            //$$ return this.waitForDenseFallback(schematic);
-            //#endif
         } finally {
             timing.finish(owner, Stage.INDEX_CHECK, checkStart);
             if (this.state == State.WAITING) timing.count(owner, Reason.INDEX_WAITING, 1);
@@ -168,13 +159,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         try (var comparison = this.sectionSnapshots.compare()) {
             for (ChunkSchematic chunk : loadedChunks.chunks()) {
                 ChunkPos chunkPos = chunk.getPos();
-                //#if MC >= 260100
                 int chunkX = chunkPos.x();
                 int chunkZ = chunkPos.z();
-                //#else
-                //$$ int chunkX = chunkPos.x;
-                //$$ int chunkZ = chunkPos.z;
-                //#endif
                 LevelChunkSection[] sections = chunk.getSections();
                 for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
                     LevelChunkSection section = sections[sectionIndex];
@@ -210,11 +196,7 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
 
     private static List<ChunkSchematic> loadedChunks(WorldSchematic schematic) {
         ChunkManagerSchematic chunkManager = (ChunkManagerSchematic) schematic.getChunkSource();
-        //#if MC >= 12111
         return chunkManager.getLoadedValueSet();
-        //#else
-        //$$ return new ArrayList<>(chunkManager.getLoadedChunks().values());
-        //#endif
     }
 
     /** Null means every entry matched. Encounter order is only a fast path, never an invariant. */
@@ -229,14 +211,8 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
             boolean filled = false;
             if (chunk != null) {
                 ChunkPos chunkPos = chunk.getPos();
-                //#if MC >= 260100
                 key = chunkKey(chunkPos.x(), chunkPos.z());
-                //#else
-                //$$ key = chunkKey(chunkPos.x, chunkPos.z);
-                //#endif
-                //#if MC >= 12111
                 filled = chunk.getState().atLeast(ChunkSchematicState.FILLED);
-                //#endif
                 allFilled &= filled;
             }
             if (matching) {

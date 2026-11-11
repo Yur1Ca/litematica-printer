@@ -26,12 +26,8 @@ public final class InventoryRecoveryFence {
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundInteractPacket
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundUseItemOnPacket
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundUseItemPacket
-                //#if MC >= 12104
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket
-                //#else
-                //$$ || packet instanceof net.minecraft.network.protocol.game.ServerboundPickItemPacket
-                //#endif
                 || packet instanceof net.minecraft.network.protocol.game.ServerboundPlayerActionPacket action
                     && (action.getAction() == net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND
                         || action.getAction() == net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action.DROP_ITEM

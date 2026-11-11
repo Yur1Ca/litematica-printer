@@ -1,4 +1,3 @@
-//#if MC > 12104
 package me.aleksilassila.litematica.printer.render;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -48,4 +47,3 @@ class HighlightRenderLifecycleTest {
         );
     }
 }
-//#endif

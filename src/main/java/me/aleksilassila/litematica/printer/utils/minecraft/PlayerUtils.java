@@ -34,15 +34,9 @@ public class PlayerUtils {
     }
 
     public static double getPlayerBlockInteractionRange(double defaultRange) {
-        //#if MC>=12005
         if (client.player != null) {
             return client.player.blockInteractionRange();
         }
-        //#else
-        //$$ if (client.gameMode != null) {
-        //$$    return client.gameMode.getPickRange();
-        //$$ }
-        //#endif
         return defaultRange;
     }
 
@@ -57,23 +51,12 @@ public class PlayerUtils {
         double blockPosZ = blockPos.getZ();
         double eyePosX = player.getX();
         double eyePosZ = player.getZ();
-        //#if MC > 11802
         double eyePosY = player.getEyeY();
-        //#else
-        //$$ double eyePosY = player.getY() + 1.5;
-        //#endif
         double distance = getPlayerBlockInteractionRange(5) + additionalRange;
-        //#if MC > 12006
         double dx = Math.max(Math.max(blockPosX - eyePosX, eyePosX - (blockPosX + 1)), 0);
         double dy = Math.max(Math.max(blockPosY - eyePosY, eyePosY - (blockPosY + 1)), 0);
         double dz = Math.max(Math.max(blockPosZ - eyePosZ, eyePosZ - (blockPosZ + 1)), 0);
         return dx * dx + dy * dy + dz * dz < distance * distance;
-        //#else
-        //$$ double dx = eyePosX - (blockPosX + 0.5);
-        //$$ double dy = eyePosY - (blockPosY + 0.5);
-        //$$ double dz = eyePosZ - (blockPosZ + 0.5);
-        //$$ return dx * dx + dy * dy + dz * dz <= distance * distance;
-        //#endif
     }
 
     // 球面（欧几里得距离）
@@ -133,7 +116,6 @@ public class PlayerUtils {
      */
     public static float getBlockBreakingSpeed(LocalPlayer player, BlockState blockState, ItemStack itemStack) {
         float f = itemStack.getDestroySpeed(blockState);
-        //#if MC > 12006
         if (f > 1.0F) {
             for (Holder<Enchantment> enchantment : itemStack.getEnchantments().keySet()) {
                 Optional<ResourceKey<Enchantment>> enchantmentKey = enchantment.unwrapKey();
@@ -147,14 +129,6 @@ public class PlayerUtils {
                 }
             }
         }
-        //#else
-        //$$ if (f > 1.0F) {
-        //$$     int level = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.EFFICIENCY, itemStack);
-        //$$     if (level > 0 && !itemStack.isEmpty()) {
-        //$$         f += (float)(level * level + 1);
-        //$$     }
-        //$$ }
-        //#endif
         if (MobEffectUtil.hasDigSpeed(player)) {
             f *= 1.0F + (float) (MobEffectUtil.getDigSpeedAmplification(player) + 1) * 0.2F;
         }
@@ -176,21 +150,13 @@ public class PlayerUtils {
             }
             f *= g;
         }
-        //#if MC >= 12006
         f *= (float) player.getAttributeValue(Attributes.BLOCK_BREAK_SPEED);
-        //#endif
-        //#if MC > 12006
         if (player.isEyeInFluid(FluidTags.WATER)) {
             AttributeInstance submergedMiningSpeed = player.getAttribute(Attributes.SUBMERGED_MINING_SPEED);
             if (submergedMiningSpeed != null) {
                 f *= (float) submergedMiningSpeed.getValue();
             }
         }
-        //#else
-        //$$ if (player.isEyeInFluid(FluidTags.WATER) && !EnchantmentHelper.hasAquaAffinity(player)) {
-        //$$     f /= 5.0F;
-        //$$ }
-        //#endif
         if (!player.onGround()) {
             f /= 5.0F;
         }

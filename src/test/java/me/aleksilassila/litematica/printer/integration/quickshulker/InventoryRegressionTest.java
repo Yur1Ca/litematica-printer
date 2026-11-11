@@ -18,13 +18,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-//#if MC >= 12006
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.ItemContainerContents;
-//#else
-//$$ import net.minecraft.nbt.CompoundTag;
-//$$ import net.minecraft.nbt.ListTag;
-//#endif
 import java.lang.reflect.Field;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
@@ -39,14 +34,12 @@ class InventoryRegressionTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
-        //#endif
     }
     static SchematicBlockContext context(BlockState required) throws Exception {
         Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -88,15 +81,7 @@ class InventoryRegressionTest {
         var required = Blocks.SHULKER_BOX.defaultBlockState();
         Action action = missing(new DefaultGuide(context(required))).action();
         ItemStack filled = new ItemStack(Items.SHULKER_BOX);
-        //#if MC >= 12006
         filled.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIAMOND, 64))));
-        //#else
-        //$$ CompoundTag stored = new ItemStack(Items.DIAMOND, 64).save(new CompoundTag());
-        //$$ stored.putByte("Slot", (byte) 0);
-        //$$ ListTag contents = new ListTag();
-        //$$ contents.add(stored);
-        //$$ filled.getOrCreateTagElement("BlockEntityTag").put("Items", contents);
-        //#endif
         boolean accepted = java.util.Arrays.asList(action.getRequiredItems(required.getBlock())).contains(filled.getItem())
                 && (action.getRequiredStackPredicate() == null || action.getRequiredStackPredicate().test(filled));
         assertFalse(accepted, "Filled storage shulker passes the generated placement action requirements");

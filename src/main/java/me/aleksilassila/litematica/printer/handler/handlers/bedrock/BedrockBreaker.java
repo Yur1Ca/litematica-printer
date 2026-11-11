@@ -283,9 +283,7 @@ public final class BedrockBreaker {
                                         BlockPos pos, Direction direction) {
         var packet = NetworkUtils.createPacket(sequence -> new ServerboundPlayerActionPacket(
                 action, pos, direction
-                //#if MC >= 11900
                 , sequence
-                //#endif
         ));
         if (packet == null) return false;
         packets.add(packet);
@@ -301,11 +299,7 @@ public final class BedrockBreaker {
     }
 
     private static boolean sameTool(ItemStack first, ItemStack second) {
-        //#if MC > 12004
         return ItemStack.isSameItemSameComponents(first, second);
-        //#else
-        //$$ return ItemStack.isSameItemSameTags(first, second);
-        //#endif
     }
 
     private static final class CleanupAttempt {

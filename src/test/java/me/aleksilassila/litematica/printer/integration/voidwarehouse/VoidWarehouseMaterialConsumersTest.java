@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import java.util.ArrayList;
@@ -24,14 +23,12 @@ class VoidWarehouseMaterialConsumersTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
-        //#endif
     }
 
     @AfterEach void clearCache() { VoidWarehouseMaterialCache.get().clear(); }
@@ -226,4 +223,3 @@ class VoidWarehouseMaterialConsumersTest {
         assertEquals(missing ? 1 : 0, ((List<?>) field(list, "materialListPreFiltered", null)).size());
     }
 }
-//#endif

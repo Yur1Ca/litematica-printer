@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import java.io.IOException;
@@ -178,4 +177,3 @@ final class MaterialListTestLoader extends ClassLoader {
         }
     }
 }
-//#endif

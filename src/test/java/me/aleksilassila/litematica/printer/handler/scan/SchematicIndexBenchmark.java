@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import com.sun.management.ThreadMXBean;
@@ -92,4 +91,3 @@ public final class SchematicIndexBenchmark {
         OUTPUT.println("MEASUREMENT_VERIFIED," + observed);
     }
 }
-//#endif

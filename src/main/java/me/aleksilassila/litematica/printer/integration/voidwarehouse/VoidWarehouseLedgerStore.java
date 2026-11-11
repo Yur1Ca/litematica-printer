@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -176,4 +175,3 @@ final class VoidWarehouseLedgerStore {
         return a == null ? b == null || b.isEmpty() : a.equals(b);
     }
 }
-//#endif

@@ -123,11 +123,7 @@ public class ConfigUtils {
         double eyeX = eye.x;
         double eyeY = eye.y;
         double eyeZ = eye.z;
-        //#if MC > 11802
         double interactionEyeY = eyeY;
-        //#else
-        //$$ double interactionEyeY = player.getY() + 1.5D;
-        //#endif
         BlockPos playerBlockPos = player.blockPosition();
         int playerBlockX = playerBlockPos.getX();
         int playerBlockY = playerBlockPos.getY();
@@ -144,21 +140,12 @@ public class ConfigUtils {
             int y = pos.getY();
             int z = pos.getZ();
             if (checkInteractionRange) {
-                //#if MC > 12006
                 double dx = Math.max(Math.max(x - eyeX, eyeX - (x + 1.0D)), 0.0D);
                 double dy = Math.max(Math.max(y - eyeY, eyeY - (y + 1.0D)), 0.0D);
                 double dz = Math.max(Math.max(z - eyeZ, eyeZ - (z + 1.0D)), 0.0D);
                 if (dx * dx + dy * dy + dz * dz >= interactionRangeSqr) {
                     return false;
                 }
-                //#else
-                //$$ double dx = eyeX - (x + 0.5D);
-                //$$ double dy = interactionEyeY - (y + 0.5D);
-                //$$ double dz = eyeZ - (z + 0.5D);
-                //$$ if (dx * dx + dy * dy + dz * dz > interactionRangeSqr) {
-                //$$     return false;
-                //$$ }
-                //#endif
             }
 
             if (shape == null) {

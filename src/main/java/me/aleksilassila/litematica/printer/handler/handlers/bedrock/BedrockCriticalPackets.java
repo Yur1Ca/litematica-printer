@@ -31,11 +31,7 @@ final class BedrockCriticalPackets {
         }
         if (!appendBreak(packets, level, player, pistonPos, facing)) return List.of();
         var use = NetworkUtils.createPacket(sequence -> {
-            //#if MC > 11802
             return new ServerboundUseItemOnPacket(InteractionHand.OFF_HAND, placement.hit(), sequence);
-            //#else
-            //$$ return new ServerboundUseItemOnPacket(InteractionHand.OFF_HAND, placement.hit());
-            //#endif
         });
         if (use == null) return List.of();
         packets.add(use);
@@ -59,11 +55,7 @@ final class BedrockCriticalPackets {
 
     private static Packet<?> action(ServerboundPlayerActionPacket.Action action, BlockPos pos, Direction face) {
         return NetworkUtils.createPacket(sequence -> {
-            //#if MC >= 11900
             return new ServerboundPlayerActionPacket(action, pos, face, sequence);
-            //#else
-            //$$ return new ServerboundPlayerActionPacket(action, pos, face);
-            //#endif
         });
     }
 }

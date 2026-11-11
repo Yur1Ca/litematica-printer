@@ -1,4 +1,3 @@
-//#if MC > 12100
 package me.aleksilassila.litematica.printer.mixin.printer.litematica;
 
 import com.llamalad7.mixinextras.sugar.Local;
@@ -16,11 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = EasyPlaceUtils.class, remap = false)
 public class MixinEasyPlaceUtils {
     @Inject(method = "handleEasyPlace", at = @At(value = "INVOKE",
-            //#if MC >= 12109
             target = "Lfi/dy/masa/litematica/util/InventoryUtils;schematicWorldPickBlock"),
-            //#else
-            //$$ target = "Lfi/dy/masa/litematica/util/PickBlockUtils;doPickBlockForStack"),
-            //#endif
             cancellable = true)
     private static void litematicaPrinter$restock(CallbackInfoReturnable<InteractionResult> cir,
                                                  @Local(ordinal = 0) ItemStack requiredStack) {
@@ -31,4 +26,3 @@ public class MixinEasyPlaceUtils {
         }
     }
 }
-//#endif

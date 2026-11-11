@@ -19,7 +19,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientLevel.class)
 public abstract class MixinClientLevel implements NetworkUtils.SequenceExtension {
 
-    //#if MC > 11802
     @Final
     @Shadow
     private net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler blockStatePredictionHandler;
@@ -40,5 +39,4 @@ public abstract class MixinClientLevel implements NetworkUtils.SequenceExtension
     ) {
         ClientBlockUpdateRouter.accept(pos, authoritativeState);
     }
-    //#endif
 }

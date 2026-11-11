@@ -123,10 +123,6 @@ class UseItemOnSendTest {
     }
 
     private static ServerboundUseItemOnPacket use(InteractionHand hand, BlockHitResult hit) {
-        //#if MC > 11802
         return new ServerboundUseItemOnPacket(hand, hit, 1);
-        //#else
-        //$$ return new ServerboundUseItemOnPacket(hand, hit);
-        //#endif
     }
 }

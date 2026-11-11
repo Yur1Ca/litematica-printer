@@ -1,6 +1,5 @@
 package neko.voidwarehouse.restock;
 
-//#if MC >= 12111
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -65,4 +64,3 @@ public record PrinterTakeResultPayload(int nonce, int status) implements CustomP
         return TYPE;
     }
 }
-//#endif

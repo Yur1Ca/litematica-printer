@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -151,4 +150,3 @@ public final class VoidWarehouseReturnNotice {
         return String.format(Locale.ROOT, "%,d", value);
     }
 }
-//#endif

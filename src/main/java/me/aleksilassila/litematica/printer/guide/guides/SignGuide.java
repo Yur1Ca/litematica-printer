@@ -43,7 +43,6 @@ public class SignGuide extends Guide {
                     .setRequiresSupport());
         }
 
-        //#if MC >= 12002
         // 墙壁悬挂告示牌（WallHangingSignBlock）
         if (requiredBlock instanceof WallHangingSignBlock && facing != null) {
             List<Direction> sides = facing.getAxis() == Direction.Axis.X
@@ -65,7 +64,6 @@ public class SignGuide extends Guide {
                     .setLookRotation(rotation)
                     .setRequiresSupport());
         }
-        //#endif
 
         return Result.SKIP;
     }
@@ -75,10 +73,8 @@ public class SignGuide extends Guide {
         if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue() && InteractionUtils.canBreakBlock(blockPos)) {
             boolean isLegitimateSign = currentBlock instanceof StandingSignBlock
                     || currentBlock instanceof WallSignBlock
-                    //#if MC >= 12002
                     || currentBlock instanceof WallHangingSignBlock
                     || currentBlock instanceof CeilingHangingSignBlock
-                    //#endif
                     ;
             if (!isLegitimateSign) {
                 InteractionUtils.getRuntime().add(context);

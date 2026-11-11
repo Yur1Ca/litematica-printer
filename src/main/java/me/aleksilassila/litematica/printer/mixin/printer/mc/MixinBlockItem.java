@@ -32,15 +32,9 @@ public abstract class MixinBlockItem extends Item {
     private void modifyPlacementState(BlockPlaceContext ctx, CallbackInfoReturnable<BlockState> cir) {
         boolean usePrinterProtocol = Configs.Print.EASY_PLACE_PROTOCOL.getBooleanValue()
                 && RuntimeAccess.get().actionBroker().isEasyPlaceProtocolActive();
-        //#if MC > 12100
         if (!RuntimeAccess.get().actionBroker().isPrinterInteractionActive()) {
             return;
         }
-        //#else
-        //$$ if (!usePrinterProtocol) {
-        //$$     return;
-        //$$ }
-        //#endif
 
         BlockState state = this.getBlock().getStateForPlacement(ctx);
         if (state == null || !this.canPlace(ctx, state)) {

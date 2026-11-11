@@ -129,7 +129,6 @@ public class Render2D {
             return layout.drawY();
         }
 
-        //#if MC >= 12111
         int padding = Math.max(1, Math.round(HUD_PADDING * layout.scale()));
         int lineStep = Math.max(1, Math.round(HUD_LINE_HEIGHT * layout.scale()));
         int panelHeight = Math.max(1, Math.round(layout.baseHeight() * layout.scale()));
@@ -148,20 +147,6 @@ public class Render2D {
             lineY += lineStep;
         }
         return layout.drawY() + panelHeight;
-        //#else
-        //$$ Render2DUtils.pushPose();
-        //$$ Render2DUtils.translate(layout.drawX(), layout.drawY(), 0.0D);
-        //$$ Render2DUtils.scale(layout.scale(), layout.scale(), 1.0F);
-        //$$ Render2DUtils.fill(0, 0, layout.baseWidth(), layout.baseHeight(), new Color(0, 0, 0, 110));
-        //$$
-        //$$ int lineY = HUD_PADDING;
-        //$$ for (HudLine line : layout.lines()) {
-        //$$     Render2DUtils.drawString(line.text(), HUD_PADDING, lineY, line.color(), true);
-        //$$     lineY += HUD_LINE_HEIGHT;
-        //$$ }
-        //$$ Render2DUtils.popPose();
-        //$$ return layout.bottom();
-        //#endif
     }
 
     private PanelLayout computeHudPanelLayout(int x, int y, List<HudLine> lines, float scaledWidth, float scaledHeight, float scale) {
@@ -177,13 +162,8 @@ public class Render2D {
 
         int baseWidth = maxWidth + HUD_PADDING * 2;
         int baseHeight = lines.size() * HUD_LINE_HEIGHT + HUD_PADDING * 2;
-        //#if MC >= 12111
         int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
         int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
-        //#else
-        //$$ int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
-        //$$ int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
-        //#endif
         int drawX = Math.max(0, Math.min(x, (int) scaledWidth - scaledWidthPixels));
         int drawY = Math.max(0, Math.min(y, (int) scaledHeight - scaledHeightPixels));
         return new PanelLayout(lines, drawX, drawY, baseWidth, baseHeight, scaledWidthPixels, scaledHeightPixels, scale);

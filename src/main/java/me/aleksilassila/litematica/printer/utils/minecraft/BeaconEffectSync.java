@@ -2,15 +2,11 @@ package me.aleksilassila.litematica.printer.utils.minecraft;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin.printer.mc.BeaconBlockEntityAccessor;
-//#if MC > 12004
 import net.minecraft.core.Holder;
-//#endif
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffects;
 
-//#if MC > 12004
 import java.util.List;
-//#endif
 
 public final class BeaconEffectSync {
     private BeaconEffectSync() {
@@ -19,7 +15,6 @@ public final class BeaconEffectSync {
     @SuppressWarnings("FieldCanBeLocal")
     private static boolean originalCaptured;
 
-    //#if MC > 12004
     private static List<List<Holder<MobEffect>>> originalBeaconEffects;
     private static final List<List<Holder<MobEffect>>> UNLOCKED_BEACON_EFFECTS = List.of(
             List.of(MobEffects.SPEED, MobEffects.HASTE),
@@ -27,15 +22,6 @@ public final class BeaconEffectSync {
             List.of(MobEffects.JUMP_BOOST, MobEffects.STRENGTH),
             List.of()
     );
-    //#else
-    //$$ private static MobEffect[][] originalBeaconEffects;
-    //$$ private static final MobEffect[][] UNLOCKED_BEACON_EFFECTS = new MobEffect[][]{
-    //$$         {MobEffects.MOVEMENT_SPEED, MobEffects.DIG_SPEED},
-    //$$         {MobEffects.REGENERATION, MobEffects.DAMAGE_RESISTANCE},
-    //$$         {MobEffects.JUMP, MobEffects.DAMAGE_BOOST},
-    //$$         {}
-    //$$ };
-    //#endif
 
     public static void syncFromConfig() {
         if (!originalCaptured) {

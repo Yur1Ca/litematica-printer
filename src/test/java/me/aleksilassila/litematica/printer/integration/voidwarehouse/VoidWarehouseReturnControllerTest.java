@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -248,4 +247,3 @@ class VoidWarehouseReturnControllerTest {
         assertFalse(VoidWarehouseReturnController.isUsage(64, 60, true));
     }
 }
-//#endif

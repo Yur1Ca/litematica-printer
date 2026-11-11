@@ -1,4 +1,3 @@
-//#if MC >= 12111
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
 import io.netty.buffer.Unpooled;
@@ -54,11 +53,7 @@ class VoidWarehouseRestockNetworkTest {
 
     @Test
     void clientAloneRegistersAnEncodableTakePayloadAndInitializationIsIdempotent() throws Exception {
-        //#if MC >= 260100
         var registry = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.serverboundPlay();
-        //#else
-        //$$ var registry = (PayloadTypeRegistryImpl<RegistryFriendlyByteBuf>) PayloadTypeRegistry.playC2S();
-        //#endif
         assertNull(registry.get(PrinterTakePayload.TYPE), "No server mod initializes this test process");
         VoidWarehouseRestockNetwork.init();
         var registered = registry.get(PrinterTakePayload.TYPE);
@@ -82,4 +77,3 @@ class VoidWarehouseRestockNetworkTest {
         assertSame(registered, registry.get(PrinterTakePayload.TYPE));
     }
 }
-//#endif

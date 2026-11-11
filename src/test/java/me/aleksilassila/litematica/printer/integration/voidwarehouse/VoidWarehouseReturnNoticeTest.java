@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -97,4 +96,3 @@ class VoidWarehouseReturnNoticeTest {
         assertFalse(line.contains("仓库共"));
     }
 }
-//#endif

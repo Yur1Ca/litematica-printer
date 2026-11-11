@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.mixin.printer.litematica;
 
-//#if MC >= 12111
 import fi.dy.masa.litematica.gui.widgets.WidgetMaterialListEntry;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
@@ -56,4 +55,3 @@ public abstract class MixinWidgetMaterialListEntry {
         return VoidWarehouseMaterialCache.get().isReady() ? GuiBase.TXT_RED : GuiBase.TXT_GOLD;
     }
 }
-//#endif

@@ -17,15 +17,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-//#if MC <= 11904
-//$$import com.mojang.blaze3d.vertex.PoseStack;
-//#elseif MC > 12006
 import net.minecraft.client.DeltaTracker;
-//#endif
 
-//#if MC < 260000
-//$$ import net.minecraft.client.gui.GuiGraphics;
-//#endif
 
 //#if MC >= 260200
 //$$ @Mixin(Hud.class)
@@ -36,19 +29,11 @@ public abstract class MixinGui {
     // @formatter:off
     //#if MC >= 260200
     @Inject(method = "extractRenderState", at = @At("TAIL"))
-    //#elseif MC >= 260100
-    //$$ @Inject(method = "extractRenderState", at = @At("TAIL"))
     //#else
-    //$$ @Inject(method = "render", at = @At("TAIL"))
+    //$$ @Inject(method = "extractRenderState", at = @At("TAIL"))
     //#endif
 
-    //#if MC > 12006
     private void hookRenderHud(GuiGraphicsExtractor guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
-    //#elseif MC > 11904
-    //$$ private void hookRenderHud(GuiGraphics guiGraphics, float f, CallbackInfo ci) {
-    //#else
-    //$$ private void hookRenderHud(PoseStack poseStack, float f, CallbackInfo ci) {
-    //#endif
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.player.isSpectator()
                 || !HudVisibilityPolicy.shouldRender(
@@ -60,11 +45,7 @@ public abstract class MixinGui {
         }
 
         // 初始化渲染矩阵
-        //#if MC > 11904
         Render2DUtils.initGuiGraphics(guiGraphics);
-        //#else
-        //$$ Render2DUtils.initMatrix(poseStack);
-        //#endif
 
         float scaledWidth = mc.getWindow().getGuiScaledWidth();
         float scaledHeight = mc.getWindow().getGuiScaledHeight();

@@ -242,7 +242,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(ModLoadUtils::isChestTrackerLoaded)
                 .build();
 
-        //#if MC >= 12111
         // 虚空仓库补货：缺料时向服务端的 carpet-Neko-Addition 要一组材料
         public static final ConfigBoolean VOID_WAREHOUSE_RESTOCK = bool("voidWarehouseRestock")
                 .defaultValue(false)
@@ -262,7 +261,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigBoolean VOID_WAREHOUSE_RETURN = bool("voidWarehouseReturn")
                 .defaultValue(false)
                 .build();
-        //#endif
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 //#if MC < 260200
@@ -273,12 +271,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Placement.QUICK_SHULKER_MODE,
                 Placement.QUICK_SHULKER_COOLDOWN,
                 Placement.STORE_ORDERLY,
-                //#if MC >= 12111
                 VOID_WAREHOUSE_RESTOCK,
                 VOID_WAREHOUSE_DIRECT_PLACE,
                 VOID_WAREHOUSE_RETURN,
                 VOID_WAREHOUSE_MATERIAL_LIST,
-                //#endif
                 REMOTE_TAKE
         );
     }
@@ -827,11 +823,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     public void load() {
         File settingFile = new File(FILE_PATH);
         if (settingFile.isFile() && settingFile.exists()) {
-            //#if MC >= 12111
             JsonElement jsonElement = JsonUtils.parseJsonFile(settingFile.toPath());
-            //#else
-            //$$ JsonElement jsonElement = JsonUtils.parseJsonFile(settingFile);
-            //#endif
             if (jsonElement != null && jsonElement.isJsonObject()) {
                 JsonObject obj = jsonElement.getAsJsonObject();
                 ConfigUtils.readConfigBase(obj, Reference.MOD_ID, OPTIONS);
@@ -859,11 +851,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             JsonObject configRoot = new JsonObject();
             configRoot.addProperty("configSchemaVersion", CONFIG_SCHEMA_VERSION);
             ConfigUtils.writeConfigBase(configRoot, Reference.MOD_ID, OPTIONS);
-            //#if MC >= 12111
             JsonUtils.writeJsonToFile(configRoot, settingFile.toPath());
-            //#else
-            //$$ JsonUtils.writeJsonToFile(configRoot, settingFile);
-            //#endif
         }
     }
 
@@ -872,11 +860,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         ConfigManager.getInstance().registerConfigHandler(Reference.MOD_ID, Configs.INSTANCE);
         InputEventHandler.getKeybindManager().registerKeybindProvider(InputHandler.getInstance());
         InputEventHandler.getInputManager().registerKeyboardInputHandler(InputHandler.getInstance());
-        //#if MC > 12006
         fi.dy.masa.malilib.registry.Registry.CONFIG_SCREEN.registerConfigScreenFactory(
                 new fi.dy.masa.malilib.util.data.ModInfo(Reference.MOD_ID, Reference.MOD_NAME, ConfigUi::new)
         );
-        //#endif
     }
 
     public static void saveToFile() {

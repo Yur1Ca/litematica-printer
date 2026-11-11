@@ -16,18 +16,18 @@ This repository is an independently maintained continuation of earlier Litematic
 - [Modrinth](https://modrinth.com/mod/litematica-printer-hana) provides the multi-version Wrapper JAR and is recommended when launcher or Mod Menu update detection is desired.
 - [GitHub Releases](https://github.com/Yur1Ca/litematica-printer/releases) also provides standalone JARs for individual Minecraft versions.
 - Automated `devXXX` builds are published as **Alpha** versions.
-- Manually created releases are published as **Beta** versions.
+- Manual runs of the `release` workflow on `master` publish **Beta** versions to GitHub Releases and Modrinth.
 - There is currently no stable release channel.
 
 ## Supported Minecraft versions
 
-- 1.18.2
-- 1.19.4
-- 1.20.1, 1.20.2, 1.20.4, and 1.20.6
-- 1.21 through 1.21.11
-- 26.1.x, 26.2 and 26.3
+`master` maintains Minecraft 26.1 and later. The current build targets are:
 
-Versions older than 1.18.2 are not supported. Intermediate Minecraft versions may work when they are covered by the same compatibility range, but are not always built as separate JARs.
+- 26.1.x
+- 26.2
+- 26.3
+
+The [`old` branch](https://github.com/Yur1Ca/litematica-printer/tree/old) preserves the complete project snapshot from before this split, including its earlier Minecraft version support. It is archived and no longer maintained; automatic builds and development publishing only run for `master`. Historical validation reports describe the version matrix at the time they were written.
 
 ## Requirements
 
@@ -42,9 +42,9 @@ Optional integrations:
 
 - [Tweakeroo](https://modrinth.com/mod/tweakeroo)
 - [Quick Shulker](https://github.com/MoRanpcy/quickshulker)
-- [Take It Out](https://modrinth.com/mod/takeitout), on supported 1.21.x and 26.x versions
-- [Chest Tracker](https://github.com/ponuing/ChestTracker), on versions with a matching upstream build
-- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), a server-side Void Warehouse integration supported by the printer on 1.21.11 and later
+- [Take It Out](https://modrinth.com/mod/takeitout), where a compatible version is available
+- [Chest Tracker](https://github.com/ponuing/ChestTracker), on versions with a matching upstream build. There is currently no matching 26.3 release; do not load the 26.2 mod in a 26.3 client.
+- [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), for server-side Void Warehouse integration with a matching server version
 
 Dependency versions must match the Minecraft version being launched.
 
@@ -72,7 +72,7 @@ Dependency versions must match the Minecraft version being launched.
 ### Inventory integrations
 
 - Container sync: bind **Sync Containers**, enable the master work switch, select an empty main-hand slot and point at a template chest, barrel, shulker box, hopper, dispenser, dropper or crafter. Containers of the same type and capacity in the Litematica area selection are filled slot by slot; double chests count as one container. Move within normal interaction range of each target.
-- Crafters synchronize items only, preserving each target's disabled slots. A template item that conflicts with a disabled target slot pauses the task. The recipe result preview is excluded. Available from 1.20.4 when crafters are enabled in the world.
+- Crafters synchronize items only, preserving each target's disabled slots. A template item that conflicts with a disabled target slot pauses the task. The recipe result preview is excluded.
 - Materials come from your inventory; surplus returns there. Missing items or storage space pauses the task; press the hotkey to retry after resolving it. Pressing the hotkey while running or disabling the master switch cancels after the current transfer settles. Main hand, armor, offhand and protected hotbar slots are excluded. Remote retrieval integrations are not required.
 - If the server forcibly closes a container during transfer, synchronization waits for a full inventory confirmation before pausing. The server handles the carried stack; vanilla may drop items that cannot fit in your inventory.
 
@@ -81,7 +81,7 @@ Dependency versions must match the Minecraft version being launched.
 - Chest Tracker retrieval from containers explicitly cached inside the active Litematica selection on supported versions.
 - Void Warehouse: retrieve missing materials from the server warehouse and optionally include its stock in the material list's available counts. The server needs a matching version of [Neko-Carpet-Addition](https://github.com/YoshinoShizuka/Neko-Carpet-Addition), with both the `voidWarehouse` and `voidWarehouseRestock` Carpet rules enabled.
 - Void Warehouse leftovers: restocking hands out whole stacks, so unused remainders are returned to the warehouse in bulk - once printing stops, and while printing whenever 3 or fewer inventory slots are free. Only items the warehouse actually supplied are returned; your own stacks are never touched.
-- Void Warehouse direct placement: in survival mode, ordinary block placements prefer stock held by the server warehouse. The server reserves one item for vanilla placement, without sending a stack through your inventory; carried materials remain available. Cancelled or failed attempts normally refund it. If a third-party hook throws after placement starts and the outcome is uncertain, that one item is charged conservatively. Requires Minecraft 1.21.11+ and a matching Neko-Carpet-Addition server with `voidWarehouse`, `voidWarehouseRestock` and the new `voidWarehouseDirectPlace` rule enabled. The new server rule defaults to `false`.
+- Void Warehouse direct placement: in survival mode, ordinary block placements prefer stock held by the server warehouse. The server reserves one item for vanilla placement, without sending a stack through your inventory; carried materials remain available. Cancelled or failed attempts normally refund it. If a third-party hook throws after placement starts and the outcome is uncertain, that one item is charged conservatively. Requires a matching Neko-Carpet-Addition server with `voidWarehouse`, `voidWarehouseRestock` and the new `voidWarehouseDirectPlace` rule enabled. The new server rule defaults to `false`.
 - With Easy Place enabled, precise warehouse placement uses server-side Servux to preserve supported facing and block-state properties, respecting its Easy Place settings and permissions. Update both the printer and Neko-Carpet-Addition to matching versions with this support (R2), and install Servux on the server; no additional client dependency is needed. Older servers or servers without Servux keep the usual precise placement and restock path. Easy Place can stay enabled throughout.
 - Buckets, tools, repeated clicks and specialized block items such as doors, beds and signs keep the usual placement and restock path. Unsupported servers, empty warehouse candidates and rejected direct clicks also fall back to that path. Direct placement uses server-confirmed block updates; material list stock snapshots are never used to authorize consumption. Server rules are renegotiated every 5 seconds.
 - Enable `voidWarehouseRestock`, `voidWarehouseDirectPlace`, `voidWarehouseMaterialList` and `voidWarehouseReturn` in the printer settings as needed. All four client options are disabled by default. Direct placement has its own client switch; the separate restock switch controls inventory restocking during fallback.
@@ -140,7 +140,7 @@ If a vanilla block is placed incorrectly even at a conservative work interval, s
 
 ## Building
 
-JDK 25 is recommended when building the complete multi-version Wrapper.
+JDK 25 is required. Build all three supported Minecraft targets and the Wrapper with:
 
 ```bash
 ./gradlew :fabricWrapper:build
@@ -153,7 +153,9 @@ Build outputs:
 
 The first build downloads Minecraft and mod dependencies and may require a working connection to their Maven repositories.
 
-Push builds compile and package every supported version, but run tests only for the main development version in `versions/mainProject`. Pull requests keep the full test matrix; releases retain all checks for the selected version set. Manual runs of the `build` workflow default to `full`, with `main` also available. The local build command above still runs all checks. Runs of the `build` workflow upload a `gradle-profile` artifact with task timings; compare it with the Actions step timings to distinguish cache restoration from compilation and tests.
+Push builds on `master` compile and package all three supported versions, but run tests only for the main development version in `versions/mainProject` (currently `26.1`). Pull requests keep the full test matrix. Manual runs of the `build` workflow default to `full`, with `main` also available. The local build command above still runs all checks. Runs of the `build` workflow upload a `gradle-profile` artifact with task timings; compare it with the Actions step timings to distinguish cache restoration from compilation and tests.
+
+For a Beta release, run the `release` workflow from `master` and provide `target_release_tag`. It builds the complete Wrapper with all checks, uploads the Wrapper and all three standalone JARs to the specified GitHub Release, and publishes the Wrapper to Modrinth. There is no separate legacy version set on `master`.
 
 ## Acknowledgements
 

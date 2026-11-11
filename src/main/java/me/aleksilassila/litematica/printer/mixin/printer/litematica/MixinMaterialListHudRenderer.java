@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.mixin.printer.litematica;
 
-//#if MC >= 12111
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
 import fi.dy.masa.litematica.materials.MaterialListHudRenderer;
@@ -33,4 +32,3 @@ public abstract class MixinMaterialListHudRenderer {
                 : entry.getCountMissing();
     }
 }
-//#endif

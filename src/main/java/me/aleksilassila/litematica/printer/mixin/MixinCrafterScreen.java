@@ -1,4 +1,3 @@
-//#if MC >= 12004
 package me.aleksilassila.litematica.printer.mixin;
 
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -16,4 +15,3 @@ public class MixinCrafterScreen {
         if (RuntimeAccess.get().containerSync().guardManualInputBeforePrediction()) ci.cancel();
     }
 }
-//#endif

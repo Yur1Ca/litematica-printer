@@ -17,9 +17,7 @@ final class VoidWarehousePlacementHit {
                 || hit.getDirection().getAxis() != Direction.Axis.Y
                 || !Double.isFinite(reach) || reach <= 0
                 || !Double.isFinite(eye.x) || !Double.isFinite(eye.y) || !Double.isFinite(eye.z)) return hit;
-        //#if MC >= 12111
         if (hit.isWorldBorderHit()) return hit;
-        //#endif
         Vec3 point = hit.getLocation();
         double faceY = target.getY() + (hit.getDirection() == Direction.UP ? 1.0 : 0.0);
         // Custom offsets may encode ordinary slab/stair placement semantics; leave them intact.

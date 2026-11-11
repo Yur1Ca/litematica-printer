@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.mixin.printer.litematica;
 
-//#if MC >= 12111
 import fi.dy.masa.litematica.materials.MaterialListEntry;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseMaterialCache;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseMaterialCounts;
@@ -28,4 +27,3 @@ public abstract class MixinMaterialListEntry {
         }
     }
 }
-//#endif

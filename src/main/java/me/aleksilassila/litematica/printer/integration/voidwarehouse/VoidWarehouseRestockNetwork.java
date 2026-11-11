@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import neko.voidwarehouse.restock.PrinterTakePayload;
 import neko.voidwarehouse.restock.PrinterTakeResultPayload;
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerClicks;
@@ -73,11 +72,7 @@ public final class VoidWarehouseRestockNetwork {
 
     private static void registerTakePayload() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.serverboundPlay().register(PrinterTakePayload.TYPE, PrinterTakePayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playC2S().register(PrinterTakePayload.TYPE, PrinterTakePayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // Integrated servers share this registry and the identical payload class.
         }
@@ -108,13 +103,8 @@ public final class VoidWarehouseRestockNetwork {
      */
     private static void registerResultReceiver() {
         try {
-            //#if MC >= 260100
             PayloadTypeRegistry.clientboundPlay().register(
                     PrinterTakeResultPayload.TYPE, PrinterTakeResultPayload.CODEC);
-            //#else
-            //$$ PayloadTypeRegistry.playS2C().register(
-            //$$         PrinterTakeResultPayload.TYPE, PrinterTakeResultPayload.CODEC);
-            //#endif
         } catch (IllegalArgumentException alreadyRegisteredByServerMod) {
             // 单人环境下服务端模组先注册过了。类型名与 codec 两端完全相同，
             // 谁注册的没有任何区别，直接用即可。
@@ -217,4 +207,3 @@ public final class VoidWarehouseRestockNetwork {
         return nonce;
     }
 }
-//#endif

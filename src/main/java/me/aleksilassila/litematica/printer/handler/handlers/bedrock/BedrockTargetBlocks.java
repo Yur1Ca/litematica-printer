@@ -21,11 +21,9 @@ public final class BedrockTargetBlocks {
                 || state.is(Blocks.END_PORTAL)) {
             return true;
         }
-        //#if MC > 12004
         if (state.is(Blocks.VAULT) || state.is(Blocks.TRIAL_SPAWNER)) {
             return true;
         }
-        //#endif
         for (String rule : Configs.Bedrock.BEDROCK_WHITELIST.getStrings()) {
             if (FilterUtils.matchBlockName(rule, state)) {
                 return true;

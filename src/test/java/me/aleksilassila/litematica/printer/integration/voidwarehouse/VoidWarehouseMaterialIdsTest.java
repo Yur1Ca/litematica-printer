@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 
-//#if MC >= 12111
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -97,4 +96,3 @@ class VoidWarehouseMaterialIdsTest {
                 "丢掉命名空间的写法会走样，说明这条断言是会报警的");
     }
 }
-//#endif

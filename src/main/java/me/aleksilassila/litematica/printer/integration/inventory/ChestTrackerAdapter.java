@@ -41,13 +41,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-//#if MC >= 12104
 import red.jackf.chesttracker.api.memory.Memory;
 import red.jackf.chesttracker.api.memory.MemoryBank;
 import red.jackf.chesttracker.api.memory.MemoryKey;
 import red.jackf.chesttracker.api.memory.MemoryBankAccess;
 import red.jackf.chesttracker.api.providers.ProviderUtils;
-//#endif
 
 /** Optional Chest Tracker world-container material provider. */
 public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComponent {
@@ -385,7 +383,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
         List<me.aleksilassila.litematica.printer.printer.PrinterBox> boxes = LitematicaUtils.createSelection1Boxes();
         if (boxes.isEmpty()) return 0;
         int added = 0;
-        //#if MC >= 12104
         MemoryBank bank = MemoryBankAccess.INSTANCE.getLoaded().orElse(null);
         var key = ProviderUtils.getPlayersCurrentKey().orElse(null);
         MemoryKey memoryKey = bank == null || key == null ? null : bank.getKey(key).orElse(null);
@@ -400,7 +397,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
                 }
             }
         }
-        //#endif
         if (added > 0) this.selectedContainers.save();
         return added;
     }
@@ -806,7 +802,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
 
     private void rebuildIndex() {
         this.index.clear();
-        //#if MC >= 12104
         MemoryBank bank = MemoryBankAccess.INSTANCE.getLoaded().orElse(null);
         var key = ProviderUtils.getPlayersCurrentKey().orElse(null);
         if (bank == null || key == null) return;
@@ -845,7 +840,6 @@ public final class ChestTrackerAdapter implements InventoryProvider, RuntimeComp
                 }
             }
         }
-        //#endif
     }
 
     private List<Candidate> orderedCandidates(List<Item> items) {

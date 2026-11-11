@@ -18,26 +18,14 @@ public class TakeItOutEmptyBoxSelectionTest {
 
     private static ItemStack full() {
         var box = new ItemStack(Items.SHULKER_BOX);
-        //#if MC >= 12006
         box.set(net.minecraft.core.component.DataComponents.CONTAINER,
                 net.minecraft.world.item.component.ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIAMOND, 64))));
-        //#else
-        //$$ var stored = new ItemStack(Items.DIAMOND, 64).save(new net.minecraft.nbt.CompoundTag());
-        //$$ stored.putByte("Slot", (byte) 0);
-        //$$ var items = new net.minecraft.nbt.ListTag();
-        //$$ items.add(stored);
-        //$$ box.getOrCreateTagElement("BlockEntityTag").put("Items", items);
-        //#endif
         return box;
     }
 
     private static ItemStack namedEmpty() {
         var box = new ItemStack(Items.SHULKER_BOX);
-        //#if MC >= 12006
         box.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, StringUtils.literal("empty box"));
-        //#else
-        //$$ box.setHoverName(StringUtils.literal("empty box"));
-        //#endif
         return box;
     }
 

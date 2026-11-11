@@ -12,9 +12,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
-//#if MC >= 12101
 import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
-//#endif
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -46,12 +44,10 @@ public abstract class MixinClientPacketListener {
         packet.runUpdates(ClientBlockUpdateRouter::accept);
     }
 
-    //#if MC >= 12101
     @Inject(method = "handleBlockChangedAck", at = @At("RETURN"))
     private void acknowledgeBedrockToolTick(ClientboundBlockChangedAckPacket packet, CallbackInfo ci) {
         var runtime = RuntimeAccess.currentOrNull();
         if (runtime != null) runtime.events().publish(new RuntimeEvent.BlockActionAcknowledged(
                 ((ClientPacketListener) (Object) this).getConnection(), packet.sequence()));
     }
-    //#endif
 }

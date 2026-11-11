@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.utils;
 
-//#if MC >= 260100
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import me.aleksilassila.litematica.printer.utils.minecraft.IdentifierUtils;
@@ -141,4 +140,3 @@ class CoverMaterialFilterTest {
         method.invoke(holder, tags);
     }
 }
-//#endif

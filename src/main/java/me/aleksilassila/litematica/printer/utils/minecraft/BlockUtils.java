@@ -11,19 +11,11 @@ import org.jetbrains.annotations.NotNull;
 
 public class BlockUtils {
     public static boolean isReplaceable(BlockState blockState) {
-        //#if MC > 11902
         return blockState.canBeReplaced();
-        //#else
-        //$$ return blockState.getMaterial().isReplaceable();
-        //#endif
     }
 
     public static @NotNull Block getBlock(Identifier blockId) {
-        //#if MC > 12101
         return BuiltInRegistries.BLOCK.getValue(blockId);
-        //#else
-        //$$ return BuiltInRegistries.BLOCK.get(blockId);
-        //#endif
     }
 
     public static String getBlockName(Block block) {

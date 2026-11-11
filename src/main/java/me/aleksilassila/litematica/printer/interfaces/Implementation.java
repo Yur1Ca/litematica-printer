@@ -46,14 +46,9 @@ public class Implementation {
             CartographyTableBlock.class,    // 制图台
             GrindstoneBlock.class,          // 砂轮
             StonecutterBlock.class,         // 切石机
-            //#if MC < 12109
-            //$$ FletchingTableBlock.class, // 制箭台
-            //#endif
             SmokerBlock.class,              // 烟熏炉
             BlastFurnaceBlock.class,        // 高炉
-            //#if MC >= 12003
             CrafterBlock.class,             // 合成器（自动合成台）
-            //#endif
             SignBlock.class,                // 告示牌（右键打开编辑界面）
     };
 
@@ -64,11 +59,9 @@ public class Implementation {
      * @return 是否可以交互
      */
     public static boolean isInteractive(Block block) {
-        //#if MC > 12004
         if (block == Blocks.VAULT) {
             return true;
         }
-        //#endif
         for (Class<?> clazz : interactiveBlocks) {
             if (clazz.isInstance(block)) {
                 return true;

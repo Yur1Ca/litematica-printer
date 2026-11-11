@@ -77,12 +77,8 @@ class InventoryRecoveryMixinContractTest {
         types.add(net.minecraft.network.protocol.game.ServerboundInteractPacket.class);
         types.add(net.minecraft.network.protocol.game.ServerboundUseItemOnPacket.class);
         types.add(net.minecraft.network.protocol.game.ServerboundUseItemPacket.class);
-        //#if MC >= 12104
         types.add(net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket.class);
         types.add(net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket.class);
-        //#else
-        //$$ types.add(net.minecraft.network.protocol.game.ServerboundPickItemPacket.class);
-        //#endif
         var field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
         field.setAccessible(true);
         var unsafe = (sun.misc.Unsafe) field.get(null);

@@ -67,9 +67,7 @@ public class DefaultGuide extends Guide {
             // 水平方向方块（HorizontalDirectionalBlock、石切机等）
             if (requiredBlock instanceof HorizontalDirectionalBlock
                     || requiredBlock instanceof StonecutterBlock
-                    //#if MC >= 12105
                     || requiredBlock instanceof FlowerBedBlock
-                    //#endif
             ) {
                 // 栅栏门已由 FenceGateGuide 处理，这里不再特殊反向
                 action.setLookDirection(facing.getOpposite());
@@ -78,11 +76,9 @@ public class DefaultGuide extends Guide {
             if (requiredBlock instanceof BaseEntityBlock) {
                 if (requiredState.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
                     Direction entityFacing = facing;
-                    //#if MC >= 11904
                     if (requiredBlock instanceof DecoratedPotBlock || requiredBlock instanceof CampfireBlock) {
                         entityFacing = entityFacing.getOpposite();
                     }
-                    //#endif
                     action.setSides(entityFacing).setLookDirection(entityFacing.getOpposite());
                 }
                 if (requiredState.hasProperty(BlockStateProperties.FACING)) {

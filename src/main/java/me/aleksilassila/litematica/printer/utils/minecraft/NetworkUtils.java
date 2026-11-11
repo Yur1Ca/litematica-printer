@@ -99,9 +99,7 @@ public class NetworkUtils {
                 lookYaw,
                 lookPitch,
                 playerEntity.onGround()
-                //#if MC > 12101
                 , playerEntity.horizontalCollision
-                //#endif
         ));
     }
 
@@ -126,9 +124,7 @@ public class NetworkUtils {
         try {
             BYPASS_QUEUED_LOOK_OVERRIDE.set(true);
             return new ServerboundMovePlayerPacket.Rot(look.yaw, look.pitch, player.onGround()
-                    //#if MC > 12101
                     , player.horizontalCollision
-                    //#endif
             );
         } finally {
             BYPASS_QUEUED_LOOK_OVERRIDE.set(false);

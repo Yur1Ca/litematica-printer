@@ -21,11 +21,9 @@ import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
-//#if MC >= 12111
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementNetwork;
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehousePlacementPolicy;
 import net.minecraft.world.level.block.Block;
-//#endif
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
@@ -96,7 +94,6 @@ public final class PrintPlacementExecutor {
         Predicate<ItemStack> requiredStackPredicate = action.getRequiredStackPredicate();
         Vec3 hitModifier = this.litematica.usePrecisionPlacement(blockPos, context.requiredState);
         boolean warehousePlace = false;
-        //#if MC >= 12111
         boolean warehouseEligible = VoidWarehousePlacementPolicy.supports(action, requiredItems, hitModifier);
         if (warehouseEligible && VoidWarehousePlacementNetwork.isNegotiating()) {
             // Do not withdraw a legacy stack while the first capability reply is still on its way.
@@ -128,7 +125,6 @@ public final class PrintPlacementExecutor {
             VoidWarehousePlacementNetwork.recordInventoryFallback(requiredItems, blockPos,
                     action.getClass().getSimpleName(), warehouseEligible, hitModifier != null);
         }
-        //#endif
         if (!warehousePlace && context.client.player.containerMenu != context.client.player.inventoryMenu) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.WAITING_ITEM_SYNC);
             // Menu closure does not add material. Keep this target retryable instead of
@@ -226,14 +222,12 @@ public final class PrintPlacementExecutor {
             return PrintPlacementResult.cancelled(true);
         }
         this.actionBroker.setExpectedStackPredicate(requiredStackPredicate);
-        //#if MC >= 12111
         if (warehousePlace && !(hitModifier == null
                 ? this.actionBroker.setWarehousePlacement(blockPos, Block.getId(context.currentState))
                 : this.actionBroker.setWarehouseStatePlacement(blockPos, Block.getId(context.currentState), context.requiredState))) {
             this.actionBroker.cancelQueue();
             return PrintPlacementResult.cancelled(false);
         }
-        //#endif
         if (hitModifier != null) {
             this.actionBroker.useProtocolHitModifier(hitModifier);
         }

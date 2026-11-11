@@ -86,21 +86,6 @@ public class PinYinSearchUtils {
     }
 
     /**
-     * 判断中文字符串是否包含指定拼音片段
-     * @param zh 中文字符串
-     * @param py 拼音片段（大小写不敏感）
-     * @return true=包含，false=不包含
-     */
-    public static boolean hasPinYin(@Nullable String zh, @Nullable String py) {
-        // 空值快速返回
-        if (zh == null || zh.isEmpty() || py == null || py.isEmpty()) {
-            return false;
-        }
-        String lowerPy = py.toLowerCase();
-        return getPinYin(zh).stream().anyMatch(s -> s.contains(lowerPy));
-    }
-
-    /**
      * 生成拼音组合（全拼 + 简拼）
      * @param charPinyinList 每个字符的拼音数组列表
      * @return 全拼+简拼组合列表

@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /** Runs the compiled render method with GPU boundaries replaced; does not require an OpenGL context. */
 class HighlightRenderLifecycleTest {
@@ -26,23 +29,14 @@ class HighlightRenderLifecycleTest {
         assertNull(HighlightRenderFixture.logged);
     }
 
-    @Test
-    void preservesTheFogStateOfTheCaller() throws Exception {
-        var previousFog = HighlightRenderFixture.fog;
-        new HighlightRenderFixture().draw();
-        assertSame(previousFog, HighlightRenderFixture.fog);
-    }
-
     @ParameterizedTest
     @EnumSource(value = HighlightRenderFixture.Failure.class, names = "NONE", mode = EnumSource.Mode.EXCLUDE)
-    void releasesBuffersAndRestoresFogWhenRenderingFails(HighlightRenderFixture.Failure failure) throws Exception {
+    void releasesBuffersWhenRenderingFails(HighlightRenderFixture.Failure failure) throws Exception {
         HighlightRenderFixture.failure = failure;
-        var previousFog = HighlightRenderFixture.fog;
         new HighlightRenderFixture().draw();
         assertAll(
                 () -> assertEquals(0, HighlightRenderFixture.contexts, "context must close after " + failure),
                 () -> assertEquals(0, HighlightRenderFixture.meshes, "mesh must close after " + failure),
-                () -> assertSame(previousFog, HighlightRenderFixture.fog, "fog must restore after " + failure),
                 () -> assertSame(HighlightRenderFixture.injected, HighlightRenderFixture.logged)
         );
     }

@@ -5,7 +5,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
-import org.objectweb.asm.*;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.SimpleRemapper;
 import org.objectweb.asm.tree.ClassNode;
@@ -19,7 +22,6 @@ import org.objectweb.asm.tree.ClassNode;
 public final class HighlightRenderFixture extends ClassLoader {
     private static final String RENDERER = "me/aleksilassila/litematica/printer/integration/quickshulker/HighlightBlockRenderer";
     static int contexts, meshes, draws;
-    static Fog fog;
     static Failure failure;
     static RuntimeException injected;
     static Throwable logged;
@@ -30,7 +32,6 @@ public final class HighlightRenderFixture extends ClassLoader {
 
     static void reset() {
         contexts = meshes = draws = 0;
-        fog = new Fog();
         failure = Failure.NONE;
         injected = new IllegalStateException("injected GPU boundary failure");
         logged = null;
@@ -70,16 +71,10 @@ public final class HighlightRenderFixture extends ClassLoader {
         types.put("fi/dy/masa/malilib/render/RenderContext", Type.getInternalName(Context.class));
         types.put("fi/dy/masa/malilib/render/RenderUtils", Type.getInternalName(Geometry.class));
         types.put("fi/dy/masa/malilib/render/MaLiLibPipelines", Type.getInternalName(Pipelines.class));
-        types.put("com/mojang/blaze3d/systems/RenderSystem", Type.getInternalName(RenderState.class));
-        types.put("com/mojang/blaze3d/vertex/Tesselator", Type.getInternalName(Tess.class));
         types.put("com/mojang/blaze3d/vertex/BufferBuilder", Type.getInternalName(Buffer.class));
         types.put("com/mojang/blaze3d/vertex/MeshData", Type.getInternalName(Mesh.class));
-        for (String name : new String[] {"com/mojang/blaze3d/buffers/GpuBufferSlice",
-                "com/mojang/renderpearl/api/buffers/GpuBufferSlice"}) {
-            types.put(name, Type.getInternalName(Fog.class));
-        }
         for (String name : new String[] {"net/minecraft/core/BlockPos", "net/minecraft/world/phys/Vec3",
-                "org/joml/Matrix4f", "org/joml/Matrix4fc", "fi/dy/masa/malilib/util/data/Color4f",
+                "fi/dy/masa/malilib/util/data/Color4f",
                 "com/mojang/blaze3d/vertex/VertexSorting", "com/mojang/blaze3d/pipeline/RenderPipeline",
                 "com/mojang/renderpearl/api/pipeline/RenderPipeline"}) {
             types.put(name, "java/lang/Object");
@@ -94,20 +89,13 @@ public final class HighlightRenderFixture extends ClassLoader {
     }
 
     void draw() throws Exception {
-        if (draw.getParameterCount() == 2) draw.invoke(renderer, new Object(), Set.of(new Object()));
-        else draw.invoke(renderer, new Object(), new Object(), Set.of(new Object()));
+        draw.invoke(renderer, new Object(), Set.of(new Object()));
     }
 
     public static void log(Throwable error) { logged = error; }
     private static void fail(Failure stage) { if (failure == stage) throw injected; }
 
-    public static final class Fog {}
-    public static final class RenderState {
-        public static Fog getShaderFog() { return fog; }
-        public static void setShaderFog(Fog value) { fog = value; }
-    }
     public static final class Pipelines { public static final Object POSITION_COLOR_TRANSLUCENT = new Object(); }
-    public static final class Tess { public static Tess getInstance() { return new Tess(); } }
     public static final class Geometry {
         public static void renderAreaSidesBatched(Object a, Object b, Object color, double offset, Buffer buffer) {
             fail(Failure.GEOMETRY);

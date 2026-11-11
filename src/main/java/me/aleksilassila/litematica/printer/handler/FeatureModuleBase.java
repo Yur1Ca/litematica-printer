@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler;
 
-import fi.dy.masa.litematica.world.WorldSchematic;
 import fi.dy.masa.malilib.config.options.ConfigBoolean;
 import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -39,7 +38,6 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     @Nullable
     private final AtomicReference<PrinterBox> externalScanBoxRef;
     private final InteractionBoxTracker interactionBoxTracker;
-    private final GuiBlockInfoBuffer guiBlockInfoBuffer = new GuiBlockInfoBuffer();
     private final ModuleScanCoordinator scanCoordinator;
     private final ModuleSelectionScope selectionScope;
     private final ModuleRuntimeLoop runtimeLoop;
@@ -120,7 +118,6 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         this.updateVariables(TickContext.capture());
         this.resetScanRuntime();
         this.resetPlayerTracking();
-        this.guiBlockInfoBuffer.resetForTracking(false);
         this.iterationConsumedEffectiveExecution = true;
         this.clearScanSourceCache();
         this.runtimeLoop.reset();
@@ -214,48 +211,6 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         return true;
     }
 
-    protected boolean shouldTrackGuiBlockInfo() {
-        return false;
-    }
-
-    GuiBlockInfoBuffer guiBuffer() {
-        return this.guiBlockInfoBuffer;
-    }
-
-    @Nullable
-    GuiBlockInfo createGuiBlockInfo(boolean enabled, BlockPos pos) {
-        if (!enabled) {
-            return null;
-        }
-        if (isSchematicBlockHandler()) {
-            WorldSchematic schematic = this.litematica.schematicWorld();
-            return new GuiBlockInfo(level, schematic, pos);
-        }
-        return new GuiBlockInfo(level, null, pos);
-    }
-
-    @Nullable
-    public GuiBlockInfo getCurrentRenderGuiBlockInfo() {
-        return this.guiBlockInfoBuffer.current();
-    }
-
-    @Nullable
-    public GuiBlockInfo getGuiBlockInfo() {
-        return this.guiBlockInfoBuffer.latest();
-    }
-
-    public void setGuiBlockInfo(@Nullable GuiBlockInfo guiBlockInfo) {
-        this.guiBlockInfoBuffer.add(guiBlockInfo);
-    }
-
-    public int getGuiBlockInfoQueueSize() {
-        return this.guiBlockInfoBuffer.size();
-    }
-
-    public int getRenderIndex() {
-        return this.guiBlockInfoBuffer.renderIndex();
-    }
-
     boolean isConfigAllowExecute() {
         return ModuleEnablePolicy.allows(this);
     }
@@ -290,10 +245,6 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
 
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         return playerInteractionBox;
-    }
-
-    protected Iterable<BlockPos> getFilteredIterationPositions(PrinterBox playerInteractionBox, Predicate<BlockPos> candidatePredicate) {
-        return ModuleCandidateSource.raw(this, playerInteractionBox, candidatePredicate);
     }
 
     protected Iterable<BlockPos> getCachedFilteredIterationPositions(PrinterBox playerInteractionBox, ScanIntent intent, Predicate<BlockPos> candidatePredicate) {

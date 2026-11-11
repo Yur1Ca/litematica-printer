@@ -360,9 +360,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 1000)
                 .build();
 
-        // Informational: the server hard-codes the break threshold at 0.7 (delta*(elapsed+1) >= 0.7
-        // on STOP). Mining speed is the same whether this is 70 or 100 — it is kept for
-        // compatibility/display only.
+        // Delayed confirmation uses this configured progress threshold. The regular mining
+        // path uses 0.7, matching the server's delta*(elapsed+1) >= 0.7 check on STOP.
         public static final ConfigInteger BREAK_PROGRESS_THRESHOLD = integer("breakProgressThreshold")
                 .defaultValue(100)
                 .range(70, 100)

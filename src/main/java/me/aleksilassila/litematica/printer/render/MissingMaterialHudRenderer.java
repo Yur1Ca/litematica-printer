@@ -116,8 +116,8 @@ public final class MissingMaterialHudRenderer {
             return;
         }
         Render2DUtils.pushPose();
-        Render2DUtils.translate(x, y, 0.0D);
-        Render2DUtils.scale(scale, scale, 1.0F);
+        Render2DUtils.translate(x, y);
+        Render2DUtils.scale(scale, scale);
         Render2DUtils.drawItem(stack, 0, 0);
         Render2DUtils.popPose();
     }

@@ -132,7 +132,6 @@ class ModuleIterationContinuationTest {
             set(this.module, "timing", RuntimeTiming.disabled());
             set(this.module, "scanEngine", new ScanEngine(() -> RuntimeEpoch.INITIAL, () -> null, this.cache));
             set(this.module, "actionBroker", this.broker);
-            set(this.module, "guiBlockInfoBuffer", new GuiBlockInfoBuffer());
             SortedSchematicTargetQueue queue = new SortedSchematicTargetQueue(null);
             this.module.targets = new PrintTargetScheduler(queue, () -> {});
             this.module.targets.setSortedMode(true);

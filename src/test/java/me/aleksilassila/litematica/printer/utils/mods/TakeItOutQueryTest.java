@@ -16,7 +16,7 @@ class TakeItOutQueryTest {
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
 
     @Test void everyQueryReadsCurrentEntryValuesAndCollectionTypes() throws Exception {
-        try (var f = new TakeItOutQueryFixture(true)) {
+        try (var f = new TakeItOutQueryFixture()) {
             var stone = new Entry(new ItemStack(Items.STONE), 1);
             var dirt = new Entry(new ItemStack(Items.DIRT), 1);
             Client.WORLD_CONTAINER_ITEMS = List.of(stone, dirt);
@@ -29,7 +29,7 @@ class TakeItOutQueryTest {
     }
 
     @Test void emptySelectionReadsChangedEntriesAndReturnsAnIndependentStack() throws Exception {
-        try (var f = new TakeItOutQueryFixture(true)) {
+        try (var f = new TakeItOutQueryFixture()) {
             var entry = new Entry(new ItemStack(Items.STONE), 1);
             var required = new ItemStack(Items.SHULKER_BOX);
             assertTrue(f.empty(required, List.of(entry)).is(Items.SHULKER_BOX));
@@ -43,7 +43,7 @@ class TakeItOutQueryTest {
     }
 
     @Test void disabledAndAbsentPluginsDoNotExposePreviouslyAvailableMaterials() throws Exception {
-        try (var f = new TakeItOutQueryFixture(true)) {
+        try (var f = new TakeItOutQueryFixture()) {
             Client.WORLD_CONTAINER_ITEMS = List.of(new Entry(new ItemStack(Items.STONE), 1));
             assertEquals(Set.of(Items.STONE), f.available());
             Client.AUTOTAKEOUT = false; assertTrue(f.available().isEmpty());
@@ -56,7 +56,7 @@ class TakeItOutQueryTest {
     }
 
     @Test void unavailableEntryShapeStillFallsBackWithoutAStaleSuccessfulResult() throws Exception {
-        try (var f = new TakeItOutQueryFixture(true)) {
+        try (var f = new TakeItOutQueryFixture()) {
             Client.WORLD_CONTAINER_ITEMS = List.of(new Entry(new ItemStack(Items.STONE), 1));
             assertEquals(Set.of(Items.STONE), f.available());
             Client.WORLD_CONTAINER_ITEMS = List.of(new MissingEntry());
@@ -66,7 +66,7 @@ class TakeItOutQueryTest {
     }
 
     @Test void legacyAndModernRequestSignaturesKeepLiveSingleItemModeAndUnavailableFallback() throws Exception {
-        try (var f = new TakeItOutQueryFixture(true)) {
+        try (var f = new TakeItOutQueryFixture()) {
             var stack = new ItemStack(Items.STONE);
             f.sourceType = LegacySources.class;
             assertEquals(true, f.call("tryRequestFromWorldContainers", new Class<?>[]{ItemStack.class}, stack));

@@ -18,10 +18,6 @@ public class BlockUtils {
         return BuiltInRegistries.BLOCK.getValue(blockId);
     }
 
-    public static String getBlockName(Block block) {
-        return block.getName().getString();
-    }
-
     public static Identifier getKey(Block block) {
         return BuiltInRegistries.BLOCK.getKey(block);
     }

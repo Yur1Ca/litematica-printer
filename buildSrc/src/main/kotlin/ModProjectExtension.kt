@@ -79,11 +79,8 @@ val Project.placeholderProps: Map<String, Any?>
         "mod_homepage" to modHomepage,
         "mod_license" to modLicense,
         "mod_sources" to modSources,
-        "loader_version" to fabricLoaderVersion,
-        "fabric_api_version" to fabricApiVersion,
         "minecraft_dependency" to mcDependency,
         "compatibility_level" to mixinJavaVersion,
-        "crafter_client_mixins" to "\"MixinCrafterScreen\",",
         "beacon_client_mixins" to if (mcVersionInt < 260200) {
             "\"printer.mc.BeaconBlockEntityAccessor\",\n" +
                     "    \"printer.mc.BeaconButtonAccessor\",\n" +
@@ -91,15 +88,6 @@ val Project.placeholderProps: Map<String, Any?>
         } else {
             ""
         },
-        "chesttracker_client_mixins" to ("\"printer.chesttracker.ItemListWidgetAccessor\",\n" +
-                "    \"printer.chesttracker.ItemListWidgetMixin\","),
-        "rewritten_easy_place_mixins" to "\"printer.litematica.MixinEasyPlaceUtils\",",
-        // 保留 missing 的施工需求语义，只在 GUI/HUD 显示收集缺口。
-        "void_warehouse_litematica_mixins" to ("\"printer.litematica.MixinMaterialListEntry\",\n" +
-                "    \"printer.malilib.GuiListBaseAccessor\",\n" +
-                "    \"printer.litematica.MixinMaterialListSorter\",\n" +
-                "    \"printer.litematica.MixinMaterialListHudRenderer\",\n" +
-                "    \"printer.litematica.MixinWidgetMaterialListEntry\","),
         "malilib" to malilib,
         "litematica" to litematica
     ).filterValues { it != null }.mapValues { it.value!! }

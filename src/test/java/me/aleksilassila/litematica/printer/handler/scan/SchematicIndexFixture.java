@@ -21,12 +21,8 @@ import net.minecraft.world.level.chunk.Strategy;
 final class SchematicIndexFixture {
     final WorldSchematic world;
     final ConcurrentHashMap<Long, ChunkSchematic> chunks = new ConcurrentHashMap<>();
-    final int count;
-    final int positionsPerChunk;
 
     SchematicIndexFixture(int count, int positionsPerChunk) throws Exception {
-        this.count = count;
-        this.positionsPerChunk = positionsPerChunk;
         this.world = world(this.chunks);
         for (int i = 0; i < count; i++) {
             this.chunks.put(key(i), chunk(i, positionsPerChunk));

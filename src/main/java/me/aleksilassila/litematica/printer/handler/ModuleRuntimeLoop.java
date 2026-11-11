@@ -20,7 +20,6 @@ final class ModuleRuntimeLoop {
     }
 
     void tick(TickContext context) {
-        this.owner.guiBuffer().tickCache();
         if (this.shouldSkipByTickInterval(context)) return;
         if (!ConfigUtils.isEnable()) {
             this.owner.resetScanRuntime();

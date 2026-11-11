@@ -88,7 +88,6 @@ public final class MiningInteractionController {
             BlockPos pos = entry.pos;
             BlockState state = level.getBlockState(pos);
             if (state.isAir()) {
-                this.feedback.flushPendingBreakSound(pos);
                 this.feedback.removePending(pos);
                 iterator.remove();
                 this.clearDestroyProgress(player, pos);
@@ -115,7 +114,6 @@ public final class MiningInteractionController {
         if (player == null || level == null || this.port.client().gameMode == null) return BlockBreakResult.FAILED;
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
-            this.feedback.flushPendingBreakSound(pos);
             this.feedback.removePending(pos);
             this.pendingDelayedDestroys.remove(pos);
             if (this.port.isDestroying() && this.port.matchesDestroyTarget(pos)) this.resetDestroyState(player, pos);
@@ -217,7 +215,6 @@ public final class MiningInteractionController {
         boolean manualSound = miningFeedback || forceDelayedDestroy || !localPrediction;
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
-            this.feedback.flushPendingBreakSound(pos);
             this.feedback.removePending(pos);
             this.feedback.resetHitSound();
             MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(pos) + " path=air_or_liquid");
@@ -355,7 +352,6 @@ public final class MiningInteractionController {
 
     private void abortPrevious(LocalPlayer player, BlockPos next, Direction direction) {
         BlockPos previous = this.port.destroyPos();
-        this.feedback.clearPendingBreakSound(previous);
         NetworkUtils.sendPacket(this.port.actionPacket(Action.ABORT_DESTROY_BLOCK, previous, direction, 0));
         MineDebugLog.write("mine break abort previous=" + MineDebugLog.pos(previous) + " next=" + MineDebugLog.pos(next));
         this.resetDestroyState(player, previous);

@@ -28,11 +28,11 @@ public final class TakeItOutQueryFixture implements AutoCloseable {
     public final List<Boolean> singleItemRequests = new ArrayList<>();
     public final Class<?> utility;
 
-    public TakeItOutQueryFixture(boolean countLookups) throws Exception {
+    public TakeItOutQueryFixture() throws Exception {
         CURRENT.set(this);
         Client.AUTOTAKEOUT = true; Client.TAKE_SINGLE_ITEM_MODE = false;
         Client.WORLD_CONTAINER_ITEMS = List.of(); Client.awaitingStack = ItemStack.EMPTY;
-        utility = new Loader(countLookups).loadClass(TakeItOutUtils.class.getName());
+        utility = new Loader().loadClass(TakeItOutUtils.class.getName());
     }
 
     public Object call(String method, Class<?>[] parameters, Object... args) throws Exception {
@@ -98,8 +98,7 @@ public final class TakeItOutQueryFixture implements AutoCloseable {
     @Override public void close() { CURRENT.remove(); }
 
     private static final class Loader extends ClassLoader {
-        private final boolean countLookups;
-        Loader(boolean countLookups) { super(TakeItOutQueryFixture.class.getClassLoader()); this.countLookups = countLookups; }
+        Loader() { super(TakeItOutQueryFixture.class.getClassLoader()); }
         @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             String prefix = "me.aleksilassila.litematica.printer.utils.mods.TakeItOut";
             if (!name.startsWith(prefix) || name.startsWith(TakeItOutQueryFixture.class.getName())) return super.loadClass(name, resolve);
@@ -123,7 +122,7 @@ public final class TakeItOutQueryFixture implements AutoCloseable {
                                 if (!(instruction instanceof MethodInsnNode call) || !call.owner.equals("java/lang/Class")) continue;
                                 if (call.name.equals("forName") && call.desc.equals("(Ljava/lang/String;)Ljava/lang/Class;")) {
                                     call.owner = Type.getInternalName(TakeItOutQueryFixture.class); call.name = "resolve";
-                                } else if (countLookups && call.name.equals("getMethod")) {
+                                } else if (call.name.equals("getMethod")) {
                                     call.owner = Type.getInternalName(TakeItOutQueryFixture.class); call.name = "method";
                                     call.desc = "(Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;";
                                     call.setOpcode(Opcodes.INVOKESTATIC); call.itf = false;

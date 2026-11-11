@@ -87,22 +87,6 @@ public final class CooldownUtils implements RuntimeComponent {
     }
 
     /**
-     * 清空指定维度的所有冷却数据
-     */
-    public void clearDimensionCooldowns(ClientLevel level) {
-        Identifier dimension = level.dimension().identifier();
-        cooldownMap.keySet().removeIf(info -> info.dimension.equals(dimension));
-    }
-
-    /**
-     * 清空指定维度+指定类型的所有冷却数据（如清空某维度所有打印冷却）
-     */
-    public void clearTypeCooldowns(ClientLevel level, String type) {
-        Identifier dimension = level.dimension().identifier();
-        cooldownMap.keySet().removeIf(info -> info.dimension.equals(dimension) && info.type.equals(type));
-    }
-
-    /**
      * 清空所有冷却数据（模组重载/退出游戏/全局重置时调用）
      */
     public void clearAllCooldowns() {

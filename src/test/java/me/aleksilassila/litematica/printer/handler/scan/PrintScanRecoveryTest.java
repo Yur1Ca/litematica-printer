@@ -354,10 +354,6 @@ class PrintScanRecoveryTest {
             set(handler, FeatureModuleBase.class, "timing", RuntimeTiming.disabled());
             set(handler, FeatureModuleBase.class, "actionBroker",
                     new ActionBroker(() -> RuntimeEpoch.INITIAL, () -> null, null));
-            var guiConstructor = Class.forName("me.aleksilassila.litematica.printer.handler.GuiBlockInfoBuffer")
-                    .getDeclaredConstructor();
-            guiConstructor.setAccessible(true);
-            set(handler, FeatureModuleBase.class, "guiBlockInfoBuffer", guiConstructor.newInstance());
             set(handler, PrintHandler.class, "targets", this.targets);
             set(handler, PrintHandler.class, "guides", new Guides());
             set(handler, PrintHandler.class, "printTasks", this.workflows);

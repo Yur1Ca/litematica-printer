@@ -64,7 +64,6 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
     private static final Method POS = method(TARGET, "pos");
     private static final Method STATE = method(TARGET, "state");
     private static final Method CURRENT = method(TARGET, "currentProgress");
-    private static final Method PROGRESS = method(TARGET, "progress");
     private static final Method TOOL = method(TARGET, "bestToolItem");
 
     private final Object oldConfigClient = MiningInteractionRegressionTest.get(null, ConfigUtils.class, "client");
@@ -144,9 +143,7 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
 
     static final class CountingLevel extends MiningInteractionRegressionTest.Level {
         LevelChunkSection section;
-        long reads;
         @Override public BlockState getBlockState(BlockPos pos) {
-            reads++;
             return section.getBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
         }
     }
@@ -178,7 +175,6 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
             state(pos, (mixed && i % 3 == 0 ? Blocks.DIRT : Blocks.STONE).defaultBlockState());
             enqueue(pos);
         }
-        level.reads = 0;
     }
 
     void enqueue(BlockPos pos) throws Exception { ADD.invoke(queue, ANALYZE.invoke(analyzer, pos)); }
@@ -190,13 +186,13 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         var result = new ArrayList<TargetView>(targets.size());
         for (Object target : targets) {
             result.add(new TargetView((BlockPos) POS.invoke(target), (BlockState) STATE.invoke(target),
-                    (float) CURRENT.invoke(target), (float) PROGRESS.invoke(target), (Item) TOOL.invoke(target)));
+                    (float) CURRENT.invoke(target), (Item) TOOL.invoke(target)));
         }
         return result;
     }
 
     static BlockPos position(int index) { return new BlockPos(index & 15, index >>> 8, (index >>> 4) & 15); }
-    record TargetView(BlockPos pos, BlockState state, float currentProgress, float progress, Item tool) {}
+    record TargetView(BlockPos pos, BlockState state, float currentProgress, Item tool) {}
 
     @Override public void close() throws Exception {
         MiningInteractionRegressionTest.set(null, ConfigUtils.class, "client", oldConfigClient);

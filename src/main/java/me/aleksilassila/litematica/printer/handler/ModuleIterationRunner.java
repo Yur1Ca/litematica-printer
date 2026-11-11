@@ -30,12 +30,10 @@ final class ModuleIterationRunner {
         boolean interrupt = false;
         boolean didWork = false;
         boolean foundCandidate = false;
-        boolean trackGui = module.shouldTrackGuiBlockInfo();
         boolean prefilteredReachAndSelection = module.iterationPositionsPrefilterReachAndSelection();
         boolean prefilteredCooldown = module.iterationPositionsPrefilterCooldown();
         boolean exactCandidates = module.iterationPositionsAreExactCandidates();
         AtomicReference<Boolean> skip = new AtomicReference<>(false);
-        module.guiBuffer().resetForTracking(trackGui);
 
         int completedPassesBefore = module.scanEngine.metricsFor(module.getId()).completedPasses();
         Iterable<BlockPos> positions = module.getIterationPositions(interactionBox);
@@ -61,28 +59,18 @@ final class ModuleIterationRunner {
             if (!iterator.hasNext()) break;
             BlockPos pos = iterator.next();
             totalIterCount++;
-            GuiBlockInfo gui = module.createGuiBlockInfo(trackGui, pos);
-            if (prefilteredReachAndSelection || module.canReachIterationPosition(pos)) {
-                if (gui != null) gui.interacted = true;
-            } else {
-                if (gui != null) gui.interacted = false;
-                module.guiBuffer().add(gui);
+            if (!prefilteredReachAndSelection && !module.canReachIterationPosition(pos)) {
                 continue;
             }
             if (module.isSchematicBlockHandler() && !module.isSchematicBlock(pos)) {
-                module.guiBuffer().add(gui);
                 continue;
             }
             if (!prefilteredReachAndSelection && !module.isInSelectionRange(pos)) {
-                if (gui != null) gui.posInSelectionRange = false;
-                module.guiBuffer().add(gui);
                 continue;
             }
-            if (gui != null) gui.posInSelectionRange = true;
             if (!prefilteredCooldown && module.isBlockPosOnCooldown(pos)) {
                 foundCandidate = true;
                 module.onIterationDeferred(pos);
-                module.guiBuffer().add(gui);
                 continue;
             }
             if (exactCandidates || module.canIterationBlockPos(pos)) {
@@ -105,14 +93,12 @@ final class ModuleIterationRunner {
                     }
                     module.timing.finish(module.getId(), Stage.ACTION_EXECUTION, diagnosticActionStart);
                 }
-                if (gui != null) gui.execute = true;
                 boolean consumed = module.consumedEffectiveExecution();
                 if (skip.get() || maxEffectiveExec > 0 && consumed && ++effectiveExecCount >= maxEffectiveExec) {
                     interrupt = true;
                 }
                 if (consumed) didWork = true;
             }
-            module.guiBuffer().add(gui);
             if (interrupt) break;
         }
         boolean scanPaused = positions instanceof ScanCandidateIterable source

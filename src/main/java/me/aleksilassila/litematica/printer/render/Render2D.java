@@ -47,26 +47,6 @@ public class Render2D {
         // 确保底层渲染工具已初始化
         Render2DUtils.ensureInitialized();
 
-//        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
-//        sword.setDamageValue(100);
-//        sword.setCount(64);
-
-//        int y = 50;
-//        // 绘制物品图标 + 装饰
-//        Render2DUtils.drawItemWithDecorations(sword, 100, y);
-//        y += 24;
-//        // 如果你只想绘制物品图标本身（不显示数量、耐久条）
-//        Render2DUtils.drawItem(sword, 100, y);
-//        y += 24;
-//        // 绘制方块图标本身
-//        Render2DUtils.drawBlock(Blocks.DIAMOND_BLOCK, 100, y);
-//        y += 24;
-//        // 绘制方块图标，并自动显示数量、耐久条等装饰
-//        Render2DUtils.drawBlockWithDecorations(Blocks.CHEST, 100, y);
-//        y += 24;
-//        // 组合方法
-//        Render2DUtils.drawItemWithLabel(sword, 100, y, sword.getItemName().getString(), Color.WHITE, true);
-
         if (Configs.Core.RENDER_HUD.getBooleanValue()) {
             drawHudInfo(scaledWidth, scaledHeight);
         }
@@ -98,18 +78,9 @@ public class Render2D {
         }
     }
 
-    public void renderHudPreview(float scaledWidth, float scaledHeight) {
-        Render2DUtils.ensureInitialized();
-        drawHudInfo(scaledWidth, scaledHeight, true);
-    }
-
-    // ==================== HUD 进度条等信息绘制 ====================
+    // ==================== HUD 信息绘制 ====================
 
     private void drawHudInfo(float scaledWidth, float scaledHeight) {
-        this.drawHudInfo(scaledWidth, scaledHeight, false);
-    }
-
-    private void drawHudInfo(float scaledWidth, float scaledHeight, boolean forceRefresh) {
         int centerX = (int) (scaledWidth / 2);
         int centerY = (int) (scaledHeight / 2);
 
@@ -119,14 +90,14 @@ public class Render2D {
             Render2DUtils.drawString(hud("warning.lag_paused"), centerX, centerY - 22, Color.ORANGE, true, true);
         }
 
-        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight, forceRefresh);
+        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight);
         drawHudPanel(layouts.summary());
         drawHudPanel(layouts.modes());
     }
 
-    private int drawHudPanel(PanelLayout layout) {
+    private void drawHudPanel(PanelLayout layout) {
         if (layout.lines().isEmpty()) {
-            return layout.drawY();
+            return;
         }
 
         int padding = Math.max(1, Math.round(HUD_PADDING * layout.scale()));
@@ -146,12 +117,11 @@ public class Render2D {
             Render2DUtils.drawStringScaled(line.text(), textX, lineY, line.color(), true, layout.scale());
             lineY += lineStep;
         }
-        return layout.drawY() + panelHeight;
     }
 
     private PanelLayout computeHudPanelLayout(int x, int y, List<HudLine> lines, float scaledWidth, float scaledHeight, float scale) {
         if (lines.isEmpty()) {
-            return new PanelLayout(lines, x, y, 0, 0, 0, 0, scale);
+            return new PanelLayout(lines, x, y, 0, 0, 0, scale);
         }
 
         Minecraft mc = Minecraft.getInstance();
@@ -166,11 +136,11 @@ public class Render2D {
         int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
         int drawX = Math.max(0, Math.min(x, (int) scaledWidth - scaledWidthPixels));
         int drawY = Math.max(0, Math.min(y, (int) scaledHeight - scaledHeightPixels));
-        return new PanelLayout(lines, drawX, drawY, baseWidth, baseHeight, scaledWidthPixels, scaledHeightPixels, scale);
+        return new PanelLayout(lines, drawX, drawY, baseHeight, scaledWidthPixels, scaledHeightPixels, scale);
     }
 
     public HudBounds getHudBounds(float scaledWidth, float scaledHeight) {
-        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight, false);
+        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight);
         PanelLayout summaryLayout = layouts.summary();
         PanelLayout modeLayout = layouts.modes();
 
@@ -188,13 +158,12 @@ public class Render2D {
         return new HudBounds(minX, minY, Math.max(0, maxX - minX), Math.max(0, maxY - minY));
     }
 
-    private HudLayouts getHudLayouts(float scaledWidth, float scaledHeight, boolean forceRefresh) {
+    private HudLayouts getHudLayouts(float scaledWidth, float scaledHeight) {
         int baseX = Configs.Core.RENDER_HUD_X.getIntegerValue();
         int baseY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
         int scaleConfig = Configs.Core.RENDER_HUD_SCALE.getIntegerValue();
         long tick = RuntimeAccess.get().currentTick();
-        if (!forceRefresh
-                && this.cachedHudLayouts != null
+        if (this.cachedHudLayouts != null
                 && this.cachedHudTick == tick
                 && Float.compare(this.cachedHudWidth, scaledWidth) == 0
                 && Float.compare(this.cachedHudHeight, scaledHeight) == 0
@@ -309,20 +278,6 @@ public class Render2D {
         lines.add(new HudLine(hud("bedrock.network", bedrock.pendingServerUpdates(),
                 bedrock.serverUpdateTimeouts(), humanizeBedrockNetworkResult(bedrock.lastNetworkResult())),
                 new Color(255, 230, 150, 255)));
-    }
-
-    private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,
-                                 Color bgColor, Color fgColor) {
-        double clampedProgress = clamp(progress, 0.0, 1.0);
-        int barXStart = x - (barWidth / 2);
-        int barXEnd = x + (barWidth / 2);
-        int barYEnd = y + barHeight;
-        int filledWidth = (int) (clampedProgress * barWidth);
-
-        Render2DUtils.fill(barXStart, y, barXEnd, barYEnd, bgColor);
-        if (filledWidth > 0) {
-            Render2DUtils.fill(barXStart, y, barXStart + filledWidth, barYEnd, fgColor);
-        }
     }
 
     private String getActiveModeSummary() {
@@ -586,7 +541,6 @@ public class Render2D {
             List<HudLine> lines,
             int drawX,
             int drawY,
-            int baseWidth,
             int baseHeight,
             int scaledWidth,
             int scaledHeight,
@@ -605,9 +559,5 @@ public class Render2D {
     }
 
     public record HudBounds(int x, int y, int width, int height) {
-        public boolean contains(double mouseX, double mouseY) {
-            return mouseX >= this.x && mouseX <= this.x + this.width
-                    && mouseY >= this.y && mouseY <= this.y + this.height;
-        }
     }
 }

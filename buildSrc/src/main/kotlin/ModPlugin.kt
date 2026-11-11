@@ -133,7 +133,7 @@ abstract class ModPlugin : Plugin<Project> {
     private fun Project.configureResources() {
         tasks.withType<ProcessResources>().configureEach {
             inputs.properties(placeholderProps)
-            filesMatching(listOf("*.mixins.json", "*.mod.json", "META-INF/*mods.toml")) {
+            filesMatching(listOf("*.mixins.json", "*.mod.json")) {
                 expand(placeholderProps)
             }
         }
@@ -141,10 +141,8 @@ abstract class ModPlugin : Plugin<Project> {
 
     private fun Project.configureJar() {
         tasks.withType<Jar>().configureEach {
-            from(rootProject.file("LICENSE")) {
-                rename { originalName ->
-                    "${originalName}_${modArchivesBaseName}"
-                }
+            from(rootProject.file("LICENSE.md")) {
+                rename { "LICENSE_${modArchivesBaseName}" }
             }
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
             manifest {

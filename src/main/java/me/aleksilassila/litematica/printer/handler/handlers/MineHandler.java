@@ -85,11 +85,6 @@ public class MineHandler extends FeatureModuleBase {
         super.tick(context);
     }
 
-    public int getRetryQueueSize() {
-        return this.candidates.size() + this.trenchFill.targetCount()
-                + (this.activeMinePos == null ? 0 : 1);
-    }
-
     public boolean shouldKeepMiningOnIdleInput() {
         return ConfigUtils.isEnable() && ConfigUtils.isMineMode() && this.activeMinePos != null
                 && this.mc != null && this.level != null && this.player != null && this.connection != null

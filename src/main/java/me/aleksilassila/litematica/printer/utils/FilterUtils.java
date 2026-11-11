@@ -73,13 +73,6 @@ public class FilterUtils {
     }
 
     /**
-     * 匹配物品名称（封装matchName，提升语义）
-     */
-    public static boolean matchItemName(String expectedName, ItemStack itemStack) {
-        return matchName(expectedName, itemStack);
-    }
-
-    /**
      * 核心匹配逻辑：支持方块/物品的名称、标签、中文/拼音模糊匹配
      * @param expectedName 期望的名称（支持#开头的标签，逗号分隔规则参数）
      * @param targetObj    目标对象（仅支持BlockState/ItemStack）

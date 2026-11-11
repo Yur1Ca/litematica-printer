@@ -116,17 +116,6 @@ public class LitematicaUtils {
         }
     }
 
-    public static PrinterBox createSelection1BoundingBox() {
-        List<PrinterBox> boxes = createSelection1Boxes();
-        if (boxes.isEmpty()) return null;
-        Bounds merged = null;
-        for (PrinterBox box : boxes) {
-            Bounds bounds = Bounds.from(box);
-            merged = merged == null ? bounds : merged.merge(bounds);
-        }
-        return merged == null ? null : merged.toPrinterBox();
-    }
-
     public static List<PrinterBox> createSelection1Boxes() {
         AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
         if (selection == null) return List.of();
@@ -241,24 +230,6 @@ public class LitematicaUtils {
                     Math.max(pos1.getX(), pos2.getX()),
                     Math.max(pos1.getY(), pos2.getY()),
                     Math.max(pos1.getZ(), pos2.getZ())
-            );
-        }
-
-        static Bounds from(PrinterBox box) {
-            if (box == null) {
-                return null;
-            }
-            return new Bounds(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
-        }
-
-        Bounds merge(Bounds other) {
-            return new Bounds(
-                    Math.min(this.minX, other.minX),
-                    Math.min(this.minY, other.minY),
-                    Math.min(this.minZ, other.minZ),
-                    Math.max(this.maxX, other.maxX),
-                    Math.max(this.maxY, other.maxY),
-                    Math.max(this.maxZ, other.maxZ)
             );
         }
 

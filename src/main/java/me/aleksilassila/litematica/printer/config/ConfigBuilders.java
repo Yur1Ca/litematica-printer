@@ -23,15 +23,7 @@ public class ConfigBuilders {
         return new StringListConfigBuilder(translateKey);
     }
 
-    public static StringConfigBuilder string(String translateKey) {
-        return new StringConfigBuilder(translateKey);
-    }
-
     public static OptionListConfigBuilder optionList(String translateKey) {
         return new OptionListConfigBuilder(translateKey);
-    }
-
-    public static ColorConfigBuilder color(String translateKey) {
-        return new ColorConfigBuilder(translateKey);
     }
 }

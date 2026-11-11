@@ -13,12 +13,6 @@ final class ModuleCandidateSource {
     private ModuleCandidateSource() {
     }
 
-    static Iterable<BlockPos> raw(FeatureModuleBase module, PrinterBox box, Predicate<BlockPos> candidatePredicate) {
-        return module.scanEngine.rawIterable(
-                module.getId() + "_raw", box, module.player,
-                module.getScanGuardLimit(), candidatePredicate);
-    }
-
     static Iterable<BlockPos> cached(
             FeatureModuleBase module,
             PrinterBox interactionBox,

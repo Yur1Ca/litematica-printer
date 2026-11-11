@@ -9,8 +9,12 @@
     "printer.litematica.MixinInventoryUtils",
     "printer.litematica.MixinSchematicPickHotkeys",
     "printer.litematica.MixinSchematicPickUseKey",
-    ${rewritten_easy_place_mixins}
-    ${void_warehouse_litematica_mixins}
+    "printer.litematica.MixinEasyPlaceUtils",
+    "printer.litematica.MixinMaterialListEntry",
+    "printer.malilib.GuiListBaseAccessor",
+    "printer.litematica.MixinMaterialListSorter",
+    "printer.litematica.MixinMaterialListHudRenderer",
+    "printer.litematica.MixinWidgetMaterialListEntry",
     "printer.litematica.MixinChunkRendererSchematicVbo",
     "printer.litematica.MixinChunkRenderDispatcherSchematic"
   ],

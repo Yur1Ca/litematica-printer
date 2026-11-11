@@ -2,13 +2,7 @@ package me.aleksilassila.litematica.printer.utils.render;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.state.BlockState;
-
-import net.minecraft.client.renderer.RenderPipelines;
-
 
 import java.awt.*;
 
@@ -58,8 +52,8 @@ public class Render2DUtils {
             return;
         }
         pushPose();
-        translate(x, y, 0.0D);
-        scale(scale, scale, 1.0F);
+        translate(x, y);
+        scale(scale, scale);
         drawString(text, 0, 0, color, withShadow);
         popPose();
     }
@@ -74,42 +68,14 @@ public class Render2DUtils {
         guiGraphics.pose().popMatrix();
     }
 
-    public static void translate(double x, double y, double z) {
+    public static void translate(double x, double y) {
         ensureInitialized();
         guiGraphics.pose().translate((float) x, (float) y);
     }
 
-    public static void scale(float x, float y, float z) {
+    public static void scale(float x, float y) {
         ensureInitialized();
         guiGraphics.pose().scale(x, y);
-    }
-
-    // ==================== 纹理绘制 ====================
-
-    /**
-     * 绘制完整纹理（纹理文件整体宽高与绘制区域一致）
-     */
-    public static void drawTexture(Identifier texture, int x, int y, int width, int height) {
-        drawTexture(texture, x, y, 0, 0, width, height, width, height);
-    }
-
-    /**
-     * 绘制纹理的指定区域（支持 UV 裁剪）
-     */
-    public static void drawTexture(Identifier texture, int x, int y,
-                                   int u, int v, int regionWidth, int regionHeight,
-                                   int textureWidth, int textureHeight) {
-        ensureInitialized();
-
-        guiGraphics.blit(
-                RenderPipelines.GUI_TEXTURED,
-                texture,
-                x, y,
-                (float) u, (float) v,
-                regionWidth, regionHeight,
-                regionWidth, regionHeight,
-                textureWidth, textureHeight
-        );
     }
 
     // ==================== 物品绘制 ====================
@@ -120,46 +86,5 @@ public class Render2DUtils {
     public static void drawItem(ItemStack stack, int x, int y) {
         ensureInitialized();
         guiGraphics.fakeItem(stack, x, y);
-    }
-
-    /**
-     * 绘制物品图标及其装饰（数量、耐久条等）
-     */
-    public static void drawItemWithDecorations(ItemStack stack, int x, int y) {
-        drawItem(stack, x, y);
-        guiGraphics.itemDecorations(client.font, stack, x, y);
-    }
-
-    // ==================== 组合绘制 ====================
-
-    /**
-     * 物品图标 + 右侧文字
-     */
-    public static void drawItemWithLabel(ItemStack stack, int x, int y, String text, Color color, boolean shadow) {
-        drawItem(stack, x, y);
-        drawString(text, x + 20, y + 5, color, shadow);
-    }
-
-    /**
-     * 纹理图标 + 右侧文字（可指定图标尺寸）
-     */
-    public static void drawIconWithLabel(Identifier texture, int x, int y,
-                                         int iconWidth, int iconHeight,
-                                         String text, Color color, boolean shadow) {
-        drawTexture(texture, x, y, iconWidth, iconHeight);
-        int textY = y + (iconHeight - client.font.lineHeight) / 2;
-        drawString(text, x + iconWidth + 4, textY, color, shadow);
-    }
-
-    public static void drawBlock(Block block, int x, int y) {
-        drawItem(block.asItem().getDefaultInstance(), x, y);
-    }
-
-    public static void drawBlockWithDecorations(Block block, int x, int y) {
-        drawItemWithDecorations(block.asItem().getDefaultInstance(), x, y);
-    }
-
-    public static void drawBlockState(BlockState state, int x, int y) {
-        drawBlock(state.getBlock(), x, y);
     }
 }

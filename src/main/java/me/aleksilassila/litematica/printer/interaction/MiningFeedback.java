@@ -20,8 +20,6 @@ final class MiningFeedback {
     private final Minecraft client;
     private final Map<BlockPos, Long> pendingDelayedDestroys = new LinkedHashMap<>();
     private float hitSoundTicks;
-    private BlockPos pendingBreakSoundPos;
-    private BlockState pendingBreakSoundState;
 
     MiningFeedback(Minecraft client) {
         this.client = client;
@@ -29,8 +27,6 @@ final class MiningFeedback {
 
     void reset() {
         this.pendingDelayedDestroys.clear();
-        this.pendingBreakSoundPos = null;
-        this.pendingBreakSoundState = null;
         this.resetHitSound();
     }
 
@@ -70,27 +66,6 @@ final class MiningFeedback {
 
     void resetHitSound() {
         this.hitSoundTicks = 0.0F;
-    }
-
-    void queueBreakSound(BlockPos pos, BlockState state) {
-        if (pos == null || state == null || state.isAir()) return;
-        this.pendingBreakSoundPos = pos.immutable();
-        this.pendingBreakSoundState = state;
-    }
-
-    void clearPendingBreakSound(BlockPos pos) {
-        if (pos != null && pos.equals(this.pendingBreakSoundPos)) {
-            this.pendingBreakSoundPos = null;
-            this.pendingBreakSoundState = null;
-        }
-    }
-
-    void flushPendingBreakSound(BlockPos pos) {
-        if (pos != null && pos.equals(this.pendingBreakSoundPos) && this.pendingBreakSoundState != null) {
-            this.playBreakSound(pos, this.pendingBreakSoundState);
-            this.pendingBreakSoundPos = null;
-            this.pendingBreakSoundState = null;
-        }
     }
 
     void playHitSound(LocalPlayer player, ClientLevel level, BlockState state, BlockPos pos, boolean force) {

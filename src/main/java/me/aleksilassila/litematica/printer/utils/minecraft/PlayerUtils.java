@@ -25,10 +25,6 @@ import java.util.Optional;
 public class PlayerUtils {
     private static final Minecraft client = Minecraft.getInstance();
 
-    public static Optional<LocalPlayer> getPlayer() {
-        return Optional.ofNullable(client.player);
-    }
-
     public static Abilities getAbilities(LocalPlayer playerEntity) {
         return playerEntity.getAbilities();
     }

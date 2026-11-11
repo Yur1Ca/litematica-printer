@@ -224,7 +224,6 @@ tasks {
             optimizeWrapperSubmoduleJars(
                 embeddedJarsDir.get().asFile,
                 setOf(
-                    "assets/$modId/icon.png",
                     "assets/$modId/lang/"
                 )
             )
@@ -235,7 +234,6 @@ tasks {
     named<Jar>("jar") {
         outputs.upToDateWhen { false }
 
-        from(rootProject.file("LICENSE"))
         from(layout.buildDirectory.dir("tmp/submods"))
     }
 

@@ -117,10 +117,6 @@ public final class MissingMaterialTracker implements RuntimeComponent {
         return this.snapshot;
     }
 
-    public boolean hasMissing() {
-        return !this.snapshot.isEmpty();
-    }
-
     public void clear() {
         this.lastTick = Long.MIN_VALUE;
         if (!this.requirements.isEmpty()) {

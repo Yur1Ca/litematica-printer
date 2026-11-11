@@ -55,10 +55,6 @@ final class SectionSnapshotStore {
         }
     }
 
-    int cachedSectionCount() {
-        return this.sections.size();
-    }
-
     /** Borrowed, client-thread-only mask: only observed zero flags may be excluded from PRINT. */
     long[] excludedPrintPositions(long sectionKey) {
         MutableSection section = this.sections.get(sectionKey);

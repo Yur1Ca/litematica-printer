@@ -4,7 +4,6 @@ import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -24,10 +23,6 @@ public class PrinterUtils {
     public static final Minecraft client = Minecraft.getInstance();
 
     public static Direction[] horizontalDirections = new Direction[]{Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
-
-    public static Direction getHalf(Half half) {
-        return half == Half.TOP ? Direction.UP : Direction.DOWN;
-    }
 
     public static Comparable<?> getPropertyByName(BlockState state, String name) {
         for (Property<?> prop : state.getProperties()) {

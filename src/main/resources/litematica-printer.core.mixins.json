@@ -12,7 +12,7 @@
   "client": [
     "MixinClientPacketListener",
     "MixinContainerScreenGuard",
-    ${crafter_client_mixins}
+    "MixinCrafterScreen",
     "MixinMinecraftManualUse",
     "MixinMinecraftMiningInput",
     "MixinMinecraftPickBlock",
@@ -21,7 +21,8 @@
     "printer.mc.MixinClientPacketListener",
     "printer.mc.MixinGui",
     "printer.mc.MixinLocalPlayer",
-    ${chesttracker_client_mixins}
+    "printer.chesttracker.ItemListWidgetAccessor",
+    "printer.chesttracker.ItemListWidgetMixin",
     "printer.mc.MixinMultiPlayerGameMode"
   ],
   "injectors": {

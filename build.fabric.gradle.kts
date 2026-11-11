@@ -1,19 +1,11 @@
 @file:Suppress("UnstableApiUsage")
 
-import java.text.SimpleDateFormat
-import java.util.*
-
 plugins {
     id("mod-plugin")
     id("maven-publish")
     id("net.fabricmc.fabric-loom")
     id("com.replaymod.preprocess")
 }
-
-val time = SimpleDateFormat("yyMMdd")
-    .apply { timeZone = TimeZone.getTimeZone("GMT+08:00") }
-    .format(Date())
-    .toString()
 
 version = artifactVersion
 group = modMavenGroup

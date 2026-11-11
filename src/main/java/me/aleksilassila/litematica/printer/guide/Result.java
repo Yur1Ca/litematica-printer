@@ -73,15 +73,6 @@ public record Result(Action action, boolean passToNext, boolean skipOtherGuide) 
         return action != null;
     }
 
-    /**
-     * 如果有动作则执行 consumer。
-     */
-    public void ifHasAction(java.util.function.Consumer<Action> consumer) {
-        if (action != null) {
-            consumer.accept(action);
-        }
-    }
-
     // ==================== 便捷的流式方法 ====================
 
     /**

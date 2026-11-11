@@ -100,15 +100,6 @@ final class MineBreakExecutor {
         );
     }
 
-    public boolean canUseCurrentTool(Target target) {
-        return target.currentProgress > 0.0F && this.isCurrentToolEfficient(target);
-    }
-
-    public boolean canUseBetterTool(Target target) {
-        return (target.bestPreservesDrops && !target.currentPreservesDrops)
-                || target.bestProgress > target.currentProgress;
-    }
-
     public boolean isCurrentToolEffective(Target target) {
         LocalPlayer player = this.client.player;
         if (player == null || !this.shouldResolveBestTool()) {
@@ -168,19 +159,6 @@ final class MineBreakExecutor {
 
     private boolean shouldResolveBestTool() {
         return this.resolveBestTool;
-    }
-
-    private boolean isCurrentToolEfficient(Target target) {
-        if (!this.shouldResolveBestTool()) {
-            return true;
-        }
-        if (target.bestProgress <= 0.0F) {
-            return false;
-        }
-        if (target.bestPreservesDrops && !target.currentPreservesDrops) {
-            return false;
-        }
-        return target.currentProgress >= target.bestProgress;
     }
 
     private float getDestroyProgress(

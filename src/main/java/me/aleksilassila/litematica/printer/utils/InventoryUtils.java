@@ -8,7 +8,6 @@ import me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUti
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaPickSlotAdapter;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
-import me.aleksilassila.litematica.printer.utils.minecraft.ToolSelectionUtils;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -22,7 +21,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
@@ -120,36 +118,6 @@ public class InventoryUtils {
             return;
         }
         connection.send(new ServerboundSetCarriedItemPacket(getSelectedSlot(player.getInventory())));
-    }
-
-    /**
-     * 检查是否有可用的 Pick 槽位
-     *
-     * @param sourceSlot 源槽位（-1表示自动寻找）
-     * @param mc         Minecraft实例
-     * @return PickResult 枚举结果
-     */
-    public static PickResult checkPickSlotAvailable(int sourceSlot, Minecraft mc) {
-        // 基础校验失败 → 返回通用FAIL
-        if (mc.player == null) return PickResult.FAIL;
-        Player player = mc.player;
-        Inventory inventory = player.getInventory();
-        // 源槽位是快捷栏 → 成功
-        if (Inventory.isHotbarSlot(sourceSlot)) return PickResult.SUCCESS;
-        // 无配置可拾取槽位 → 精准失败类型
-        if (InventoryUtilsAccessor.getPICK_BLOCKABLE_SLOTS().isEmpty()) {
-            return PickResult.FAIL_NO_PICK_SLOTS_CONFIGURED;
-        }
-        // 寻找可用槽位
-        int hotbarSlot = sourceSlot;
-        if (sourceSlot == -1 || !Inventory.isHotbarSlot(sourceSlot)) {
-            hotbarSlot = InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(inventory);
-        }
-        if (hotbarSlot == -1) {
-            hotbarSlot = LitematicaPickSlotAdapter.selectNextAvailable(player);
-        }
-        // 无可用槽位 → 精准失败类型；否则成功
-        return hotbarSlot != -1 ? PickResult.SUCCESS : PickResult.FAIL_NO_SUITABLE_SLOT_FOUND;
     }
 
     public static boolean setPickedItemToHand(int sourceSlot, ItemStack stack, Minecraft mc) {
@@ -288,18 +256,6 @@ public class InventoryUtils {
         return ToolInventorySelector.switchToBestTool(client, player, blockState, client.level, pos);
     }
 
-    public static boolean hasUsableSilkTouchTool(LocalPlayer player) {
-        if (player == null || PlayerUtils.getAbilities(player).instabuild) {
-            return false;
-        }
-        for (ItemStack stack : getMainStacks(player.getInventory())) {
-            if (!stack.isEmpty() && ToolSelectionUtils.hasSilkTouch(stack)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public static boolean switchToItems(LocalPlayer player, Item[] items) {
         return switchToItems(player, items, -1);
     }
@@ -402,30 +358,4 @@ public class InventoryUtils {
         return MaterialSelector.findReserveBlockedStack(player, items, requiredStackPredicate, reserveCount);
     }
 
-    public enum PickResult {
-        SUCCESS,
-        FAIL,
-        FAIL_NO_PICK_SLOTS_CONFIGURED,
-        FAIL_NO_SUITABLE_SLOT_FOUND;
-
-        // 快捷判断：是否是「未配置可拾取槽位」
-        public boolean isNoPickSlotsConfigured() {
-            return this == FAIL_NO_PICK_SLOTS_CONFIGURED;
-        }
-
-        // 快捷判断：是否是「无可用槽位」
-        public boolean isNoSuitableSlotFound() {
-            return this == FAIL_NO_SUITABLE_SLOT_FOUND;
-        }
-
-        // 快捷方法：是否「无可用槽位」（包含两种精准失败类型）
-        public boolean isNoAvailableSlot() {
-            return isNoPickSlotsConfigured() || isNoSuitableSlotFound();
-        }
-
-        // 快捷方法：是否「有可用槽位」（仅SUCCESS表示有）
-        public boolean isAvailable() {
-            return this == SUCCESS;
-        }
-    }
 }

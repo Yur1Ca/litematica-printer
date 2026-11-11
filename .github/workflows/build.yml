@@ -100,7 +100,7 @@ jobs:
         run: >-
           ./gradlew :fabricWrapper:build -x jacocoTestCoverageVerification
           --init-script .github/scripts/ci-build.init.gradle "-PciValidation=$CI_VALIDATION"
-          --parallel --max-workers=2 --stacktrace --console=plain --profile
+          --no-parallel --max-workers=2 --stacktrace --console=plain --profile
 
       - name: Capture Gradle timing report
         if: ${{ !cancelled() }}

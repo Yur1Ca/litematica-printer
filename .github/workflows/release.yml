@@ -61,7 +61,7 @@ jobs:
       - name: Build all supported versions and wrapper
         shell: bash
         run: |
-          ./gradlew :fabricWrapper:build --parallel --max-workers=2 --stacktrace --console=plain --profile
+          ./gradlew :fabricWrapper:build --no-parallel --max-workers=2 --stacktrace --console=plain --profile
 
       - name: Capture Gradle timing report
         if: ${{ !cancelled() }}

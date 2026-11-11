@@ -176,6 +176,11 @@ public class MineHandler extends FeatureModuleBase {
         this.trenchSupportBlockedThisTick = false;
         this.analyzer.beginTick();
         this.toolSession.beginTick();
+        this.candidates.removeIf(target -> {
+            if (this.isInSelectionRange(target.pos())) return false;
+            this.candidateStates.remove(target.pos());
+            return true;
+        });
         this.trenchFill.beginTick(this.level.getGameTime());
         this.refreshTrenchFillTargets();
         this.continueActiveMineTarget();
@@ -286,7 +291,7 @@ public class MineHandler extends FeatureModuleBase {
         for (MineBreakExecutor.Target queued : this.candidates.snapshot()) {
             BlockPos pos = queued.pos();
             this.candidateStates.remove(pos);
-            if (!this.isMineScanCandidate(pos, true)) {
+            if (!this.isInSelectionRange(pos) || !this.isMineScanCandidate(pos, true)) {
                 this.candidates.remove(pos);
                 continue;
             }
@@ -308,7 +313,14 @@ public class MineHandler extends FeatureModuleBase {
             return;
         }
         if (!this.canContinueActiveMineTarget(pos)) {
+            // Cancel only this Mine target; another caller may now own the native session.
+            if (this.gameMode instanceof MiningInteractionPort port
+                    && port.isDestroying() && pos.equals(port.destroyPos())) {
+                this.gameMode.stopDestroyBlock();
+            }
             this.activeMinePos = null;
+            this.removeCandidate(pos);
+            this.toolSession.reset();
             return;
         }
         BlockBreakResult result = InteractionUtils.getRuntime().continueDestroyBlockForMine(pos, Direction.DOWN, true);
@@ -322,6 +334,9 @@ public class MineHandler extends FeatureModuleBase {
 
     private boolean canContinueActiveMineTarget(BlockPos pos) {
         return pos != null
+                && (this.isInSelectionRange(pos)
+                    || Configs.Mine.MINE_TRENCH_MODE.getBooleanValue()
+                        && this.isWaterlogged(this.level.getBlockState(pos)) && this.isWithinTrenchScope(pos))
                 && this.canReachIterationPosition(pos)
                 && InteractionUtils.canBreakBlock(pos)
                 && mineRestriction(this.level.getBlockState(pos));
@@ -423,6 +438,7 @@ public class MineHandler extends FeatureModuleBase {
             return;
         }
         this.candidates.remove(pos);
+        this.candidateStates.remove(pos);
     }
 
     private boolean hasTrenchFillWork() {
@@ -460,7 +476,8 @@ public class MineHandler extends FeatureModuleBase {
     }
 
     private void executeTrenchFill(BlockPos pos, AtomicReference<Boolean> skipIteration) {
-        if (this.level == null || this.player == null || !this.isFluid(this.level.getBlockState(pos))) {
+        if (this.level == null || this.player == null || !this.isWithinTrenchScope(pos)
+                || !this.isFluid(this.level.getBlockState(pos))) {
             this.trenchFill.removeFillTarget(pos);
             return;
         }
@@ -535,7 +552,11 @@ public class MineHandler extends FeatureModuleBase {
             if (this.level != queuedLevel || this.player != queuedPlayer) return;
             long completedAt = queuedLevel.getGameTime();
             this.trenchFill.completeQueued(queuedPos, attempt, completedAt, completion.isSent());
-        })) {
+        }) || !this.actionBroker.setQueueValidity(() -> this.level == queuedLevel && this.player == queuedPlayer
+                && ConfigUtils.isEnable() && ConfigUtils.isMineMode()
+                && Configs.Mine.MINE_TRENCH_MODE.getBooleanValue()
+                && this.isWithinTrenchScope(queuedPos)
+                && this.isFluid(queuedLevel.getBlockState(queuedPos)) && this.canReachTrenchTarget(queuedPos))) {
             this.trenchFill.completeQueued(queuedPos, attempt, now, false);
             this.actionBroker.cancelQueue();
             this.setIterationConsumedEffectiveExecution(false);
@@ -555,7 +576,8 @@ public class MineHandler extends FeatureModuleBase {
     }
 
     private void executeTrenchWaterloggedBreak(BlockPos pos, AtomicReference<Boolean> skipIteration) {
-        if (this.level == null || !this.isWaterlogged(this.level.getBlockState(pos))) {
+        if (this.level == null || !this.isWithinTrenchScope(pos)
+                || !this.isWaterlogged(this.level.getBlockState(pos))) {
             this.trenchFill.removeWaterloggedTarget(pos);
             return;
         }
@@ -629,6 +651,17 @@ public class MineHandler extends FeatureModuleBase {
     private boolean canReachTrenchTarget(BlockPos pos) {
         return this.player != null && this.canReachIterationPosition(pos)
                 && PlayerUtils.isWithinBlockInteractionRange(this.player, pos, 0.0D);
+    }
+
+    private boolean isWithinTrenchScope(BlockPos pos) {
+        if (this.playerInteractionBox == null || this.playerInteractionBox.get() == null) return false;
+        for (PrinterBox box : this.getScanSourceBoxes(this.playerInteractionBox.get())) {
+            if (box.contains(pos)) return true;
+            for (Direction side : HORIZONTAL_SIDES) {
+                if (box.contains(pos.relative(side))) return true;
+            }
+        }
+        return false;
     }
 
     private boolean canReachTrenchSupport(BlockPos support, Direction clickedFace) {

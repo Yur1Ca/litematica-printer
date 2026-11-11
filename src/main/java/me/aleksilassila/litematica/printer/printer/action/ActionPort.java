@@ -14,6 +14,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 /** Feature-facing action capability, independent of the queue implementation. */
@@ -50,6 +51,9 @@ public interface ActionPort {
     void useProtocolHitModifier(@NotNull Vec3 hitModifier);
 
     boolean setQueueCompletionListener(@Nullable Consumer<SendResult> completionListener);
+
+    /** Rechecks feature-owned work immediately before a deferred interaction is sent. */
+    default boolean setQueueValidity(BooleanSupplier validity) { return false; }
 
     boolean setExpectedStackPredicate(@Nullable Predicate<ItemStack> expectedStackPredicate);
 

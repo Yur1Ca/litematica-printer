@@ -1,13 +1,25 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.selection.AreaSelectionSimple;
+import fi.dy.masa.litematica.selection.Box;
+import fi.dy.masa.litematica.selection.SelectionManager;
+import fi.dy.masa.litematica.selection.SelectionMode;
+import fi.dy.masa.malilib.config.IConfigOptionListEntry;
+import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import fi.dy.masa.malilib.config.options.ConfigStringList;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.PrintModeType;
+import me.aleksilassila.litematica.printer.enums.SelectionType;
+import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.handlers.MineHandler;
 import me.aleksilassila.litematica.printer.integration.inventory.*;
+import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
@@ -29,6 +41,7 @@ import org.junit.jupiter.api.*;
 import java.lang.reflect.Proxy;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -53,6 +66,8 @@ class TrenchFillIntegrationTest {
         BlockState targetState;
         Map<BlockPos, BlockState> states;
         @Override public long getGameTime() { return tick; }
+        @Override public int getMinY() { return -64; }
+        @Override public int getHeight() { return 384; }
         @Override public BlockState getBlockState(BlockPos pos) {
             if (states != null && states.containsKey(pos)) return states.get(pos);
             return pos.equals(TARGET) ? targetState
@@ -68,6 +83,11 @@ class TrenchFillIntegrationTest {
     static class Fixture implements AutoCloseable {
         final ConfigStringList config = Configs.Mine.MINE_TRENCH_FILL_BLOCK_LIST;
         final List<String> oldFilters = List.copyOf(config.getStrings());
+        final boolean oldWorkSwitch = Configs.Core.WORK_SWITCH.getBooleanValue();
+        final boolean oldTrench = Configs.Mine.MINE_TRENCH_MODE.getBooleanValue();
+        final IConfigOptionListEntry oldWorkMode = Configs.Core.WORK_MODE.getOptionListValue();
+        final IConfigOptionListEntry oldWorkModeType = Configs.Core.WORK_MODE_TYPE.getOptionListValue();
+        final IConfigOptionListEntry oldSelectionType = Configs.Mine.MINE_SELECTION_TYPE.getOptionListValue();
         final Object oldClient = get(null, Minecraft.class, "instance");
         final Object oldRuntime = get(null, RuntimeAccess.class, "current");
         final sun.misc.Unsafe unsafe;
@@ -82,6 +102,12 @@ class TrenchFillIntegrationTest {
         final List<MaterialRequest> requests = new ArrayList<>();
         final List<Item[]> queued = new ArrayList<>();
         final ActionPort actions;
+        final DataManager data;
+        final SelectionManager selections;
+        final Object oldArea;
+        final SelectionMode oldSelectionMode;
+        Box selectionBox;
+        BooleanSupplier queueValidity;
         Consumer<ActionPort.SendResult> completionListener;
         boolean queuePresent;
         int queueCalls;
@@ -89,6 +115,11 @@ class TrenchFillIntegrationTest {
 
         Fixture() throws Exception {
             config.setStrings(List.of("minecraft:cobblestone"));
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            Configs.Core.WORK_MODE.setOptionListValue(WorkingModeType.SINGLE);
+            Configs.Core.WORK_MODE_TYPE.setOptionListValue(PrintModeType.MINE);
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            Configs.Mine.MINE_SELECTION_TYPE.setOptionListValue(SelectionType.LITEMATICA_SELECTION);
             player.inventory = new Inventory(player, new EntityEquipment());
             player.abilities = new Abilities();
             set(player, Entity.class, "position", Vec3.ZERO);
@@ -120,8 +151,24 @@ class TrenchFillIntegrationTest {
             state = constructor.newInstance();
             set(handler, MineHandler.class, "trenchFill", state);
             addTarget(level.tick);
+            set(handler, FeatureModuleBase.class, "mc", client);
             set(handler, FeatureModuleBase.class, "level", level);
             set(handler, FeatureModuleBase.class, "player", player);
+            set(handler, FeatureModuleBase.class, "litematica", new LitematicaAdapter());
+            set(handler, FeatureModuleBase.class, "playerInteractionBox",
+                    new AtomicReference<>(new PrinterBox(-8, -8, -8, 8, 8, 8)));
+            var dataInstance = DataManager.class.getDeclaredMethod("getInstance");
+            dataInstance.setAccessible(true);
+            data = (DataManager) dataInstance.invoke(null);
+            selections = DataManager.getSelectionManager();
+            oldArea = get(data, DataManager.class, "areaSimple");
+            oldSelectionMode = selections.getSelectionMode();
+            select(TARGET, TARGET);
+            var scopeType = Class.forName("me.aleksilassila.litematica.printer.handler.ModuleSelectionScope");
+            var scopeConstructor = scopeType.getDeclaredConstructor(FeatureModuleBase.class, ConfigOptionList.class);
+            scopeConstructor.setAccessible(true);
+            set(handler, FeatureModuleBase.class, "selectionScope",
+                    scopeConstructor.newInstance(handler, Configs.Mine.MINE_SELECTION_TYPE));
             set(handler, FeatureModuleBase.class, "hudStats", new HudStatsManager(client, () -> level.tick));
             set(handler, FeatureModuleBase.class, "missingMaterials", new MissingMaterialTracker());
             actions = (ActionPort) Proxy.newProxyInstance(ActionPort.class.getClassLoader(), new Class<?>[]{ActionPort.class}, (p,m,a) -> {
@@ -141,8 +188,17 @@ class TrenchFillIntegrationTest {
                     completionListener = listener;
                     return true;
                 }
+                if (m.getName().equals("setQueueValidity")) {
+                    if (!queuePresent) return false;
+                    queueValidity = (BooleanSupplier) a[0];
+                    return true;
+                }
                 if (m.getName().equals("sendQueue")) {
                     if (!queuePresent) return ActionPort.SendResult.NO_QUEUED_ACTION;
+                    if (queueValidity != null && !queueValidity.getAsBoolean()) {
+                        finishQueue(ActionPort.SendResult.NO_QUEUED_ACTION);
+                        return ActionPort.SendResult.NO_QUEUED_ACTION;
+                    }
                     if (!result.isWaiting()) finishQueue(result);
                     return result;
                 }
@@ -157,6 +213,20 @@ class TrenchFillIntegrationTest {
 
         boolean execute() throws Exception {
             return execute(TARGET, new AtomicReference<>(false));
+        }
+
+        void select(BlockPos first, BlockPos second) throws Exception {
+            var area = new AreaSelectionSimple(true);
+            selectionBox = area.getAllSubRegionBoxes().get(0);
+            selectionBox.setPos1(first);
+            selectionBox.setPos2(second);
+            set(data, DataManager.class, "areaSimple", area);
+            set(selections, SelectionManager.class, "mode", SelectionMode.SIMPLE);
+        }
+
+        void bounds(BlockPos first, BlockPos second) {
+            selectionBox.setPos1(first);
+            selectionBox.setPos2(second);
         }
 
         boolean execute(BlockPos pos, AtomicReference<Boolean> skip) throws Exception {
@@ -181,6 +251,7 @@ class TrenchFillIntegrationTest {
         private void finishQueue(ActionPort.SendResult completion) {
             var listener = completionListener;
             completionListener = null;
+            queueValidity = null;
             queuePresent = false;
             if (listener != null) listener.accept(completion);
         }
@@ -244,6 +315,13 @@ class TrenchFillIntegrationTest {
 
         @Override public void close() throws Exception {
             config.setStrings(oldFilters);
+            Configs.Core.WORK_SWITCH.setBooleanValue(oldWorkSwitch);
+            Configs.Core.WORK_MODE.setOptionListValue(oldWorkMode);
+            Configs.Core.WORK_MODE_TYPE.setOptionListValue(oldWorkModeType);
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(oldTrench);
+            Configs.Mine.MINE_SELECTION_TYPE.setOptionListValue(oldSelectionType);
+            set(data, DataManager.class, "areaSimple", oldArea);
+            set(selections, SelectionManager.class, "mode", oldSelectionMode);
             setPlayerUtilsClient(oldPlayerUtilsClient);
             set(null, Minecraft.class, "instance", oldClient);
             set(null, RuntimeAccess.class, "current", oldRuntime);

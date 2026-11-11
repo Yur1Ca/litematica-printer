@@ -38,6 +38,54 @@ class TrenchFillQueueLifecycleTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void editingOrSwitchingSelectionRejectsAWaitingFillBeforePreprocess(boolean replaceSelection) throws Exception {
+        try (var f = waitingFixture()) {
+            assertTrue(f.execute());
+            var moved = TrenchFillIntegrationTest.TARGET.offset(4, 0, 0);
+            if (replaceSelection) f.select(moved, moved);
+            else f.bounds(moved, moved);
+            f.level.tick = 106;
+
+            // TickScheduler retries this queue before MineHandler can refresh its trench targets.
+            assertEquals(ActionPort.SendResult.NO_QUEUED_ACTION, f.completeWaiting(ActionPort.SendResult.SENT));
+
+            assertFalse(f.queuePresent);
+            assertEquals(0, f.sentThisTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
+            assertTrue(f.canAttempt(108), "An excluded unsent click must release its queue reservation");
+        }
+    }
+
+    @Test
+    void aWaitingFillStillOnTheNewHorizontalBoundaryMayBeSent() throws Exception {
+        try (var f = waitingFixture()) {
+            assertTrue(f.execute());
+            var moved = TrenchFillIntegrationTest.TARGET.east();
+            f.bounds(moved, moved);
+            f.level.tick = 106;
+
+            assertEquals(ActionPort.SendResult.SENT, f.completeWaiting(ActionPort.SendResult.SENT),
+                    "The trench scope includes one horizontal block outside the current selection");
+            assertEquals(1, f.sentThisTick());
+            assertEquals(106L, f.lastSentTick());
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void aWaitingFillOutsideTheHorizontalBoundaryCannotUseDiagonalOrVerticalExpansion(boolean vertical) throws Exception {
+        try (var f = waitingFixture()) {
+            assertTrue(f.execute());
+            var moved = vertical ? TrenchFillIntegrationTest.TARGET.above()
+                    : TrenchFillIntegrationTest.TARGET.offset(1, 0, 1);
+            f.bounds(moved, moved);
+
+            assertEquals(ActionPort.SendResult.NO_QUEUED_ACTION, f.completeWaiting(ActionPort.SendResult.SENT));
+            assertEquals(0, f.sentThisTick());
+            assertEquals(Long.MIN_VALUE, f.lastSentTick());
+        }
+    }
+
     @ParameterizedTest
     @EnumSource(value = ActionPort.SendResult.class,
             names = {"STALE_POSITION", "HELD_ITEM_CHANGED", "INTERACTION_REJECTED", "NO_QUEUED_ACTION"})

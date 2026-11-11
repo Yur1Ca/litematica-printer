@@ -1,7 +1,12 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.selection.AreaSelectionSimple;
+import fi.dy.masa.litematica.selection.SelectionManager;
+import fi.dy.masa.litematica.selection.SelectionMode;
 import fi.dy.masa.malilib.config.IConfigOptionListEntry;
+import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -14,9 +19,11 @@ import java.util.Set;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
+import me.aleksilassila.litematica.printer.enums.SelectionType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.handlers.MineHandler;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooAdapter;
+import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
@@ -62,6 +69,11 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
 
     private final Object oldConfigClient = MiningInteractionRegressionTest.get(null, ConfigUtils.class, "client");
     private final Object oldPlayerClient = MiningInteractionRegressionTest.get(null, PlayerUtils.class, "client");
+    private final DataManager data = (DataManager) method(DataManager.class, "getInstance").invoke(null);
+    private final SelectionManager selectionManager = DataManager.getSelectionManager();
+    private final Object oldArea = MiningInteractionRegressionTest.get(data, DataManager.class, "areaSimple");
+    private final SelectionMode oldSelectionMode = selectionManager.getSelectionMode();
+    private final IConfigOptionListEntry oldSelectionType = Configs.Mine.MINE_SELECTION_TYPE.getOptionListValue();
     final MiningInteractionRegressionTest.Fixture mining = new MiningInteractionRegressionTest.Fixture(1.0F, false);
     final CountingLevel level = MiningInteractionRegressionTest.alloc(CountingLevel.class);
     private final boolean oldCheckRange = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue();
@@ -90,6 +102,18 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         Configs.Break.BREAK_LIMIT.setOptionListValue(UsageRestriction.ListType.NONE);
         Configs.Mine.EXCAVATE_LIMITER.setOptionListValue(ExcavateListMode.CUSTOM);
         Configs.Mine.EXCAVATE_LIMIT.setOptionListValue(UsageRestriction.ListType.NONE);
+        Configs.Mine.MINE_SELECTION_TYPE.setOptionListValue(SelectionType.LITEMATICA_SELECTION);
+        var selection = new AreaSelectionSimple(true);
+        var box = selection.getAllSubRegionBoxes().get(0);
+        box.setPos1(new BlockPos(-64, -64, -64));
+        box.setPos2(new BlockPos(64, 64, 64));
+        MiningInteractionRegressionTest.set(data, DataManager.class, "areaSimple", selection);
+        MiningInteractionRegressionTest.set(selectionManager, SelectionManager.class, "mode", SelectionMode.SIMPLE);
+        MiningInteractionRegressionTest.set(mining.mineHandler, FeatureModuleBase.class, "litematica", new LitematicaAdapter());
+        Class<?> scopeType = Class.forName("me.aleksilassila.litematica.printer.handler.ModuleSelectionScope");
+        MiningInteractionRegressionTest.set(mining.mineHandler, FeatureModuleBase.class, "selectionScope",
+                construct(scopeType, new Class<?>[]{FeatureModuleBase.class, ConfigOptionList.class},
+                        mining.mineHandler, Configs.Mine.MINE_SELECTION_TYPE));
         bindStoneTags(List.of(BlockTags.MINEABLE_WITH_PICKAXE));
         level.section = new LevelChunkSection(new PalettedContainer<>(Blocks.AIR.defaultBlockState(),
                 Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY)), null);
@@ -177,6 +201,9 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
     @Override public void close() throws Exception {
         MiningInteractionRegressionTest.set(null, ConfigUtils.class, "client", oldConfigClient);
         MiningInteractionRegressionTest.set(null, PlayerUtils.class, "client", oldPlayerClient);
+        MiningInteractionRegressionTest.set(data, DataManager.class, "areaSimple", oldArea);
+        MiningInteractionRegressionTest.set(selectionManager, SelectionManager.class, "mode", oldSelectionMode);
+        Configs.Mine.MINE_SELECTION_TYPE.setOptionListValue(oldSelectionType);
         Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(oldCheckRange);
         Configs.Core.WORK_RANGE.setIntegerValue(oldRange);
         Configs.Core.ITERATOR_SHAPE.setOptionListValue(oldShape);

@@ -61,6 +61,7 @@ class TrenchFillBatchReadinessTest {
 
     private static TrenchFillIntegrationTest.Fixture fixture() throws Exception {
         var f = new TrenchFillIntegrationTest.Fixture();
+        f.bounds(TrenchFillIntegrationTest.TARGET, UNSUPPORTED);
         f.player.inventory.setItem(0, new ItemStack(Items.COBBLESTONE, 64));
         f.level.states = Map.of(UNSUPPORTED, Blocks.LAVA.defaultBlockState());
         var update = f.state.getClass().getDeclaredMethod("updateTargets", List.class, Set.class,

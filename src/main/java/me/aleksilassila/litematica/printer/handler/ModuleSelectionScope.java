@@ -44,11 +44,6 @@ final class ModuleSelectionScope {
     List<PrinterBox> boxes(PrinterBox interactionBox) {
         if (interactionBox == null) return List.of();
         SelectionType selectionType = this.currentSelectionType();
-        PrinterBox renderLayerBounds = selectionType == SelectionType.LITEMATICA_RENDER_LAYER
-                ? this.owner.litematica.clampToRenderLayer(interactionBox) : null;
-        ScopeCacheKey cacheKey = cacheKey(interactionBox, selectionType, renderLayerBounds);
-        if (cacheKey.equals(this.cachedKey)) return this.cachedBoxes;
-
         List<PrinterBox> baseBoxes;
         if (this.owner.isSchematicBlockHandler()) {
             baseBoxes = this.owner.litematica.createSchematicPlacementBoxes();
@@ -57,6 +52,10 @@ final class ModuleSelectionScope {
         } else {
             baseBoxes = List.of(interactionBox);
         }
+        // Selection corners and enabled placements can change while the player stays still.
+        ScopeCacheKey cacheKey = cacheKey(interactionBox, selectionType,
+                this.clampToConfiguredSelection(interactionBox), baseBoxes);
+        if (cacheKey.equals(this.cachedKey)) return this.cachedBoxes;
         List<PrinterBox> result = new ArrayList<>(baseBoxes.size());
         for (PrinterBox baseBox : baseBoxes) {
             PrinterBox bounded = intersect(interactionBox, baseBox);
@@ -71,9 +70,10 @@ final class ModuleSelectionScope {
     static ScopeCacheKey cacheKey(
             PrinterBox interactionBox,
             @Nullable SelectionType selectionType,
-            @Nullable PrinterBox renderLayerBounds
+            @Nullable PrinterBox selectionBounds,
+            List<PrinterBox> sourceBoxes
     ) {
-        return new ScopeCacheKey(interactionBox, selectionType, renderLayerBounds);
+        return new ScopeCacheKey(interactionBox, selectionType, selectionBounds, sourceBoxes);
     }
 
     boolean contains(BlockPos pos) {
@@ -161,10 +161,12 @@ final class ModuleSelectionScope {
     record ScopeCacheKey(
             PrinterBox interactionBox,
             @Nullable SelectionType selectionType,
-            @Nullable PrinterBox renderLayerBounds
+            @Nullable PrinterBox selectionBounds,
+            List<PrinterBox> sourceBoxes
     ) {
         ScopeCacheKey {
             Objects.requireNonNull(interactionBox, "interactionBox");
+            sourceBoxes = List.copyOf(sourceBoxes);
         }
     }
 }

@@ -40,7 +40,7 @@ public final class SpawnCheckUtils {
 
     private static EntityType<?> resolveEntityType(String id) {
         // Direct field references are remapped by Loom. Reflection by named field string is not,
-        // which made the production 1.21.1 jar look for a non-existent "CREEPER" field.
+        // which would make the production jar look for a non-existent "CREEPER" field.
         return switch (id) {
             //#if MC > 260100
             //$$ case "minecraft:creeper" -> EntityTypes.CREEPER;

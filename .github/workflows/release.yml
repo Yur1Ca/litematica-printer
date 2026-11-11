@@ -11,8 +11,7 @@ on:
 env:
   IS_THIS_RELEASE: true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Java 25 warns when legacy Guava/JOML code uses Unsafe during remapping.
-  # This is a third-party compatibility path, not Printer code.
+  # Allow the Unsafe access used by test fixtures and third-party libraries on Java 25.
   GRADLE_OPTS: --sun-misc-unsafe-memory-access=allow
 
 permissions:

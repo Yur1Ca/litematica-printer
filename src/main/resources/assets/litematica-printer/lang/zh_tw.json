@@ -1,7 +1,7 @@
 {
   "litematica-printer.auto_disable_notice": "印表機已自動關閉",
   "litematica-printer.config.bedrock": "破基岩",
-  "litematica-printer.config.bedrock.desc": "調用BedrockMiner模組實現基岩挖掘，未安裝該模組則此功能不可用。",
+  "litematica-printer.config.bedrock.desc": "使用內建功能自動破壞選區內的基岩，需要活塞、紅石火把、黏液塊和可秒破活塞的鎬。",
   "litematica-printer.config.bedrockAllowSide": "允許水平(side)方案",
   "litematica-printer.config.bedrockAllowSide.desc": "允許破基岩在沒有可用垂直方案時使用水平活塞方案。\n預設關閉；開啟後總並發固定為 1，保留水平視角同步等待，仍優先使用垂直方案。",
   "litematica-printer.config.bedrockWhitelist": "額外目標白名單",
@@ -191,7 +191,7 @@
   "litematica-printer.config.printerLagCheckMax": "延遲檢測最大值",
   "litematica-printer.config.printerLagCheckMax.desc": "做為延遲檢測上限值",
   "litematica-printer.config.printerMode": "工作模式",
-  "litematica-printer.config.printerMode.desc": "印表機的核心工作模式：\n§d列印§r：還原投影藍圖中的方塊(包含方向、狀態等屬性)\n§d挖掘§r：挖掘選區範圍內的方塊(除流體外)\n§d破基岩§r：利用遊戲機制破壞選區範圍內的基岩(僅1.19以上且安裝Bedrock Miner模組後可用)\n§d排流體§r：用指定方塊填充投影選區內的液體\n§d填充§r：用方塊填滿投影選區\n\n§l提示:§r 除§d列印§r模式外，其餘模式的操作範圍均在投影選區內，也可透過調整各個模式的§6§l選區類型§r來改變。",
+  "litematica-printer.config.printerMode.desc": "印表機的核心工作模式：\n§d列印§r：還原投影藍圖中的方塊(包含方向、狀態等屬性)\n§d挖掘§r：挖掘選區範圍內的方塊(除流體外)\n§d破基岩§r：利用遊戲機制破壞選區範圍內的基岩\n§d排流體§r：用指定方塊填充投影選區內的液體\n§d填充§r：用方塊填滿投影選區\n\n§l提示:§r 除§d列印§r模式外，其餘模式的操作範圍均在投影選區內，也可透過調整各個模式的§6§l選區類型§r來改變。",
   "litematica-printer.config.printerSelectionType.desc": "列印模式的工作選區範圍規則：\n§d投影選區§r：使用投影當前選中的完整選區作為工作範圍\n§d投影渲染層§r：僅在投影當前渲染層範圍內執行列印\n§d投影選區 玩家之下§r：僅處理選區中玩家所在高度以下的區域\n§d投影選區 玩家之上§r：僅處理選區中玩家所在高度以上的區域",
   "litematica-printer.config.printerWorkingCountPerTick": "核心 - 每刻執行方塊數",
   "litematica-printer.config.printerWorkingCountPerTick.desc": "每遊戲刻執行的方塊操作數量(僅列印間隔設為0時生效)。\n建議設為2-8以平衡速度與性能，數值過高可能被伺服器踢出。",

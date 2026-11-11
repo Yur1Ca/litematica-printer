@@ -1,7 +1,7 @@
 {
   "litematica-printer.auto_disable_notice": "機巧已自動偃息",
   "litematica-printer.config.bedrock": "破基巖",
-  "litematica-printer.config.bedrock.desc": "藉BedrockMiner妙法鑿穿基巖。若未修此術，則不可用。",
+  "litematica-printer.config.bedrock.desc": "以內置機巧自破選界內之基巖，須備活塞、紅石火把、黏液塊與可瞬破活塞之鎬。",
   "litematica-printer.config.bedrockAllowSide": "允側向機關",
   "litematica-printer.config.bedrockAllowSide.desc": "無可用垂直機關時，許用側向活塞機關破基巖。\n預設閉之，以免側向視角遲滯拖慢多層；開啟後亦先候垂直之勢。",
   "litematica-printer.config.bedrockWhitelist": "額外允採冊",
@@ -191,7 +191,7 @@
   "litematica-printer.config.printerLagCheckMax": "伺服器極值",
   "litematica-printer.config.printerLagCheckMax.desc": "以為察遲之上限。",
   "litematica-printer.config.printerMode": "工式",
-  "litematica-printer.config.printerMode.desc": "機巧之核心工式：\n§d摹形§r：還投影圖樣中之石（含朝向、態等屬）\n§d採掘§r：掘選界內之石（除流體）\n§d破基巖§r：藉遊戲機制毀選界內基巖（僅一·一九以上且備Bedrock Miner術可用）\n§d治水§r：以指定石填滿投影選中之液\n§d填方§r：以石填滿投影選界\n\n§l註：§r 除§d摹形§r式外，餘式之操界皆在投影選界內，亦可調各式之§6§l選界類§r而變。",
+  "litematica-printer.config.printerMode.desc": "機巧之核心工式：\n§d摹形§r：還投影圖樣中之石（含朝向、態等屬）\n§d採掘§r：掘選界內之石（除流體）\n§d破基巖§r：藉遊戲機制毀選界內基巖\n§d治水§r：以指定石填滿投影選中之液\n§d填方§r：以石填滿投影選界\n\n§l註：§r 除§d摹形§r式外，餘式之操界皆在投影選界內，亦可調各式之§6§l選界類§r而變。",
   "litematica-printer.config.printerSelectionType.desc": "摹形模式之工作界域則：同填方模式之選界類。",
   "litematica-printer.config.printerWorkingCountPerTick": "樞機 - 每刻行石數",
   "litematica-printer.config.printerWorkingCountPerTick.desc": "每遊戲刻可行之石操作數（僅摹形間隔設零時有效）。\n薦設二至八以衡速效，值過高或被伺服器逐。",

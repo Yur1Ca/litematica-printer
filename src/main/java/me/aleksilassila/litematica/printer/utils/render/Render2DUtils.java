@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.utils.render;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
@@ -14,19 +13,13 @@ import net.minecraft.client.renderer.RenderPipelines;
 import java.awt.*;
 
 /**
- * 封装了原版 GUI 渲染的底层工具类，兼容多版本：
- * 1.18.x / 1.19.x / 1.20.x / 1.21.1 / 1.21.3+
+ * 封装 26.x 原版 GUI 渲染的底层工具类。
  */
 public class Render2DUtils {
     public static final Minecraft client = Minecraft.getInstance();
-    private static PoseStack poseStack;
     private static GuiGraphicsExtractor guiGraphics;
 
     // ==================== 初始化 ====================
-
-    public static void initMatrix(PoseStack poseStack) {
-        Render2DUtils.poseStack = poseStack;
-    }
 
     public static void initGuiGraphics(GuiGraphicsExtractor guiGraphics) {
         Render2DUtils.guiGraphics = guiGraphics;

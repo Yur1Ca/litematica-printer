@@ -118,7 +118,7 @@ public class Guides {
         // 铁轨
         register(RailGuide::new, BaseRailBlock.class);
 
-        // 合成器（MC 1.21+）
+        // 合成器
         register(CrafterGuide::new, CrafterBlock.class);
 
         // ============================================================
@@ -171,7 +171,7 @@ public class Guides {
         // 阳光探测器（反转切换）
         register(DaylightDetectorGuide::new, DaylightDetectorBlock.class);
 
-        // 花簇（MC 1.19.4+）
+        // 花簇
         register(FlowerBedGuide::new,
                 FlowerBedBlock.class
         );

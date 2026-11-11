@@ -19,7 +19,7 @@ if (validation == 'main') {
         }
 
         // Exclude the test tasks themselves so their test-only preprocessing and compilation
-        // do not run. All production compile/remap/package and architecture checks remain.
+        // do not run. All production compilation, packaging and architecture checks remain.
         def excluded = new LinkedHashSet<String>(build.startParameter.excludedTaskNames)
         build.rootProject.subprojects.findAll { it != mainProject && it.name != 'fabricWrapper' }.each { project ->
             project.tasks.withType(Test).each { test -> excluded.add(test.path) }

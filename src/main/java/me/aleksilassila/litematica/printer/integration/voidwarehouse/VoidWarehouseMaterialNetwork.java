@@ -211,7 +211,7 @@ public final class VoidWarehouseMaterialNetwork {
      * 材料列表界面是不是正开着。
      *
      * <p>26.2 起 {@code Minecraft} 上的 {@code screen} 字段被搬进了 {@code Gui}
-     * （变成一个 {@code screen()} 取值方法），26.1 与 1.21.11 还是原来的公开字段。
+     * （变成一个 {@code screen()} 取值方法），26.1 还是原来的公开字段。
      * 这个分叉在本仓库里已经有过先例（见 {@code MixinContainerScreenGuard}），
      * 判据同样是 {@code MC > 260100}。</p>
      */

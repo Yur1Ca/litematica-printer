@@ -51,9 +51,7 @@ public final class VoidWarehouseTriggerItem {
         if (stack.getItem() != Items.CRAFTING_TABLE) {
             return false;
         }
-        // 取名 API 分两条轨：1.20.5 起物品名变成组件（DataComponents.CUSTOM_NAME），
-        // 更早只有 hasCustomHoverName() + getHoverName()（后者在没有自定义名时返回物品默认名）。
-        // 不用 getCustomName()：那个方法名只有很新的版本才有。
+        // 直接读取自定义名组件，避免把物品默认名当成触发名。
         Component customName = stack.get(DataComponents.CUSTOM_NAME);
         if (customName == null) {
             return false;

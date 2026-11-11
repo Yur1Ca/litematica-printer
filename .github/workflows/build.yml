@@ -47,8 +47,7 @@ on:
 env:
   IS_THIS_RELEASE: false
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Java 25 warns when legacy Guava/JOML code uses Unsafe during remapping.
-  # This is a third-party compatibility path, not Printer code.
+  # Allow the Unsafe access used by test fixtures and third-party libraries on Java 25.
   GRADLE_OPTS: --sun-misc-unsafe-memory-access=allow
 
 permissions:
@@ -86,7 +85,7 @@ jobs:
             ~/.gradle/caches/fabric-loom
             ./.gradle/loom-cache
             ./libs
-          key: ${{ runner.os }}-${{ runner.arch }}-loom-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/src/**', 'versions/mainProject', 'versions/mapping-*.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-loom-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/src/**', 'versions/mainProject') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-loom-v2-
 

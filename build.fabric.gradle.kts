@@ -33,7 +33,6 @@ repositories {
     strictMaven("https://maven.fallenbreath.me/releases")
     strictMaven("https://masa.dy.fi/maven/sakura-ryoko", "fi.dy.masa")
 
-    strictMaven("https://www.cursemaven.com", "curse.maven")
     strictMaven("https://api.modrinth.com/maven", "maven.modrinth")
 
     strictMaven("https://maven.terraformersmc.com/releases", "com.terraformersmc")  // ModMenu
@@ -137,7 +136,7 @@ tasks.withType<Test>().configureEach {
 }
 
 loom {
-    val commonVmArgs = listOf("-Dmixin.debug.export=true", "-Dmixin.debug.verbose=true", "-Dmixin.env.remapRefMap=true")
+    val commonVmArgs = listOf("-Dmixin.debug.export=true", "-Dmixin.debug.verbose=true")
     val programArgs = listOf("--width", "1280", "--height", "720", "--username", "PrinterTest")
     runs {
         named("client") {

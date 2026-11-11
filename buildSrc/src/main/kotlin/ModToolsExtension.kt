@@ -20,7 +20,7 @@ object BuildToolUtils {
             val minor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
             val patch = versionParts.getOrNull(2)?.toIntOrNull() ?: 0
 
-            // 组合为 5 位数字（如 1.21.11 → 1*10000 + 21*100 + 11 = 12111）
+            // 组合版本数字（如 26.1 → 26*10000 + 1*100 = 260100）
             return major * 10000 + minor * 100 + patch
         } catch (e: Exception) {
             // 异常版本号（如 "invalid"）返回 0，避免构建中断
@@ -30,7 +30,7 @@ object BuildToolUtils {
     }
 
     /**
-     * 反向：将数字版本转为字符串（如 12111 → "1.21.11"，12006 → "1.20.6"）
+     * 反向：将数字版本转为字符串（如 260100 → "26.1"，260300 → "26.3"）
      */
     fun formatMcVersionNumber(mcVersionInt: Int): String {
         if (mcVersionInt <= 0) return "unknown"

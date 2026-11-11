@@ -125,12 +125,8 @@ abstract class ModPlugin : Plugin<Project> {
             // currently installed connection instead of one retained by compiled code.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::canSendPacketBatch")
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::sendPacketBatch")
-            // Java 25 warns when legacy Guava/JOML code uses Unsafe. Keep the
-            // compatibility access enabled only on runtimes that support this
-            // switch; older Java versions must not receive an unknown option.
-            if (Runtime.version().feature() >= 23) {
-                jvmArgs("--sun-misc-unsafe-memory-access=allow")
-            }
+            // Test fixtures and third-party libraries use Unsafe on Java 25.
+            jvmArgs("--sun-misc-unsafe-memory-access=allow")
         }
     }
 

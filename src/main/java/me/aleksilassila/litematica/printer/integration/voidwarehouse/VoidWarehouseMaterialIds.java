@@ -26,11 +26,6 @@ import net.minecraft.world.item.Items;
  * <p>即「再解析一次、再序列化一次」。{@code Identifier.toString()} 给的是
  * {@code namespace:path}（{@code getPath()} 会把 {@code minecraft:} 丢掉），
  * 这正是服务端会吐回来的那种形式，所以两边相等。</p>
- *
- * <h2>为什么整类都在 {@code MC >= 12111} 里</h2>
- * <p>1.21.11 之前这个类叫 {@code ResourceLocation}，方法签名一样但类型不同；
- * 而虚空仓库这条能力本来就只在 1.21.11+ 存在（服务端 carpet-Neko-Addition 也只支持
- * 26.x 与 1.21.11）。与其为一个不存在的功能维护两个分支，不如整类只在支持的版本上编译。</p>
  */
 public final class VoidWarehouseMaterialIds {
 

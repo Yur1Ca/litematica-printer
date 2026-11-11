@@ -47,7 +47,7 @@ final class BedrockPowerQuery {
         return false;
     }
 
-    /** BlockGetter keeps this read-only signal view available on 1.18/1.19 as well. */
+    /** Read-only signal view that treats the selected torches as removed. */
     private static final class SignalView implements BlockGetter {
         private final ClientLevel level;
         private final Set<BlockPos> removedTorches;

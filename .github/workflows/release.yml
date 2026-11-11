@@ -24,31 +24,36 @@ concurrency:
 jobs:
   release:
     if: github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-
-      - name: Validate gradle wrapper
-        uses: gradle/actions/wrapper-validation@v6
 
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           java-version: '25'
-          distribution: 'microsoft'
+          distribution: 'temurin'
 
-      - name: Cache Gradle dependencies
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+          # Keep Minecraft archives in the shared, version-filtered cache below.
+          gradle-home-cache-excludes: caches/fabric-loom
+
+      - name: Cache Loom dependencies and workspace
         uses: actions/cache@v5
         with:
           path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ./.gradle
+            ~/.gradle/caches/fabric-loom/26.*
+            ~/.gradle/caches/fabric-loom/*.json
+            ~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/*/26.*
+            ./.gradle/loom-cache/minecraftMaven/net/minecraft/*/26.*
             ./libs
-          key: ${{ runner.os }}-gradle-release-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
+          # Share the build workflow's cache, without inheriting its legacy bundle.
+          key: ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'build.fabric.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'versions/*/gradle.properties', 'versions/mainProject') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-release-
-            ${{ runner.os }}-gradle-
+            ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
@@ -56,7 +61,16 @@ jobs:
       - name: Build all supported versions and wrapper
         shell: bash
         run: |
-          ./gradlew :fabricWrapper:build --stacktrace
+          ./gradlew :fabricWrapper:build --parallel --max-workers=2 --stacktrace --console=plain --profile
+
+      - name: Capture Gradle timing report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-profile
+          path: build/reports/profile/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Collect release jars
         shell: bash

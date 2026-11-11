@@ -112,6 +112,8 @@ abstract class ModPlugin : Plugin<Project> {
 
     private fun Project.configureTestWorkers() {
         tasks.withType<Test>().configureEach {
+            // Keep the test-only JIT safeguards below without printing each compiler command.
+            jvmArgs("-XX:CompileCommand=quiet")
             // Bedrock fixtures swap the cached final CLIENT via Unsafe. Keep this tiny reader
             // interpreted so JIT constant folding cannot retain a previous test's inventory.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory::count")

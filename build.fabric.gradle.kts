@@ -132,10 +132,10 @@ loom {
     val programArgs = listOf("--width", "1280", "--height", "720", "--username", "PrinterTest")
     runs {
         named("client") {
-            ideConfigGenerated(true)
-            vmArgs(commonVmArgs)
-            programArgs(programArgs)
-            runDir = if (project.name == "26.3") "../../run/client-26.3" else "../../run/client"
+            generateRunConfig.set(true)
+            jvmArguments.addAll(commonVmArgs)
+            programArguments.addAll(programArgs)
+            runDirectory.set(file(if (project.name == "26.3") "../../run/client-26.3" else "../../run/client"))
         }
     }
 }

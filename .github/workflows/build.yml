@@ -72,20 +72,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          # Loom's Minecraft archives belong to the dependency-keyed cache below,
-          # not the Gradle User Home entry saved for every new commit.
+          validate-wrappers: true
+          # Keep Minecraft archives in the shared, version-filtered cache below.
           gradle-home-cache-excludes: caches/fabric-loom
 
       - name: Cache Loom dependencies and workspace
         uses: actions/cache@v5
         with:
           path: |
-            ~/.gradle/caches/fabric-loom
-            ./.gradle/loom-cache
+            ~/.gradle/caches/fabric-loom/26.*
+            ~/.gradle/caches/fabric-loom/*.json
+            ~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/*/26.*
+            ./.gradle/loom-cache/minecraftMaven/net/minecraft/*/26.*
             ./libs
-          key: ${{ runner.os }}-${{ runner.arch }}-loom-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/src/**', 'versions/mainProject') }}
+          # Do not restore the old bundle containing pre-26 Minecraft versions and assets.
+          key: ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'build.fabric.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'versions/*/gradle.properties', 'versions/mainProject') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-loom-v2-
+            ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
@@ -97,7 +100,7 @@ jobs:
         run: >-
           ./gradlew :fabricWrapper:build -x jacocoTestCoverageVerification
           --init-script .github/scripts/ci-build.init.gradle "-PciValidation=$CI_VALIDATION"
-          --stacktrace --console=plain --profile
+          --parallel --max-workers=2 --stacktrace --console=plain --profile
 
       - name: Capture Gradle timing report
         if: ${{ !cancelled() }}

@@ -120,6 +120,9 @@ abstract class ModPlugin : Plugin<Project> {
             // Range fixtures also replace a cached final client. A compiled reader can retain
             // the initial null across fixtures even after Unsafe installs the current client.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils::isWithinWorkInteractedEuclideanRange")
+            // The bedrock interaction gate reads ConfigUtils' replaced final client too;
+            // hot cleanup scans must not bind the next fixture to the previous player.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockRangePolicy::canInteract")
             // Packet fixtures replace the same final client; a hot factory can otherwise
             // inline the bootstrap null instead of the current fixture's connection.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::createPacket")

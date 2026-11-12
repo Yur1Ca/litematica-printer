@@ -100,6 +100,7 @@ class BedrockToolEligibilityTest {
         boolean airborne;
         boolean aquaAffinity;
         double breakSpeed;
+        Double miningEfficiency;
         MobEffectInstance haste;
         //#if MC >= 12006
         @Override public boolean onGround() { return !airborne; }
@@ -117,7 +118,12 @@ class BedrockToolEligibilityTest {
         //$$ @Override public MobEffectInstance getEffect(MobEffect effect) { return effect == MobEffects.DIG_SPEED ? haste : null; }
         //#endif
         //#if MC >= 12006
-        @Override public double getAttributeValue(Holder<Attribute> attribute) { return attribute.equals(Attributes.BLOCK_BREAK_SPEED) ? breakSpeed : 1; }
+        @Override public double getAttributeValue(Holder<Attribute> attribute) {
+            //#if MC >= 12101
+            if (attribute.equals(Attributes.MINING_EFFICIENCY) && miningEfficiency != null) return miningEfficiency;
+            //#endif
+            return attribute.equals(Attributes.BLOCK_BREAK_SPEED) ? breakSpeed : 1;
+        }
         @Override public AttributeInstance getAttribute(Holder<Attribute> attribute) {
             var instance = new AttributeInstance(attribute, ignored -> {});
             if (attribute.equals(Attributes.BLOCK_BREAK_SPEED)) instance.setBaseValue(breakSpeed);

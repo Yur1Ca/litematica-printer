@@ -178,6 +178,7 @@ class BedrockCleanupBatchTest {
         final Object coordinator;
 
         Fixture(BlockPos... positions) throws Exception {
+            super(0);
             placer = (BedrockPlacer) get(executor, executor.getClass(), "placer");
             var type = Class.forName("me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockCleanupCoordinator");
             var ctor = type.getDeclaredConstructor(net.minecraft.client.Minecraft.class,

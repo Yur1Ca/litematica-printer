@@ -138,7 +138,7 @@ public final class BedrockEngine implements RuntimeComponent {
         }
         // A rejected raw use may leave the client's last material optimistically empty.
         // Resolve that dirty baseline once before declaring supplies unavailable.
-        if (this.placer.reconcileInventoryIfDirty()) return true;
+        if (this.placer.reconcileMaterialsIfDirty()) return true;
         this.placer.clearHorizontalLookState();
         MaterialReservation reservation = requests.request(
                 missing.item(), missing.minimumCount(), MaterialRequest.Source.BEDROCK);

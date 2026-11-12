@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
+import me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.minecraft.InventorySyncPackets;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
@@ -9,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.List;
 final class BedrockInventorySession {
     interface InventoryAccess {
         boolean selectOffhand(Item item);
+        default boolean selectOffhandSlot(int inventorySlot) { return false; }
         boolean materialRequiresInventorySwap(Item item);
         /** Changing the selected hotbar slot also sends its carried-item selection packet. */
         boolean selectMaterial(Item item);
@@ -35,12 +38,22 @@ final class BedrockInventorySession {
     private boolean initialValidated;
     private boolean needsToolPrewarm;
     private boolean rawDirty;
+    private boolean countDirty;
     private final int[] counts = new int[41];
+    private final ItemStack[] countBaselines = new ItemStack[36];
     private final int[] toolUses = new int[9];
 
     BedrockInventorySession(Minecraft client) {
         this(client, new InventoryAccess() {
             public boolean selectOffhand(Item item) { return BedrockInventory.switchToOffhand(item); }
+            public boolean selectOffhandSlot(int inventorySlot) {
+                var player = client.player;
+                if (player == null || client.gameMode == null || inventorySlot < 0 || inventorySlot >= 36
+                        || player.containerMenu != player.inventoryMenu || !player.inventoryMenu.getCarried().isEmpty()) return false;
+                int menuSlot = inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
+                client.gameMode.handleContainerInput(player.inventoryMenu.containerId, menuSlot, 40, ContainerInput.SWAP, player);
+                return true;
+            }
             public boolean materialRequiresInventorySwap(Item item) { return BedrockInventory.materialRequiresInventorySwap(item); }
             public boolean selectMaterial(Item item) { return BedrockInventory.switchToItem(item); }
             public boolean toolRequiresInventorySwap(BlockState state, boolean cleanup) {
@@ -105,6 +118,13 @@ final class BedrockInventorySession {
         return this.isSettling();
     }
 
+    boolean reconcileMaterialsIfDirty() {
+        if (!this.safeContext()) return false;
+        if (this.isSettling() || this.refresh != null) return true;
+        // Cleanup tool wear does not invalidate confirmed material counts.
+        return this.countDirty && this.reconcileInventoryIfDirty();
+    }
+
     private void record(InventorySyncPackets.SyncFence fence) {
         this.observeConnection();
         this.pending = fence;
@@ -150,9 +170,12 @@ final class BedrockInventorySession {
         if (!this.safeContext()) return;
         var inventory = this.client.player.getInventory();
         this.rawDirty = false;
+        this.countDirty = false;
         for (int slot = 0; slot < this.counts.length; slot++) {
             this.counts[slot] = Math.max(0, inventory.getItem(slot).getCount() - refresh.countCosts[slot]);
+            if (slot < this.countBaselines.length) this.countBaselines[slot] = inventory.getItem(slot).copy();
             this.rawDirty |= refresh.countCosts[slot] > 0;
+            this.countDirty |= refresh.countCosts[slot] > 0;
         }
         for (int slot = 0; slot < this.toolUses.length; slot++) {
             int current = remainingUses(inventory.getItem(slot));
@@ -170,7 +193,9 @@ final class BedrockInventorySession {
         this.connection = null;
         this.needsToolPrewarm = false;
         this.rawDirty = false;
+        this.countDirty = false;
         java.util.Arrays.fill(this.counts, 0);
+        java.util.Arrays.fill(this.countBaselines, null);
         java.util.Arrays.fill(this.toolUses, 0);
         this.toolSync.reset();
     }
@@ -192,11 +217,34 @@ final class BedrockInventorySession {
         if (InventoryUtils.getOffhandStack(this.client.player).is(Items.PISTON)) {
             return this.availablePistons() > 0 || this.synchronize(null);
         }
+        if (this.rawDirty && this.refresh == null && this.counts[40] == 0
+                && InventoryUtils.getOffhandStack(this.client.player).isEmpty()) {
+            int source = this.calibratedPistonSource();
+            // Freeze the known source before the SWAP; its ordered snapshot still owns all authorization.
+            if (source >= 0) return this.synchronize(() -> this.access.selectOffhandSlot(source));
+        }
         if (!BedrockInventory.hasAtLeast(Items.PISTON, 1)) {
             this.reconcileInventoryIfDirty();
             return false;
         }
-        return this.synchronize(this.rawDirty ? null : () -> this.access.selectOffhand(Items.PISTON));
+        // Tool wear does not change either stack exchanged by this offhand SWAP.
+        return this.synchronize(this.countDirty ? null : () -> this.access.selectOffhand(Items.PISTON));
+    }
+
+    private int calibratedPistonSource() {
+        var inventory = this.client.player.getInventory();
+        for (int slot = 0; slot < this.countBaselines.length; slot++) {
+            var current = inventory.getItem(slot);
+            var baseline = this.countBaselines[slot];
+            if (current.is(Items.PISTON) && baseline != null && this.availableCount(slot) > 0
+                    //#if MC > 12004
+                    && ItemStack.isSameItemSameComponents(baseline, current)
+                    //#else
+                    //$$ && ItemStack.isSameItemSameTags(baseline, current)
+                    //#endif
+                    && VoidWarehouseTriggerItem.isUsableAsMaterial(current)) return slot;
+        }
+        return -1;
     }
 
     boolean preparePistons(int required) { return this.preparePistons() && this.availablePistons() >= required; }
@@ -264,6 +312,7 @@ final class BedrockInventorySession {
                 this.client.player.getInventory().getItem(slot).getCount());
         if (this.refresh != null) this.refresh.countCosts[slot]++;
         this.rawDirty = true;
+        this.countDirty = true;
     }
 
     private void debitCount(int slot, int used) {
@@ -272,13 +321,18 @@ final class BedrockInventorySession {
                 this.client.player.getInventory().getItem(slot).getCount()) - used);
         if (this.refresh != null) this.refresh.countCosts[slot] += used;
         this.rawDirty = true;
+        this.countDirty = true;
     }
 
     private void rebuildBudgets() {
         var inventory = this.client.player.getInventory();
-        for (int slot = 0; slot < this.counts.length; slot++) this.counts[slot] = inventory.getItem(slot).getCount();
+        for (int slot = 0; slot < this.counts.length; slot++) {
+            this.counts[slot] = inventory.getItem(slot).getCount();
+            if (slot < this.countBaselines.length) this.countBaselines[slot] = inventory.getItem(slot).copy();
+        }
         for (int slot = 0; slot < this.toolUses.length; slot++) this.toolUses[slot] = remainingUses(inventory.getItem(slot));
         this.rawDirty = false;
+        this.countDirty = false;
     }
 
     private static int remainingUses(net.minecraft.world.item.ItemStack stack) {

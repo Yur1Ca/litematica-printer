@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,8 +36,10 @@ class UseItemOnSendTest {
         Object connection = new Object();
         try (var send = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit())) {
             assertFalse(send.wasSent());
-            NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit()));
+            assertEquals(-1, send.sequence());
+            NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit(), 37));
             assertTrue(send.wasSent());
+            assertEquals(expectedSequence(37), send.sequence());
         }
     }
 
@@ -54,9 +57,13 @@ class UseItemOnSendTest {
             for (Packet<?> packet : unrelated) {
                 NetworkUtils.observeUseItemOn(connection, packet);
                 assertFalse(send.wasSent(), "Only the matching hand, position, face, point and inside flag are a receipt");
+                assertEquals(-1, send.sequence());
             }
             NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit()));
             assertTrue(send.wasSent());
+            assertEquals(expectedSequence(1), send.sequence());
+            NetworkUtils.observeUseItemOn(connection, use(InteractionHand.OFF_HAND, hit(), 99));
+            assertEquals(expectedSequence(1), send.sequence(), "A later unrelated USE cannot overwrite the matched sequence");
         }
     }
 
@@ -67,10 +74,13 @@ class UseItemOnSendTest {
         try (var send = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit())) {
             NetworkUtils.observeUseItemOn(new Object(), packet);
             assertFalse(send.wasSent());
+            assertEquals(-1, send.sequence());
             CompletableFuture.runAsync(() -> NetworkUtils.observeUseItemOn(connection, packet)).join();
             assertFalse(send.wasSent(), "Transport work on another thread must not inherit the interaction scope");
+            assertEquals(-1, send.sequence());
             NetworkUtils.observeUseItemOn(connection, packet);
             assertTrue(send.wasSent());
+            assertEquals(expectedSequence(1), send.sequence());
         }
     }
 
@@ -82,10 +92,13 @@ class UseItemOnSendTest {
             try (var inner = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit())) {
                 NetworkUtils.observeUseItemOn(connection, packet);
                 assertTrue(inner.wasSent());
+                assertEquals(expectedSequence(1), inner.sequence());
                 assertFalse(outer.wasSent(), "A nested interaction must not complete its caller's receipt");
+                assertEquals(-1, outer.sequence());
             }
-            NetworkUtils.observeUseItemOn(connection, packet);
+            NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit(), 9));
             assertTrue(outer.wasSent());
+            assertEquals(expectedSequence(9), outer.sequence());
         }
     }
 
@@ -96,11 +109,13 @@ class UseItemOnSendTest {
             assertThrows(IllegalStateException.class, () -> {
                 try (var inner = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit())) {
                     assertFalse(inner.wasSent());
+                    assertEquals(-1, inner.sequence());
                     throw new IllegalStateException("interaction failed");
                 }
             });
             NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit()));
             assertTrue(outer.wasSent(), "The caller must recover its scope even when a nested interaction throws");
+            assertEquals(expectedSequence(1), outer.sequence());
         }
     }
 
@@ -110,11 +125,14 @@ class UseItemOnSendTest {
         var previous = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit());
         try (previous) {
             assertFalse(previous.wasSent());
+            assertEquals(-1, previous.sequence());
         }
         NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit()));
         assertFalse(previous.wasSent(), "A closed scope must not observe later sends");
+        assertEquals(-1, previous.sequence());
         try (var next = NetworkUtils.trackUseItemOn(connection, InteractionHand.MAIN_HAND, hit())) {
             assertFalse(next.wasSent(), "A previous call's send must not be reused by the next interaction");
+            assertEquals(-1, next.sequence());
         }
     }
 
@@ -123,10 +141,22 @@ class UseItemOnSendTest {
     }
 
     private static ServerboundUseItemOnPacket use(InteractionHand hand, BlockHitResult hit) {
+        return use(hand, hit, 1);
+    }
+
+    private static ServerboundUseItemOnPacket use(InteractionHand hand, BlockHitResult hit, int sequence) {
         //#if MC > 11802
-        return new ServerboundUseItemOnPacket(hand, hit, 1);
+        return new ServerboundUseItemOnPacket(hand, hit, sequence);
         //#else
         //$$ return new ServerboundUseItemOnPacket(hand, hit);
+        //#endif
+    }
+
+    private static int expectedSequence(int sequence) {
+        //#if MC > 11802
+        return sequence;
+        //#else
+        //$$ return -1;
         //#endif
     }
 }

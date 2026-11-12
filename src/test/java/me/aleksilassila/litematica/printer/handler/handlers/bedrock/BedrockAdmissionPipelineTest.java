@@ -18,7 +18,9 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.Entity;
@@ -29,6 +31,7 @@ import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -39,6 +42,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.lang.reflect.Proxy;
 
@@ -204,6 +209,7 @@ class BedrockAdmissionPipelineTest {
     @Test void anExistingSlowCleanupAdvancesEvenWhenItsPositionIsReservedAndTheQueueIsEmpty() throws Exception {
         try (var f = new Fixture()) {
             var clock = f.cleanupWorld();
+            f.setBreakSpeed(1.0D);
             assertTrue(f.enginePlacer.breakCleanupBlock(FIRST.above(), Direction.DOWN));
             f.targets.add(f.target(FIRST, Direction.UP, f.enginePlacer));
             var cleanup = (BedrockCleanupCoordinator) get(f.engine, BedrockEngine.class, "cleanup");
@@ -281,14 +287,15 @@ class BedrockAdmissionPipelineTest {
     }
 
     private static final class ReadyPlayer extends BedrockPlacementRegressionTest.TestPlayer {
+        double breakSpeed;
         ReadyPlayer() { super(); }
         @Override public Abilities getAbilities() { return new Abilities(); }
         @Override public boolean onGround() { return true; }
         @Override public boolean hasEffect(Holder<MobEffect> effect) { return false; }
         @Override public boolean isEyeInFluid(TagKey<Fluid> tag) { return false; }
-        @Override public float getDestroySpeed(BlockState state) { return 9.0F; }
         @Override public double getAttributeValue(Holder<Attribute> attribute) {
-            return attribute.equals(Attributes.BLOCK_BREAK_SPEED) ? 100.0D : 1.0D;
+            if (attribute.equals(Attributes.MINING_EFFICIENCY)) return 0.0D;
+            return attribute.equals(Attributes.BLOCK_BREAK_SPEED) ? this.breakSpeed : 1.0D;
         }
         @Override public AttributeInstance getAttribute(Holder<Attribute> attribute) {
             var result = new AttributeInstance(attribute, ignored -> { });
@@ -314,6 +321,7 @@ class BedrockAdmissionPipelineTest {
         final boolean oldSide = Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
         final int oldWorkRange = Configs.Core.WORK_RANGE.getIntegerValue();
         final Object oldShape = Configs.Core.ITERATOR_SHAPE.getOptionListValue();
+        final List<TagKey<Block>> oldPistonTags = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.PISTON).tags().toList();
         final SelectionManager selectionManager = DataManager.getSelectionManager();
         final SelectionMode oldSelectionMode = selectionManager.getSelectionMode();
         final DataManager data;
@@ -336,6 +344,7 @@ class BedrockAdmissionPipelineTest {
             Configs.Core.WORK_RANGE.setIntegerValue(16);
             Configs.Core.ITERATOR_SHAPE.setOptionListValue(RadiusShapeType.SPHERE);
             var player = allocate(ReadyPlayer.class);
+            player.breakSpeed = 100.0D;
             player.inventory = ((BedrockPlacementRegressionTest.TestPlayer) client.player).inventory;
             set(player, Player.class, "inventory", player.inventory);
             set(player, Player.class, "inventoryMenu", client.player.inventoryMenu);
@@ -354,6 +363,17 @@ class BedrockAdmissionPipelineTest {
                 level.blocks.put(pos.east(), Blocks.BEDROCK.defaultBlockState());
             }
             mode.rejectMutations = true;
+            var pistonTags = new ArrayList<>(this.oldPistonTags);
+            if (!pistonTags.contains(BlockTags.MINEABLE_WITH_PICKAXE)) pistonTags.add(BlockTags.MINEABLE_WITH_PICKAXE);
+            bindPistonTags(pistonTags);
+            assertEquals(8.0F, player.getMainHandItem().getDestroySpeed(Blocks.PISTON.defaultBlockState()),
+                    "Native diamond pickaxe speed requires the real piston mining tag");
+        }
+
+        private static void bindPistonTags(Collection<TagKey<Block>> tags) throws Exception {
+            var method = Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
+            method.setAccessible(true);
+            method.invoke(BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.PISTON), tags);
         }
 
         void beginFence() {
@@ -363,6 +383,8 @@ class BedrockAdmissionPipelineTest {
         }
 
         void advance(long tick) throws Exception { tick(tick); engine.tick(); }
+
+        void setBreakSpeed(double value) { ((ReadyPlayer) this.client.player).breakSpeed = value; }
 
         ClockLevel cleanupWorld() throws Exception {
             var clock = allocate(ClockLevel.class);
@@ -407,6 +429,7 @@ class BedrockAdmissionPipelineTest {
             Configs.Core.ITERATOR_SHAPE.setOptionListValue((fi.dy.masa.malilib.config.IConfigOptionListEntry) oldShape);
             set(selectionManager, SelectionManager.class, "mode", oldSelectionMode);
             set(data, DataManager.class, "areaSimple", oldArea);
+            bindPistonTags(this.oldPistonTags);
             super.close();
         }
     }

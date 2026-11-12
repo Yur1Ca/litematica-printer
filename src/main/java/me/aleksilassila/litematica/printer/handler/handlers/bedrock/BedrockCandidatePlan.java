@@ -46,7 +46,11 @@ record BedrockCandidatePlan(
         );
     }
 
-    BedrockCandidatePlan withPlanRevision(long revision) {
+    BedrockCandidatePlan refreshSchedulingPriority(ClientLevel level, long revision) {
+        // Reservations and cleanup change without a block update; keep geometry cached,
+        // but compare candidates using the current runtime's occupancy and cleanup cost.
+        int priority = candidatePriority(level, this.pos, this.layout, this.placement);
+        if (this.priority == priority && this.planRevision == revision) return this;
         return new BedrockCandidatePlan(
                 this.pos,
                 this.layout,
@@ -54,7 +58,7 @@ record BedrockCandidatePlan(
                 this.slimePos,
                 this.structuralPositions,
                 this.powerReservationPositions,
-                this.priority,
+                priority,
                 this.neighborTargetCount,
                 this.footprint,
                 revision

@@ -23,14 +23,27 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Predicate;
 
 /** Freezes ordered initial placements; relative inventory moves synchronize separately. */
 final class BedrockInitialPackets {
     private BedrockInitialPackets() { }
 
-    record Preparation(List<BedrockPlacer.PistonRequest> accepted, boolean powered, boolean changedMainHand) {
-        private static final Preparation EMPTY = new Preparation(List.of(), false, false);
+    enum TorchAction { SENT, REUSED, DEFERRED }
+
+    record Receipt(BlockPos pistonPos, BedrockTorchPlacement torchPlacement, TorchAction torchAction,
+                   int pistonSequence, int torchSequence) {
+        int requiredSequence() {
+            return this.torchAction == TorchAction.DEFERRED ? -1
+                    : this.torchAction == TorchAction.SENT ? Math.max(this.pistonSequence, this.torchSequence)
+                    : this.pistonSequence;
+        }
+    }
+
+    record Preparation(List<BedrockPlacer.PistonRequest> accepted, boolean powered, boolean changedMainHand,
+                       Map<BlockPos, Receipt> receipts) {
+        private static final Preparation EMPTY = new Preparation(List.of(), false, false, Map.of());
     }
 
     static Preparation placeBatch(Minecraft client, BedrockInventorySession inventory,
@@ -103,7 +116,42 @@ final class BedrockInitialPackets {
                 : prepare(player, frozenPistons);
         if (packets.isEmpty() || !NetworkUtils.sendPacketBatch(packets)) return Preparation.EMPTY;
         inventory.recordRawUses(accepted.size(), torchSlot, torches.size());
-        return new Preparation(List.copyOf(accepted), powered, !torches.isEmpty());
+        return new Preparation(List.copyOf(accepted), powered, !torches.isEmpty(), receipts(accepted, packets));
+    }
+
+    private static Map<BlockPos, Receipt> receipts(List<BedrockPlacer.PistonRequest> accepted, List<Packet<?>> packets) {
+        //#if MC > 11802
+        var pistons = new LinkedHashMap<BlockPos, Integer>();
+        var torches = new LinkedHashMap<BlockPos, Integer>();
+        for (var packet : packets) {
+            if (!(packet instanceof ServerboundUseItemOnPacket use)) continue;
+            //#if MC >= 260300
+            //$$ var hand = use.hand();
+            //$$ var hit = use.hitResult();
+            //$$ int sequence = use.sequence();
+            //#else
+            var hand = use.getHand();
+            var hit = use.getHitResult();
+            int sequence = use.getSequence();
+            //#endif
+            (hand == InteractionHand.OFF_HAND ? pistons : torches)
+                    .put(hit.getBlockPos().relative(hit.getDirection()).immutable(), sequence);
+        }
+        var receipts = new LinkedHashMap<BlockPos, Receipt>();
+        for (var request : accepted) {
+            int piston = pistons.getOrDefault(request.pistonPos(), -1);
+            var placement = request.torchPlacement();
+            int torch = placement == null ? -1 : torches.getOrDefault(placement.getTorchPos(), -1);
+            var action = placement == null ? TorchAction.DEFERRED : torch >= 0 ? TorchAction.SENT : TorchAction.REUSED;
+            var frozen = placement == null ? null
+                    : new BedrockTorchPlacement(placement.getSupportPos().immutable(), placement.getClickedFace());
+            if (piston >= 0) receipts.put(request.pistonPos().immutable(),
+                    new Receipt(request.pistonPos().immutable(), frozen, action, piston, torch));
+        }
+        return Map.copyOf(receipts);
+        //#else
+        //$$ return Map.of();
+        //#endif
     }
 
     private static int findTorchSlot(LocalPlayer player, BedrockInventorySession inventory) {

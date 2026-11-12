@@ -111,9 +111,11 @@ class MineSelectionRefreshTest {
         try (var f = new Fixture(false)) {
             f.bounds(FIRST, SECOND);
             f.start(FIRST);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
             float before = f.mining.port.progress;
 
             f.bounds(FIRST, FIRST);
+            f.advanceTick();
             f.continueActive();
 
             assertTrue(f.mining.port.destroying);
@@ -174,12 +176,14 @@ class MineSelectionRefreshTest {
             f.iterate(SECOND);
             assertTrue(f.mining.port.destroying);
             assertEquals(SECOND, f.mining.port.pos);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
             float before = f.mining.port.progress;
 
             f.bounds(FIRST, FIRST);
             f.refreshTrench();
             assertFalse(new LitematicaAdapter().isWithinSelectionRange(SECOND),
                     "The waterlogged block deliberately lies one horizontal block outside the selection");
+            f.advanceTick();
             f.continueActive();
 
             assertTrue(f.mining.port.destroying, "The refreshed trench scope still owns this boundary target");
@@ -272,6 +276,11 @@ class MineSelectionRefreshTest {
         }
 
         void start(BlockPos pos) throws Exception { queue(pos); dispatch(); }
+        void advanceTick() throws Exception {
+            candidates.level.tick++;
+            set(RuntimeAccess.get(), PrinterRuntime.class, "currentTick", candidates.level.tick);
+            mining.controller.tick();
+        }
         void dispatch() throws Exception { invoke(MineHandler.class, mining.mineHandler, "stopIteration", new Class<?>[]{boolean.class}, false); }
         void continueActive() throws Exception { invoke(MineHandler.class, mining.mineHandler, "continueActiveMineTarget", new Class<?>[0]); }
         void refreshTrench() throws Exception { invoke(MineHandler.class, mining.mineHandler, "refreshTrenchFillTargets", new Class<?>[0]); }

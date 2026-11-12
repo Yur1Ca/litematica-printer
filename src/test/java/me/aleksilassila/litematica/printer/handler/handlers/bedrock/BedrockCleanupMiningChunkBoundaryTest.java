@@ -108,6 +108,7 @@ class BedrockCleanupMiningChunkBoundaryTest {
 
         Fixture() throws Exception {
             cleanupWorld();
+            setBreakSpeed(1.0D);
             world = allocate(LoadedWorld.class);
             world.blocks = level.blocks;
             world.loaded = true;

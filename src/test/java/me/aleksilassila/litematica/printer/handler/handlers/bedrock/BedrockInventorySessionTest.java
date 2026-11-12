@@ -20,6 +20,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.InvocationHandler;
@@ -192,6 +193,130 @@ class BedrockInventorySessionTest {
         }
     }
 
+    @Test void aDirtyEmptyOffhandRefillsFromItsCalibratedSlotBeforeTheSingleOrderedSnapshot() throws Exception {
+        try (var f = new Fixture()) {
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 2));
+            f.player().getInventory().setItem(10, new ItemStack(Items.PISTON, 32));
+            var session = f.session();
+            f.validateInitial(session);
+            call(session, "recordRawUses", new Class<?>[]{int.class, int.class, int.class}, 2, -1, 0);
+            assertTrue(f.player().getOffhandItem().isEmpty());
+            InventoryRecoveryFence.sent(f.transport,
+                    new ServerboundClientCommandPacket(ServerboundClientCommandPacket.Action.REQUEST_STATS));
+
+            assertFalse(pistons(session));
+
+            assertEquals(32, f.player().getOffhandItem().getCount(),
+                    "The calibrated absolute source can be swapped before the reply, without a preliminary empty snapshot");
+            assertTrue(f.player().getInventory().getItem(10).isEmpty());
+            assertEquals(List.of(10), f.actions.absoluteOffhandSources);
+            assertEquals(2, f.markers(), "Initial calibration plus one SWAP confirmation, with no extra dirty-baseline round trip");
+            assertEquals(0, call(session, "availablePistons", new Class<?>[0]),
+                    "Predicted refill must not authorize any world use before its own fence");
+            f.acknowledge(); // The older Stats request does not confirm this SWAP.
+            assertTrue(settling(session));
+            assertFalse(pistons(session));
+            assertEquals(List.of(10), f.actions.absoluteOffhandSources, "A pending refill cannot send an inverse SWAP");
+
+            // The last raw USE was rejected: the server still had one piston in the offhand.
+            // Its native SWAP returns that piston to the source instead of losing it.
+            var serverReply = new ArrayList<>(f.player().inventoryMenu.slots.stream().map(slot -> slot.getItem().copy()).toList());
+            serverReply.set(10, new ItemStack(Items.PISTON, 1));
+            f.apply(serverReply, 51);
+            assertEquals(0, call(session, "availablePistons", new Class<?>[0]));
+            InventoryRecoveryFence.received(f.transport);
+
+            assertFalse(settling(session));
+            assertTrue(pistons(session));
+            assertEquals(32, call(session, "availablePistons", new Class<?>[0]));
+            assertEquals(1, call(session, "availableCount", new Class<?>[]{int.class}, 10),
+                    "Only the real post-SWAP snapshot may restore the server's rejected raw cost");
+            assertEquals(2, f.markers());
+        }
+    }
+
+    @Test void aDirtyRefillCannotTrustPistonsWhichReplacedAnotherCalibratedItem() throws Exception {
+        try (var f = new Fixture()) {
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 1));
+            f.player().getInventory().setItem(10, new ItemStack(Items.STONE, 32));
+            var session = f.session();
+            f.validateInitial(session);
+            call(session, "recordRawUses", new Class<?>[]{int.class, int.class, int.class}, 1, -1, 0);
+            f.player().getInventory().setItem(10, new ItemStack(Items.PISTON, 32));
+
+            assertFalse(pistons(session));
+
+            assertTrue(f.player().getOffhandItem().isEmpty(), "A count budget for stone cannot authorize a piston source");
+            assertTrue(f.actions.absoluteOffhandSources.isEmpty());
+            assertTrue(settling(session));
+            assertEquals(2, f.markers());
+        }
+    }
+
+    @ParameterizedTest @CsvSource({"3, 39", "4, 40", "10, 10"})
+    void theRuntimeRefillUsesTheFrozenPlayerMenuSlotAndOffhandButton(int source, int expectedMenuSlot) throws Exception {
+        try (var f = new Fixture()) {
+            var mode = f.allocate(RefillGameMode.class);
+            f.client.gameMode = mode;
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 2));
+            f.player().getInventory().setItem(source, new ItemStack(Items.PISTON, 32));
+            var session = new BedrockInventorySession(f.client);
+            f.validateInitial(session);
+            session.recordRawUses(2, -1, 0);
+
+            assertFalse(session.preparePistons());
+
+            assertEquals(1, mode.calls, "The production inventory adapter must issue exactly one native SWAP");
+            assertEquals(expectedMenuSlot, mode.menuSlot);
+            assertEquals(40, mode.button, "Button 40 addresses the offhand inventory slot; its menu slot is 45");
+            assertEquals(ContainerInput.SWAP, mode.input);
+            assertEquals(32, f.player().getOffhandItem().getCount());
+            assertTrue(f.player().getInventory().getItem(source).isEmpty());
+            assertEquals(0, session.availablePistons());
+            assertTrue(session.isSettling());
+            f.acknowledge();
+            assertFalse(session.isSettling());
+            assertEquals(32, session.availablePistons());
+            assertEquals(2, f.markers());
+        }
+    }
+
+    @Test void aDirtyNonemptyOffhandStillConfirmsItsBaselineBeforeAnyRelativeSwap() throws Exception {
+        try (var f = new Fixture()) {
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 1));
+            f.player().getInventory().setItem(10, new ItemStack(Items.PISTON, 32));
+            var session = f.session();
+            f.validateInitial(session);
+            call(session, "recordRawUses", new Class<?>[]{int.class, int.class, int.class}, 1, -1, 0);
+            f.player().getInventory().setItem(40, new ItemStack(Items.REDSTONE_TORCH, 8));
+
+            assertFalse(pistons(session));
+
+            assertTrue(f.player().getOffhandItem().is(Items.REDSTONE_TORCH));
+            assertEquals(0, f.actions.offhandSwaps);
+            assertTrue(f.actions.absoluteOffhandSources.isEmpty());
+            assertTrue(settling(session));
+        }
+    }
+
+    @Test void aDirtyRefillCannotReuseTheCountOfAPistonWhoseComponentsChanged() throws Exception {
+        try (var f = new Fixture()) {
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 1));
+            f.player().getInventory().setItem(10, new ItemStack(Items.PISTON, 32));
+            var session = f.session();
+            f.validateInitial(session);
+            call(session, "recordRawUses", new Class<?>[]{int.class, int.class, int.class}, 1, -1, 0);
+            f.player().getInventory().getItem(10).set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    net.minecraft.network.chat.Component.literal("Changed piston"));
+
+            assertFalse(pistons(session));
+
+            assertTrue(f.player().getOffhandItem().isEmpty());
+            assertTrue(f.actions.absoluteOffhandSources.isEmpty(), "The source's count is bound to its calibrated component identity");
+            assertTrue(settling(session));
+        }
+    }
+
     @Test void materialSelectionUsesAbsoluteMainHandSlotsAndResendsTheSelectedSlotEveryTime() throws Exception {
         try (var f = new Fixture()) {
             var session = f.session();
@@ -310,8 +435,22 @@ class BedrockInventorySessionTest {
         }
     }
 
+    private static final class RefillGameMode extends BedrockPlacementRegressionTest.TestGameMode {
+        int calls, menuSlot, button;
+        ContainerInput input;
+        @Override public void handleContainerInput(int containerId, int slot, int button, ContainerInput input, Player player) {
+            this.calls++;
+            this.menuSlot = slot;
+            this.button = button;
+            this.input = input;
+            assertEquals(player.inventoryMenu.containerId, containerId);
+            player.inventoryMenu.clicked(slot, button, input, player);
+        }
+    }
+
     static class Actions implements InvocationHandler {
         final Fixture f;
+        final List<Integer> absoluteOffhandSources = new ArrayList<>();
         int offhandSwaps, materialMoves, toolMoves;
         int toolSource;
         boolean lastCleanup, notReadyAfterMaterialMove, markMaterialGuard;
@@ -326,6 +465,13 @@ class BedrockInventorySessionTest {
         }
         @Override public Object invoke(Object proxy, Method method, Object[] args) {
             return switch (method.getName()) {
+                case "selectOffhandSlot" -> {
+                    int source = (int) args[0];
+                    absoluteOffhandSources.add(source);
+                    offhandSwaps++;
+                    move(source, 40);
+                    yield true;
+                }
                 case "selectOffhand" -> {
                     Item item = (Item) args[0];
                     if (!f.player().getInventory().getItem(40).is(item)) {

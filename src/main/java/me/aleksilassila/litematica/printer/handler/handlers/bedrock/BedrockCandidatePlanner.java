@@ -116,24 +116,10 @@ public final class BedrockCandidatePlanner {
             candidates = this.getEligibleCandidates();
         }
 
-        List<BedrockCandidatePlan> selectedCandidates;
-        if (candidates.size() <= 1) {
-            selectedCandidates = candidates;
-        } else {
-            candidates.sort(Comparator
-                    .comparingInt(BedrockCandidatePlan::priority)
-                    .thenComparingInt(BedrockCandidatePlan::neighborTargetCount));
-
-            selectedCandidates = candidates;
-        }
-
-        selectionLimit = Math.min(selectedCandidates.size(), selectionLimit);
-        List<BedrockCandidatePlan> liveSelection = new ArrayList<>(selectionLimit);
-        BedrockCandidateConflictIndex conflicts = new BedrockCandidateConflictIndex();
-        for (BedrockCandidatePlan cachedCandidate : selectedCandidates) {
-            if (liveSelection.size() >= selectionLimit) {
-                break;
-            }
+        // Refresh the bounded backlog before ordering: a dirty plan can change priority
+        // and must not reserve a local conflict slot ahead of an independent live plan.
+        List<BedrockCandidatePlan> liveCandidates = new ArrayList<>(candidates.size());
+        for (BedrockCandidatePlan cachedCandidate : candidates) {
             BedrockCandidatePlan candidate = this.refreshModeledCandidate(
                     level,
                     cachedCandidate,
@@ -144,6 +130,19 @@ public final class BedrockCandidatePlanner {
                 continue;
             }
             this.candidateBacklog.offer(candidate.pos(), candidate);
+            liveCandidates.add(candidate);
+        }
+        liveCandidates.sort(Comparator
+                .comparingInt(BedrockCandidatePlan::priority)
+                .thenComparingInt(BedrockCandidatePlan::neighborTargetCount));
+
+        selectionLimit = Math.min(liveCandidates.size(), selectionLimit);
+        List<BedrockCandidatePlan> liveSelection = new ArrayList<>(selectionLimit);
+        BedrockCandidateConflictIndex conflicts = new BedrockCandidateConflictIndex();
+        for (BedrockCandidatePlan candidate : liveCandidates) {
+            if (liveSelection.size() >= selectionLimit) {
+                break;
+            }
             if (!conflicts.tryReserve(candidate)) {
                 continue;
             }
@@ -339,9 +338,7 @@ public final class BedrockCandidatePlanner {
         }
         var dirty = this.scanEngine.dirtySnapshotAfter(cached.planRevision(), cached.footprint());
         if (dirty.boxes().isEmpty()) {
-            return cached.planRevision() == dirty.version()
-                    ? cached
-                    : cached.withPlanRevision(dirty.version());
+            return cached.refreshSchedulingPriority(level, dirty.version());
         }
         return this.buildModeledCandidate(level, cached.pos(), allowSide);
     }

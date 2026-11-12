@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.interaction.ToolPreparationResult;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -109,7 +110,9 @@ public final class BedrockBreaker {
                     || !this.placer.prepareCriticalToolTick()) return null;
         }
         float progress = hardness == 0.0F || this.client.player.getAbilities().instabuild
-                ? 1.0F : state.getDestroyProgress(this.client.player, this.level, pos);
+                ? 1.0F : fallback ? state.getDestroyProgress(this.client.player, this.level, pos)
+                // The confirmed tool is ready on the server; its client attribute packet can arrive later.
+                : PlayerUtils.getDestroyProgress(this.client.player, state, this.client.player.getMainHandItem());
         if (!(progress > 0.0F)) return null;
         var packets = new ArrayList<Packet<?>>();
         if (!appendAction(packets, ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, pos, direction)) return null;

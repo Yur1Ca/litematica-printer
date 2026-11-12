@@ -20,6 +20,9 @@ final class BedrockTargetStatusResolver {
         boolean hasTried();
         int executeTick();
         int initializeTick();
+        boolean initialExtensionObserved();
+        void observeInitialExtension();
+        boolean initialRequestAcknowledged();
         int tickTimes();
         int stuckTicks();
         BedrockTarget.Status currentStatus();
@@ -62,10 +65,23 @@ final class BedrockTargetStatusResolver {
         boolean primingPiston = pistonState.is(Blocks.PISTON)
                 && pistonState.getValue(PistonBaseBlock.FACING) == this.host.layout().getPrimingFacing();
         if (primingPiston && pistonState.getValue(PistonBaseBlock.EXTENDED)) {
+            this.host.observeInitialExtension();
             return BedrockTarget.Status.EXTENDED;
         }
         if (primingPiston && this.host.hasDeferredInitialTorch()
                 && !this.host.placer().isInventorySettling() && !this.host.hasOwnedTorchPowerSource()) {
+            return BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+        }
+        // A confirmed initial extension does not regain cold-start grace after losing its torch.
+        if (primingPiston && this.host.initialExtensionObserved() && !this.host.hasOwnedTorchPowerSource()
+                && !this.host.hasAnyTransientMachineResidue() && !this.host.hasPollutedMachineState()) {
+            return BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+        }
+        // The exact initial request has been processed, including rejected placements.
+        // Keep animation, pollution and powered-stall observation on their existing paths.
+        if (primingPiston && !this.host.layout().isHorizontal() && this.host.initialRequestAcknowledged()
+                && !this.host.hasOwnedTorchPowerSource() && !this.host.hasAnyTransientMachineResidue()
+                && !this.host.hasPollutedMachineState()) {
             return BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
         }
         // The base, head and power updates can arrive separately during initialization.

@@ -7,6 +7,8 @@ final class BedrockTargetState {
     private int stuckTicks;
     private int executeTick = -1;
     private int initializeTick = -1;
+    private boolean initialExtensionObserved;
+    private BedrockPlacer.InitialRequest initialRequest;
     private BedrockTarget.Status status = BedrockTarget.Status.UNINITIALIZED;
     private long lastAdvancedTick = Long.MIN_VALUE;
 
@@ -24,6 +26,8 @@ final class BedrockTargetState {
         this.stuckTicks = 0;
         this.executeTick = -1;
         this.initializeTick = -1;
+        this.initialExtensionObserved = false;
+        this.initialRequest = null;
     }
 
     int tickTimes() {
@@ -65,7 +69,17 @@ final class BedrockTargetState {
 
     void setInitializeTick(int value) {
         this.initializeTick = value;
+        this.initialExtensionObserved = false;
+        this.initialRequest = null;
     }
+
+    boolean initialExtensionObserved() { return this.initialExtensionObserved; }
+
+    void observeInitialExtension() { this.initialExtensionObserved = true; }
+
+    BedrockPlacer.InitialRequest initialRequest() { return this.initialRequest; }
+
+    void setInitialRequest(BedrockPlacer.InitialRequest request) { this.initialRequest = request; }
 
     BedrockTarget.Status status() {
         return this.status;

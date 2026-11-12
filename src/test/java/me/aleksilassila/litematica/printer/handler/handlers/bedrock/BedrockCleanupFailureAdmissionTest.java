@@ -100,6 +100,7 @@ class BedrockCleanupFailureAdmissionTest {
 
         Fixture() throws Exception {
             cleanupWorld();
+            setBreakSpeed(1.0D);
             Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.setIntegerValue(1);
             Configs.Bedrock.BEDROCK_INTERVAL.setIntegerValue(1);
             cleanup = (BedrockCleanupCoordinator) get(engine, BedrockEngine.class, "cleanup");
@@ -129,9 +130,11 @@ class BedrockCleanupFailureAdmissionTest {
             assertEquals(2, countActions(RESIDUE, STOP_DESTROY_BLOCK));
             assertTrue(cleanup.contains(RESIDUE));
             assertTrue(level.blocks.get(RESIDUE).is(Blocks.PISTON), "No server success was supplied by this fixture");
+            setBreakSpeed(100.0D); // The failed owner has yielded; unrelated construction retains a capable tool.
         }
 
         void startNewCleanup() throws Exception {
+            setBreakSpeed(1.0D);
             advance(39);
             level.blocks.put(NEW_RESIDUE, Blocks.PISTON.defaultBlockState());
             cleanup.enqueueCycle(NEW_RESIDUE.below(), Set.of(NEW_RESIDUE), false);

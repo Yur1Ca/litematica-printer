@@ -150,6 +150,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     void onInitialBatchDispatched(BedrockTorchPlacement torch) {
         this.actionExecutor.initialized();
         if (torch != null) this.machine.onTorchBatchDispatched(torch);
+        this.state.setInitialRequest(this.placer.takeInitialRequest(this.pistonPos, torch));
     }
 
     void onCriticalBatchDispatched() { this.actionExecutor.dispatched(); }
@@ -256,6 +257,7 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
         if (this.hasTried() || !this.canMutatePower()) return false;
         if (!this.machine.tryRepowerTorch(this.state.tickTimes())) return false;
         this.state.setInitializeTick(this.state.tickTimes());
+        this.state.setInitialRequest(this.placer.takeTorchRequest(this.pistonPos, this.machine.torchPlacement()));
         return true;
     }
 
@@ -333,6 +335,17 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     }
 
     @Override
+    public boolean initialExtensionObserved() { return this.state.initialExtensionObserved(); }
+
+    @Override
+    public void observeInitialExtension() { this.state.observeInitialExtension(); }
+
+    @Override
+    public boolean initialRequestAcknowledged() {
+        return this.placer.initialRequestAcknowledged(this.state.initialRequest(), this.pistonPos, this.machine.torchPlacement());
+    }
+
+    @Override
     public int tickTimes() {
         return this.state.tickTimes();
     }
@@ -355,7 +368,9 @@ public class BedrockTarget implements BedrockTargetStatusResolver.Host, BedrockT
     @Override
     public boolean placeInitialTorch() {
         if (this.hasTried() || !this.canMutatePower()) return false;
-        return this.machine.placeTorch();
+        if (!this.machine.placeTorch()) return false;
+        this.state.setInitialRequest(this.placer.takeTorchRequest(this.pistonPos, this.machine.torchPlacement()));
+        return true;
     }
 
     @Override

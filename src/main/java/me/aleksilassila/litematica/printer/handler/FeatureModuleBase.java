@@ -215,7 +215,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         return ModuleEnablePolicy.allows(this);
     }
 
-    boolean isSchematicBlock(BlockPos pos) {
+    protected boolean isSchematicBlock(BlockPos pos) {
         return this.litematica.isSchematicBlock(pos);
     }
 

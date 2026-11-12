@@ -22,6 +22,7 @@ import java.util.Objects;
 
 public final class BedrockBreaker {
     private static final Minecraft CLIENT = Minecraft.getInstance();
+    private static final int FAILED_RETRY_COOLDOWN_TICKS = BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS;
     private final Minecraft client;
     private final BedrockPlacer placer;
     private final Map<BlockPos, CleanupAttempt> pending = new HashMap<>();
@@ -30,6 +31,8 @@ public final class BedrockBreaker {
     private ClientLevel level;
     private Object epoch;
     private CleanupAttempt active;
+    private boolean resetPending;
+    private long cleanupYieldTick = Long.MIN_VALUE;
 
     BedrockBreaker(Minecraft client, BedrockPlacer placer) {
         this.client = client;
@@ -40,8 +43,9 @@ public final class BedrockBreaker {
     boolean breakCleanup(BlockPos pos, Direction direction) {
         if (!this.refresh() || pos == null || direction == null) return false;
         if (this.active != null) return this.advanceActive();
+        if (this.level.getGameTime() <= this.cleanupYieldTick) return false;
         var previous = this.pending.get(pos);
-        if (previous != null && !previous.retryNeeded) return false;
+        if (previous != null && (!previous.retryNeeded || this.level.getGameTime() < previous.retryAtTick)) return false;
         return this.startCleanup(pos, direction, previous != null);
     }
 
@@ -53,6 +57,7 @@ public final class BedrockBreaker {
     int breakCleanupBatch(List<BlockPos> positions, int limit) {
         if (positions == null || positions.isEmpty() || limit <= 0 || !this.refresh()) return 0;
         if (this.active != null) return this.advanceActive() ? 1 : 0;
+        if (this.level.getGameTime() <= this.cleanupYieldTick) return 0;
         var prepared = new ArrayList<PreparedCleanup>();
         int sent = 0;
         int hardUses = 0;
@@ -60,7 +65,7 @@ public final class BedrockBreaker {
             if (sent + prepared.size() >= limit) break;
             if (pos == null || prepared.stream().anyMatch(entry -> entry.attempt().pos.equals(pos))) continue;
             var previous = this.pending.get(pos);
-            if (previous != null && !previous.retryNeeded) continue;
+            if (previous != null && (!previous.retryNeeded || this.level.getGameTime() < previous.retryAtTick)) continue;
             var entry = this.prepareCleanup(pos, Direction.DOWN, previous != null);
             if (entry == null) continue;
             // Keep dependent parts in ordered submissions without inserting an extra client tick.
@@ -141,14 +146,22 @@ public final class BedrockBreaker {
     private record PreparedCleanup(CleanupAttempt attempt, List<Packet<?>> packets, int toolSlot, boolean usesTool) { }
 
     boolean hasActiveMining() {
-        return this.active != null && this.sameContext()
+        return this.active != null && this.sameWorld()
                 && (!BedrockEnvironment.isChunkLoaded(this.level, this.active.pos)
                 || !this.level.getBlockState(this.active.pos).isAir());
     }
 
     boolean isPendingAt(BlockPos pos) {
-        return pos != null && this.sameContext() && this.pending.containsKey(pos)
+        return pos != null && this.sameWorld()
+                && (this.sameContext() || this.active != null && this.active.pos.equals(pos))
+                && this.pending.containsKey(pos)
                 && (!BedrockEnvironment.isChunkLoaded(this.level, pos) || !this.level.getBlockState(pos).isAir());
+    }
+
+    /** Failed work yields capacity until its next real START, even after its retry deadline passes. */
+    boolean isRetryPausedAt(BlockPos pos) {
+        CleanupAttempt attempt = pos == null || !this.sameContext() ? null : this.pending.get(pos);
+        return attempt != null && attempt.retryPaused;
     }
 
     void advanceMining() {
@@ -164,11 +177,24 @@ public final class BedrockBreaker {
     }
 
     void reset() {
-        if (this.sameWorld()) this.abortActive();
+        this.resetPending = true;
+        this.resetContext();
+    }
+
+    private boolean resetContext() {
+        if (this.active != null && this.sameWorld()
+                && (!BedrockEnvironment.isChunkLoaded(this.level, this.active.pos)
+                || !this.level.getBlockState(this.active.pos).isAir())) {
+            this.active.discardAfterAbort = true;
+            if (!this.cancelActive()) return false;
+        }
         this.pending.clear();
         this.active = null;
         this.connection = this.player = this.epoch = null;
         this.level = null;
+        this.resetPending = false;
+        this.cleanupYieldTick = Long.MIN_VALUE;
+        return true;
     }
 
     private boolean bindContext() {
@@ -180,9 +206,9 @@ public final class BedrockBreaker {
         Object currentConnection = listener == null ? null : listener.getConnection();
         var runtime = RuntimeAccess.currentOrNull();
         Object currentEpoch = runtime == null ? null : runtime.epoch();
-        if (this.connection != currentConnection || this.player != this.client.player
+        if (this.resetPending || this.connection != currentConnection || this.player != this.client.player
                 || this.level != this.client.level || !Objects.equals(this.epoch, currentEpoch)) {
-            this.reset();
+            if (!this.resetContext()) return false;
             this.connection = currentConnection;
             this.player = this.client.player;
             this.level = this.client.level;
@@ -213,8 +239,8 @@ public final class BedrockBreaker {
                 // Unknown AIR cannot acknowledge this START. Cancel the hand owner while the
                 // target/coordinator keeps the footprint for a later loaded observation.
                 if (attempt == this.active) {
-                    this.abortActive();
-                    this.active = null;
+                    attempt.discardAfterAbort = true;
+                    if (!this.cancelActive()) return false;
                 }
                 iterator.remove();
                 continue;
@@ -226,18 +252,19 @@ public final class BedrockBreaker {
                     && now - sentTick >= BedrockNetworkSync.DEFAULT_CONFIRMATION_TIMEOUT_TICKS;
             if (changed || !this.canMine(attempt.pos)) {
                 if (attempt == this.active) {
-                    if (!state.isAir()) this.abortActive();
+                    attempt.discardAfterAbort = true;
+                    if (!state.isAir() && !this.cancelActive()) return false;
                     this.active = null;
                 }
                 iterator.remove();
+            } else if (attempt == this.active && attempt.abortRequested) {
+                if (!this.cancelActive()) return false;
+                if (attempt.discardAfterAbort) iterator.remove();
             } else if (timedOut) {
                 // Unknown results retain their retry phase. Repeating START-only forever never
                 // finishes when the server's actual delta was lower than the client estimate.
                 attempt.retryNeeded = true;
-                if (attempt == this.active && !attempt.fallback) {
-                    this.abortActive();
-                    this.active = null;
-                }
+                if (attempt == this.active && !this.cancelActive()) return false;
             }
         }
         return true;
@@ -245,14 +272,12 @@ public final class BedrockBreaker {
 
     private boolean advanceActive() {
         var attempt = this.active;
-        if (attempt.retryNeeded) return this.startCleanup(attempt.pos, attempt.direction, true);
         if (attempt.stopTick >= 0) return false;
         if (!sameTool(attempt.tool, normalizedTool(this.client.player.getMainHandItem()))
                 || !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBreak(
                         attempt.pos, attempt.state, false), this.placer)) {
-            this.abortActive();
-            this.pending.remove(attempt.pos);
-            this.active = null;
+            attempt.discardAfterAbort = true;
+            if (this.cancelActive()) this.pending.remove(attempt.pos);
             return false;
         }
         float progress = this.level.getBlockState(attempt.pos)
@@ -272,11 +297,25 @@ public final class BedrockBreaker {
                 && BedrockEnvironment.canInteract(pos) && this.level.getWorldBorder().isWithinBounds(pos);
     }
 
-    private void abortActive() {
-        if (this.active == null) return;
+    /** Releasing the local owner is safe only after this connection accepts its native ABORT. */
+    private boolean cancelActive() {
+        var attempt = this.active;
+        if (attempt == null) return true;
+        attempt.abortRequested = true;
         var packets = new ArrayList<Packet<?>>();
-        if (appendAction(packets, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
-                this.active.pos, this.active.direction)) NetworkUtils.sendPacketBatch(packets);
+        if (!appendAction(packets, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
+                attempt.pos, attempt.direction) || !NetworkUtils.sendPacketBatch(packets)) return false;
+        if (!attempt.discardAfterAbort) {
+            attempt.retryNeeded = true;
+            if (attempt.fallback) {
+                attempt.retryAtTick = this.level.getGameTime() + FAILED_RETRY_COOLDOWN_TICKS;
+                attempt.retryPaused = true;
+                // Both cleanup passes must yield this tick so another machine can advance.
+                this.cleanupYieldTick = this.level.getGameTime();
+            }
+        }
+        this.active = null;
+        return true;
     }
 
     private static boolean appendAction(List<Packet<?>> packets, ServerboundPlayerActionPacket.Action action,
@@ -310,7 +349,11 @@ public final class BedrockBreaker {
         final ItemStack tool;
         final boolean fallback;
         long stopTick;
+        long retryAtTick;
+        boolean retryPaused;
         boolean retryNeeded;
+        boolean abortRequested;
+        boolean discardAfterAbort;
 
         CleanupAttempt(BlockPos pos, Direction direction, BlockState state, long tick,
                        boolean open, boolean fallback, ItemStack tool) {

@@ -18,8 +18,10 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.BedBlock;
@@ -332,15 +334,26 @@ public final class VoidWarehousePlacementNetwork {
 
     private static void receiveResult(PrinterPlaceResultPayload payload, ClientPlayNetworking.Context context) {
         if (isCurrentReceiver(context)) {
-            // Expire first so late results cannot enter counters after their request timed out.
-            STATE.tick(tick);
-            var request = STATE.pendingRequest(payload.nonce());
-            if (request != null) {
-                DIAGNOSTICS.recordResult(payload.status(), request.sentAt(), tick);
-                trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
-                        "nonce=" + payload.nonce());
+            handleResult(payload, Minecraft.getInstance().level);
+        }
+    }
+
+    static void handleResult(PrinterPlaceResultPayload payload, ClientLevel level) {
+        STATE.tick(tick);
+        var request = STATE.pendingRequest(payload.nonce());
+        if (request != null) {
+            DIAGNOSTICS.recordResult(payload.status(), request.sentAt(), tick);
+            trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
+                    "nonce=" + payload.nonce());
+        }
+        STATE.receiveResult(payload.nonce(), payload.status(), tick);
+        if (request != null && payload.status() == PrinterPlaceResultPayload.OK) {
+            BlockState placed = level.getBlockState(request.target());
+            if (!placed.isAir()) {
+                var sound = placed.getSoundType();
+                level.playLocalSound(request.target(), sound.getPlaceSound(), SoundSource.BLOCKS,
+                        (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false);
             }
-            STATE.receiveResult(payload.nonce(), payload.status(), tick);
         }
     }
 

@@ -20,7 +20,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.File;
 import java.lang.reflect.Field;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -176,9 +178,14 @@ class ModuleSelectionScopeTest {
     private static SchematicPlacement oneBlockPlacement() throws Exception {
         // The one-argument in-memory constructor takes File on older versions and Path on newer ones.
         var constructor = Arrays.stream(LitematicaSchematic.class.getDeclaredConstructors())
-                .filter(candidate -> candidate.getParameterCount() == 1).findFirst().orElseThrow();
+                .filter(candidate -> candidate.getParameterCount() == 1
+                        && (candidate.getParameterTypes()[0] == File.class
+                        || candidate.getParameterTypes()[0] == Path.class)).findFirst().orElseThrow();
         constructor.setAccessible(true);
-        var schematic = (LitematicaSchematic) constructor.newInstance(new Object[]{null});
+        // Some Path overloads dereference the path even though no file is read or written.
+        Path path = Path.of("printer-selection-scope-test.litematic");
+        Object file = constructor.getParameterTypes()[0] == File.class ? path.toFile() : path;
+        var schematic = (LitematicaSchematic) constructor.newInstance(file);
         ((Map<String, BlockPos>) field(LitematicaSchematic.class, "subRegionPositions").get(schematic))
                 .put("test", BlockPos.ZERO);
         ((Map<String, BlockPos>) field(LitematicaSchematic.class, "subRegionSizes").get(schematic))

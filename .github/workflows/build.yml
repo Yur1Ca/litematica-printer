@@ -1,10 +1,9 @@
 name: build
 
 on:
-  # Automatic builds are limited to files that can change the produced JARs.
-  # CI and release workflow changes can still be verified with workflow_dispatch.
+  # Build legacy production changes and changes to the CI paths themselves.
   push:
-    branches: [master]
+    branches: [old]
     paths:
       - 'src/**'
       - 'versions/**'
@@ -17,8 +16,10 @@ on:
       - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
   pull_request:
-    branches: [master]
+    branches: [old]
     paths:
       - 'src/**'
       - 'versions/**'
@@ -31,6 +32,8 @@ on:
       - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
   workflow_dispatch:
     inputs:
       validation:
@@ -97,7 +100,7 @@ jobs:
         run: >-
           ./gradlew :fabricWrapper:build -x jacocoTestCoverageVerification
           --init-script .github/scripts/ci-build.init.gradle "-PciValidation=$CI_VALIDATION"
-          --stacktrace --console=plain --profile
+          --no-parallel --max-workers=2 --stacktrace --console=plain --profile
 
       - name: Capture Gradle timing report
         if: ${{ !cancelled() }}

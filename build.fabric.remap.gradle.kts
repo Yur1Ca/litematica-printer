@@ -57,6 +57,11 @@ val modMenuDependency = "maven.modrinth:modmenu:${prop("modmenu")}"
 // https://github.com/FabricMC/fabric-loader/issues/783
 configurations.all {
     resolutionStrategy {
+        // KyrptConfig 1.18 publishes both 1.2.1 and '+'. Keep the already-resolved
+        // version without depending on Maven's dynamic version listing in CI.
+        if (mcVersionInt == 11802) {
+            force("blue.endless:jankson:1.2.3")
+        }
         dependencySubstitution {
             substitute(module("com.terraformersmc:modmenu"))
                 .using(module(modMenuDependency))

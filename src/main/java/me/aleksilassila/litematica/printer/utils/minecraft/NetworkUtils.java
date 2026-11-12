@@ -41,7 +41,14 @@ public class NetworkUtils {
         if (scope.hand == hand && scope.hit.getBlockPos().equals(hit.getBlockPos())
                 && scope.hit.getDirection() == hit.getDirection()
                 && scope.hit.getLocation().equals(hit.getLocation())
-                && scope.hit.isInside() == hit.isInside()) scope.sent = true;
+                && scope.hit.isInside() == hit.isInside()) {
+            scope.sent = true;
+            //#if MC >= 260300
+            //$$ scope.sequence = use.sequence();
+            //#else
+            scope.sequence = use.getSequence();
+            //#endif
+        }
     }
 
     public static final class UseItemOnSend implements AutoCloseable {
@@ -50,6 +57,7 @@ public class NetworkUtils {
         private final BlockHitResult hit;
         private final UseItemOnSend previous;
         private boolean sent;
+        private int sequence = -1;
 
         private UseItemOnSend(Object connection, InteractionHand hand, BlockHitResult hit, UseItemOnSend previous) {
             this.connection = connection;
@@ -59,6 +67,8 @@ public class NetworkUtils {
         }
 
         public boolean wasSent() { return this.sent; }
+
+        public int sequence() { return this.sequence; }
 
         @Override public void close() {
             if (this.previous == null) ACTIVE_USE_ITEM_ON.remove();

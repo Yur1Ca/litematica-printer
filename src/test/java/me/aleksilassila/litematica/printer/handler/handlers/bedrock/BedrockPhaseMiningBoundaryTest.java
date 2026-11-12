@@ -26,6 +26,7 @@ class BedrockPhaseMiningBoundaryTest {
     void anOpenCleanupPreventsBothCriticalEntryPoints(boolean batch) throws Exception {
         try (var f = new BedrockAdmissionPipelineTest.Fixture()) {
             f.cleanupWorld();
+            f.setBreakSpeed(1.0D);
             f.level.blocks.put(RESIDUE, Blocks.PISTON.defaultBlockState());
             assertTrue(f.enginePlacer.breakCleanupBlock(RESIDUE, Direction.DOWN));
             assertTrue(f.enginePlacer.isCleanupPendingAt(RESIDUE));
@@ -35,6 +36,7 @@ class BedrockPhaseMiningBoundaryTest {
             assertEquals(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
                     ((ServerboundPlayerActionPacket) start).getAction());
             assertEquals(RESIDUE, ((ServerboundPlayerActionPacket) start).getPos());
+            f.setBreakSpeed(100.0D); // A capable critical tool must still respect the existing OPEN owner.
             f.machine(Direction.UP);
             var layout = f.target(TARGET, Direction.UP, f.enginePlacer).layout();
             var critical = (BedrockCriticalExecutor) get(f.engine, BedrockEngine.class, "criticalExecutor");

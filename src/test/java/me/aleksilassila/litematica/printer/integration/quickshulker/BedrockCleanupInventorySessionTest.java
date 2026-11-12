@@ -326,6 +326,11 @@ class BedrockCleanupInventorySessionTest {
         final BedrockPlacer placer;
 
         CleanupFixture() throws Exception {
+            this(0);
+        }
+
+        CleanupFixture(int efficiency) throws Exception {
+            super(efficiency);
             clock.blocks = traceLevel.blocks;
             clock.border = traceLevel.border;
             client.level = clock;

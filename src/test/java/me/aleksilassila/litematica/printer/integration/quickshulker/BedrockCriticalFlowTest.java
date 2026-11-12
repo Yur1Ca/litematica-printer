@@ -107,7 +107,11 @@ class BedrockCriticalFlowTest {
         final java.lang.reflect.Method submit;
 
         Fixture() throws Exception {
-            super(5);
+            this(5);
+        }
+
+        Fixture(int efficiency) throws Exception {
+            super(efficiency);
             traceLevel.blocks = new HashMap<>();
             traceLevel.border = new net.minecraft.world.level.border.WorldBorder();
             traceLevel.blocks.put(BASE, Blocks.BEDROCK.defaultBlockState());

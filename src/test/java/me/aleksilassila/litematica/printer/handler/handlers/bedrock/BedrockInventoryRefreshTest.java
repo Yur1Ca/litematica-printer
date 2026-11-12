@@ -16,9 +16,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.get;
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.set;
@@ -260,6 +262,115 @@ class BedrockInventoryRefreshTest {
             f.acknowledge();
             synchronizedInventory(session, f.transport);
             assertFalse(settling(session));
+        }
+    }
+
+    @Test void anEmptyOffhandRefillCannotReplaceAnOutstandingBackgroundSnapshot() throws Exception {
+        try (var f = new BedrockInventorySessionTest.Fixture()) {
+            f.player().getInventory().setItem(40, new ItemStack(Items.PISTON, 4));
+            f.player().getInventory().setItem(10, new ItemStack(Items.PISTON, 32));
+            Object session = f.session();
+            f.validateInitial(session);
+            raw(session, 3, -1, 0);
+            f.apply(f.contents(new ItemStack(Items.PISTON, 4), ItemStack.EMPTY), 48);
+            maintain(session, 2);
+            assertEquals(2, f.markers());
+            f.apply(f.contents(ItemStack.EMPTY, ItemStack.EMPTY), 49);
+
+            assertFalse((boolean) call(session, "preparePistons", new Class<?>[0]));
+
+            assertEquals(32, f.player().getInventory().getItem(10).getCount());
+            assertTrue(f.player().getOffhandItem().isEmpty());
+            assertTrue(f.actions.absoluteOffhandSources.isEmpty(), "A calibrated source cannot overtake the existing refresh ticket");
+            assertEquals(2, f.markers(), "The background marker retains its ordered reply ordinal");
+            assertFalse(settling(session));
+        }
+    }
+
+    @Test void aToolOnlyBackgroundRefreshStillOwnsItsTicketBeforeAnyOffhandSwap() throws Exception {
+        try (var f = new BedrockInventorySessionTest.Fixture()) {
+            var tool = new ItemStack(Items.DIAMOND_PICKAXE);
+            tool.setDamageValue(tool.getMaxDamage() - 10);
+            f.player().getInventory().setItem(0, tool);
+            f.player().getInventory().setItem(40, ItemStack.EMPTY);
+            Object session = f.session();
+            call(session, "synchronize", new Class<?>[]{Runnable.class}, (Object) null);
+            f.acknowledge();
+            assertFalse(settling(session));
+            for (int used = 0; used < 7; used++) toolUse(session);
+            maintain(session, 4);
+            toolUse(session); // This cost must survive the background reply.
+            var delivery = new ArrayList<>(f.player().inventoryMenu.slots.stream().map(slot -> slot.getItem().copy()).toList());
+            delivery.set(10, new ItemStack(Items.PISTON, 32));
+            f.apply(delivery, 49);
+
+            assertFalse((boolean) call(session, "preparePistons", new Class<?>[0]));
+
+            assertEquals(0, f.actions.offhandSwaps, "Tool-only dirtiness cannot overtake an outstanding refresh");
+            assertTrue(f.player().getOffhandItem().isEmpty());
+            assertEquals(2, f.markers(), "The existing background marker must keep its response ordinal");
+            f.acknowledge();
+            synchronizedInventory(session, f.transport);
+            assertEquals(9, call(session, "availableToolUses", new Class<?>[0]));
+            assertFalse((boolean) call(session, "preparePistons", new Class<?>[0]));
+            assertEquals(32, f.player().getOffhandItem().getCount());
+            assertEquals(1, f.actions.offhandSwaps);
+            assertEquals(0, available(session, 40), "The refill's own fence still owns all world-use authorization");
+            f.acknowledge();
+            assertFalse(settling(session));
+            assertEquals(32, available(session, 40));
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void aBackgroundReplyKeepsLaterMaterialCostsSeparateFromToolCostsBeforeRefilling(boolean materialCost) throws Exception {
+        try (var f = new BedrockInventorySessionTest.Fixture()) {
+            var tool = new ItemStack(Items.DIAMOND_PICKAXE);
+            tool.setDamageValue(tool.getMaxDamage() - 10);
+            f.player().getInventory().setItem(0, tool);
+            f.player().getInventory().setItem(6, new ItemStack(Items.REDSTONE_TORCH, 8));
+            f.player().getInventory().setItem(40, ItemStack.EMPTY);
+            Object session = f.session();
+            call(session, "synchronize", new Class<?>[]{Runnable.class}, (Object) null);
+            f.acknowledge();
+            assertFalse(settling(session));
+            for (int used = 0; used < 7; used++) toolUse(session);
+            maintain(session, 4);
+            toolUse(session);
+            if (materialCost) {
+                InventoryUtils.setSelectedSlot(f.player().getInventory(), 6);
+                f.hand().shrink(1); // Vanilla prediction, before Session records the corresponding cost.
+                call(session, "recordPredictedUse", new Class<?>[0]);
+                InventoryUtils.setSelectedSlot(f.player().getInventory(), 0);
+            }
+            f.acknowledge();
+            synchronizedInventory(session, f.transport);
+            assertEquals(9, call(session, "availableToolUses", new Class<?>[0]));
+            assertEquals(materialCost ? 6 : 8, available(session, 6));
+
+            // The delivery follows the background fence; that reply cannot have calibrated it.
+            var delivery = new ArrayList<>(f.player().inventoryMenu.slots.stream().map(slot -> slot.getItem().copy()).toList());
+            delivery.set(10, new ItemStack(Items.PISTON, 32));
+            f.apply(delivery, 50);
+            assertEquals(0, available(session, 10));
+
+            assertFalse((boolean) call(session, "preparePistons", new Class<?>[0]));
+
+            assertEquals(materialCost ? 0 : 1, f.actions.offhandSwaps,
+                    "Only material-count uncertainty requires the preceding baseline; tool wear keeps its independent allowance");
+            assertEquals(materialCost ? 0 : 32, f.player().getOffhandItem().getCount());
+            assertEquals(0, available(session, 40));
+            assertEquals(3, f.markers());
+            f.acknowledge();
+            assertFalse(settling(session));
+            if (materialCost) {
+                assertFalse((boolean) call(session, "preparePistons", new Class<?>[0]));
+                assertEquals(1, f.actions.offhandSwaps, "The completed strong baseline clears the material uncertainty");
+                assertEquals(0, available(session, 40));
+                f.acknowledge();
+                assertFalse(settling(session));
+            }
+            assertEquals(32, available(session, 40));
         }
     }
 

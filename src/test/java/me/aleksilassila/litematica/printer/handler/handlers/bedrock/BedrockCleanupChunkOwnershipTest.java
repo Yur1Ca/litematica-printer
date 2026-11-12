@@ -131,6 +131,7 @@ class BedrockCleanupChunkOwnershipTest {
 
         Fixture() throws Exception {
             cleanupWorld(); // Existing fixture installs the real ToolSwitchService and confirms native tool readiness.
+            setBreakSpeed(1.0D);
             world = allocate(LoadedWorld.class);
             world.blocks = level.blocks;
             world.loaded = true;

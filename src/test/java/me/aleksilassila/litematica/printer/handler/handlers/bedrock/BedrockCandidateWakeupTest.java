@@ -127,6 +127,155 @@ class BedrockCandidateWakeupTest {
         }
     }
 
+    @Test void aDirtyCachedConflictCannotHideAnIndependentCandidateForOneTick() throws Exception {
+        try (var f = new Fixture()) {
+            Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.setIntegerValue(2);
+            Configs.Core.WORK_RANGE.setIntegerValue(6);
+            BlockPos stale = TARGET;
+            BlockPos independent = TARGET.east();
+            BlockPos active = TARGET.west();
+            f.world.blocks.clear();
+            f.world.blocks.put(stale, Blocks.BEDROCK.defaultBlockState());
+            f.world.blocks.put(independent, Blocks.BEDROCK.defaultBlockState());
+            f.world.blocks.put(active, Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(stale.below(), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(active.below(), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(independent.above(2), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(independent.east().below(), Blocks.STONE.defaultBlockState());
+            f.handler.playerInteractionBox.set(new PrinterBox(stale, independent));
+            f.scan.beginTick(f.world, null, 0);
+
+            var cachedStale = BedrockCandidatePlan.build(f.world, stale, f.scan::dirtyVersion);
+            var cachedIndependent = BedrockCandidatePlan.build(f.world, independent, f.scan::dirtyVersion);
+            assertNotNull(cachedStale.layout());
+            assertNotNull(cachedIndependent.layout());
+            assertEquals(Direction.UP, cachedStale.layout().getPistonOffset());
+            assertEquals(Direction.DOWN, cachedIndependent.layout().getPistonOffset(),
+                    "The independent piston must remain outside the active machine's torch influence");
+            assertEquals(cachedStale.priority(), cachedIndependent.priority());
+            assertEquals(cachedStale.neighborTargetCount(), cachedIndependent.neighborTargetCount());
+            var pair = new BedrockCandidateConflictIndex();
+            assertTrue(pair.tryReserve(cachedStale));
+            assertFalse(pair.tryReserve(cachedIndependent), "The stale cached choice really excludes this candidate");
+            @SuppressWarnings("unchecked")
+            var backlog = (BedrockCandidateBacklog<BedrockCandidatePlan>) get(
+                    f.planner, BedrockCandidatePlanner.class, "candidateBacklog");
+            assertTrue(backlog.offer(stale, cachedStale));
+            assertTrue(backlog.offer(independent, cachedIndependent));
+
+            // Another real reservation changes the cached plans' live cost before their next pass.
+            // The native inventory fence preserves admission while excluding construction side effects.
+            f.beginFence();
+            f.tick(0);
+            f.engine.beginTick(true);
+            f.world.blocks.put(active, Blocks.BEDROCK.defaultBlockState());
+            var activePlan = BedrockCandidatePlan.build(f.world, active, f.scan::dirtyVersion);
+            assertNotNull(activePlan.layout());
+            assertEquals(Direction.UP, activePlan.layout().getPistonOffset());
+            f.engine.primeSubmissionPlan(active, activePlan.layout(), activePlan.placement(), activePlan.slimePos());
+            assertTrue(f.engine.submit(active));
+            f.scan.invalidate(active);
+            assertTrue(f.scan.dirtyVersion() > cachedStale.planRevision());
+            var liveStale = BedrockCandidatePlan.build(f.world, stale, f.scan::dirtyVersion);
+            var liveIndependent = BedrockCandidatePlan.build(f.world, independent, f.scan::dirtyVersion);
+            assertTrue(liveStale.priority() > liveIndependent.priority(),
+                    "Fresh ordering must prefer the candidate which avoids the existing reservation");
+            assertNotNull(f.targets.findConflict(f.target(liveStale)));
+            assertNull(f.targets.findConflict(f.target(liveIndependent)),
+                    "The independent candidate must pass the real structural and power conflict rules");
+            assertEquals(2, f.engine.getHudSnapshot().activeCap());
+            assertEquals(1, f.engine.getHudSnapshot().activeTargets());
+            assertTrue(f.engine.canAccept(independent));
+            assertFalse(f.engine.isPositionOnRetryCooldown(independent));
+            int sent = f.transport.packets.size();
+
+            f.step(1);
+            boolean admittedOnFirstPass = f.targets.containsOwner(independent);
+            f.step(2);
+
+            assertTrue(f.targets.containsOwner(independent),
+                    "The unchanged world and capacity allow the real handler to admit this candidate");
+            assertFalse(f.targets.containsOwner(stale));
+            assertEquals(sent, f.transport.packets.size(), "This regression observes admission through the existing fence");
+            assertTrue(admittedOnFirstPass,
+                    "Refresh dirty priorities before the stale choice can reserve the candidate conflict index");
+        }
+    }
+
+    @Test void aNewReservationWithoutABlockUpdateCannotKeepAnIndependentCandidateOutOfTheIteration() throws Exception {
+        try (var f = new Fixture()) {
+            Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.setIntegerValue(2);
+            Configs.Core.WORK_RANGE.setIntegerValue(6);
+            BlockPos stale = TARGET;
+            BlockPos independent = TARGET.east();
+            BlockPos active = TARGET.west();
+            f.world.blocks.clear();
+            for (BlockPos pos : new BlockPos[]{stale, independent, active, independent.south()}) {
+                f.world.blocks.put(pos, Blocks.BEDROCK.defaultBlockState());
+            }
+            f.world.blocks.put(stale.below(), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(active.below(), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(independent.above(2), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(independent.east().below(), Blocks.STONE.defaultBlockState());
+            f.handler.playerInteractionBox.set(new PrinterBox(stale, independent));
+            f.scan.beginTick(f.world, null, 0);
+            var cachedStale = BedrockCandidatePlan.build(f.world, stale, f.scan::dirtyVersion);
+            var cachedIndependent = BedrockCandidatePlan.build(f.world, independent, f.scan::dirtyVersion);
+            assertNotNull(cachedStale.layout());
+            assertNotNull(cachedIndependent.layout());
+            assertEquals(Direction.UP, cachedStale.layout().getPistonOffset());
+            assertEquals(Direction.DOWN, cachedIndependent.layout().getPistonOffset());
+            assertEquals(cachedStale.priority(), cachedIndependent.priority());
+            assertEquals(cachedStale.neighborTargetCount(), cachedIndependent.neighborTargetCount());
+            var pair = new BedrockCandidateConflictIndex();
+            assertTrue(pair.tryReserve(cachedStale));
+            assertFalse(pair.tryReserve(cachedIndependent));
+            @SuppressWarnings("unchecked")
+            var backlog = (BedrockCandidateBacklog<BedrockCandidatePlan>) get(
+                    f.planner, BedrockCandidatePlanner.class, "candidateBacklog");
+            assertTrue(backlog.offer(stale, cachedStale));
+            assertTrue(backlog.offer(independent, cachedIndependent));
+
+            f.beginFence();
+            f.tick(0);
+            f.engine.beginTick(true);
+            long revision = f.scan.dirtyVersion();
+            var activePlan = BedrockCandidatePlan.build(f.world, active, f.scan::dirtyVersion);
+            assertNotNull(activePlan.layout());
+            f.engine.primeSubmissionPlan(active, activePlan.layout(), activePlan.placement(), activePlan.slimePos());
+            assertTrue(f.engine.submit(active));
+            var liveStale = BedrockCandidatePlan.build(f.world, stale, f.scan::dirtyVersion);
+            var liveIndependent = BedrockCandidatePlan.build(f.world, independent, f.scan::dirtyVersion);
+            assertTrue(liveStale.priority() > liveIndependent.priority());
+            assertNotNull(f.targets.findConflict(f.target(liveStale)));
+            assertNull(f.targets.findConflict(f.target(liveIndependent)));
+            assertEquals(2, f.engine.getHudSnapshot().activeCap());
+            assertEquals(1, f.engine.getHudSnapshot().activeTargets());
+            assertFalse(f.engine.canAccept(stale));
+            assertTrue(f.engine.canAccept(independent));
+            assertFalse(f.engine.isPositionOnRetryCooldown(independent));
+            int sent = f.transport.packets.size();
+
+            f.step(1);
+            boolean admittedWithoutAWorldUpdate = f.targets.containsOwner(independent);
+            var retainedStale = backlog.snapshot().stream().filter(plan -> plan.pos().equals(stale)).findFirst().orElseThrow();
+            assertSame(cachedStale.layout(), retainedStale.layout(), "A reservation cost change does not rebuild the layout");
+            assertSame(cachedStale.placement(), retainedStale.placement(), "The cached placement stays frozen without a world update");
+            assertSame(cachedStale.structuralPositions(), retainedStale.structuralPositions());
+            // Removing only the ineligible cached choice proves that the unchanged real handler
+            // can use the free slot; no movement, dirty update or cooldown expiry is supplied.
+            backlog.remove(stale);
+            f.step(2);
+
+            assertTrue(f.targets.containsOwner(independent));
+            assertFalse(f.targets.containsOwner(stale));
+            assertEquals(revision, f.scan.dirtyVersion(), "Reservation and iteration are not block updates");
+            assertEquals(sent, f.transport.packets.size());
+            assertTrue(admittedWithoutAWorldUpdate,
+                    "A cached choice rejected by the current reservation must not hide an independent admissible target");
+        }
+    }
+
     private static final class BoundedHandler extends BedrockHandler {
         BoundedHandler(PrinterRuntime runtime) { super(runtime); }
         @Override protected int getScanGuardLimit() { return 1; }
@@ -181,6 +330,12 @@ class BedrockCandidateWakeupTest {
 
         void move(double x, double y, double z) throws Exception {
             set(client.player, Entity.class, "position", new Vec3(x, y, z));
+        }
+
+        BedrockTarget target(BedrockCandidatePlan plan) throws Exception {
+            return new BedrockTarget(plan.pos(), world, plan.layout(), plan.placement(), plan.slimePos(),
+                    (BedrockCriticalExecutor) get(engine, BedrockEngine.class, "criticalExecutor"), enginePlacer,
+                    (BedrockNetworkSync) get(engine, BedrockEngine.class, "networkSync"));
         }
 
         void step(int tick) throws Exception {

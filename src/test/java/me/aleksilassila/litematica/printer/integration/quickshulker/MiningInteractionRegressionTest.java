@@ -404,6 +404,77 @@ class MiningInteractionRegressionTest {
 
     }
 
+    @Test void aJumpingSpeedPenaltyCannotUseEarlierGroundProgressToSendStop() throws Exception {
+        try (var f = new Fixture(0.6f, false)) {
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+            f.player.speed = 0.12f * 45;
+            f.level.tick = 1;
+
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.mine(),
+                    "The server sees current delta 0.12 * two elapsed mining ticks, not historical 0.6 + 0.12");
+            assertFalse(f.level.state.isAir(), "A jump cannot authorize an early local block removal");
+            assertEquals(0, f.port.localDestroys);
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK), actions(f));
+
+            for (int tick = 2; tick < 5; tick++) {
+                f.level.tick = tick;
+                assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+            }
+            f.level.tick = 5;
+
+            assertEquals(BlockBreakResult.COMPLETED, f.mine());
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), actions(f));
+            assertEquals(1, f.port.localDestroys);
+        }
+    }
+
+    @Test void repeatedCallbacksInOneGameTickCannotAdvanceAnOpenMiningSession() throws Exception {
+        try (var f = new Fixture(0.2f, false)) {
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+
+            for (int call = 0; call < 10; call++) {
+                assertEquals(BlockBreakResult.IN_PROGRESS, f.mine(),
+                        "Repeated callbacks do not add server mining ticks");
+            }
+
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK), actions(f));
+            assertEquals(0.2f, f.port.progress, 0.0001f);
+            assertEquals(0, f.port.localDestroys);
+            f.level.tick = 3;
+
+            assertEquals(BlockBreakResult.COMPLETED, f.mine(),
+                    "Elapsed game ticks count even when the controller was not called on every intervening tick");
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), actions(f));
+        }
+    }
+
+    @Test void aSubInstantFastBreakCannotResendBeforeItsAuthoritativeReplyWhenDelayIsDisabled() throws Exception {
+        try (var f = new Fixture(0.8f, false)) {
+            assertEquals(BlockBreakResult.COMPLETED_WAIT, f.mine());
+            assertFalse(f.level.state.isAir());
+            assertEquals(0, f.port.localDestroys);
+            assertTrue(f.controller.isPendingDelayedDestroy(TARGET),
+                    "START and STOP submitted a real break even when optional delayed prediction is disabled");
+
+            for (int tick = 0; tick < 3; tick++) {
+                f.level.tick = tick;
+                f.controller.tick();
+                f.mine();
+                f.mine();
+            }
+
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), actions(f));
+            f.level.state = Blocks.AIR.defaultBlockState();
+            f.controller.confirmServerBlockUpdate(TARGET);
+            assertFalse(f.controller.isPendingDelayedDestroy(TARGET));
+            assertEquals(BlockBreakResult.COMPLETED, f.mine());
+            assertEquals(2, f.connection.packets.size());
+        }
+    }
+
     @ParameterizedTest @ValueSource(floats = {0.8f, 1.2f})
     void delayedFastBreakRetainsBlockAndWaitsBeforeRetry(float delta) throws Exception {
         try (var f = new Fixture(delta, true)) {

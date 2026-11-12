@@ -45,7 +45,7 @@ class ManualPickMixinOrderTest {
             paths.add(Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI()).toString());
         }
         classpath = String.join(java.io.File.pathSeparator, paths);
-        var options = new ArrayList<>(List.of("-proc:none", "--release", "17", "-cp", classpath, "-d", directory.toString()));
+        var options = new ArrayList<>(List.of("-proc:none", "--release", "25", "-cp", classpath, "-d", directory.toString()));
         for (String file : List.of("probe/Service.java", "probe/Properties.java", "probe/Main.java",
                 "probe/mixins/Printer.java", "probe/mixins/TakeItOut.java", "game/Target.java", "probe.mixins.json",
                 "META-INF/services/org.spongepowered.asm.service.IMixinService",

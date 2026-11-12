@@ -193,7 +193,7 @@ class BedrockCleanupInventorySessionTest {
         }
     }
 
-    @Test void aRepeatedUnknownFallbackKeepsTheSameHandAndCannotOpenASecondPosition() throws Exception {
+    @Test void aRepeatedUnknownFallbackYieldsOnlyAfterCancellingItsOwnedStart() throws Exception {
         try (var f = new CleanupFixture()) {
             f.player.breakSpeed = 6;
             BlockPos second = PISTON.east(2);
@@ -205,15 +205,17 @@ class BedrockCleanupInventorySessionTest {
             f.advanceMining();
             f.clock.tick = 33;
             f.advanceMining();
-            assertTrue(f.active(), "An unresolved fallback cannot release MAIN to another native delayed slot");
-            assertEquals(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, f.actions().getLast());
+            assertFalse(f.active(), "A rejected fallback must yield after its native owner is cancelled");
+            assertTrue(f.pending(PISTON), "Yielding retains the unresolved residue");
+            assertEquals(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, f.actions().getLast());
             int sent = f.actions().size();
-            f.cleanup(second);
+            assertFalse(f.cleanup(PISTON), "The failed position cannot immediately reacquire the hand");
             assertEquals(sent, f.actions().size());
+            assertFalse(f.cleanup(second), "The release tick gives construction one opportunity before another cleanup START");
             f.clock.tick = 34;
-            f.advanceMining();
-            assertEquals(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, f.actions().getLast());
-            assertTrue(f.active());
+            assertTrue(f.cleanup(second));
+            assertEquals(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, f.actions().getLast());
+            assertFalse(f.active(), "An independent instant cleanup may proceed during the failed position's cooldown");
         }
     }
 

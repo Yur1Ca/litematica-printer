@@ -113,6 +113,8 @@ public final class BedrockPlacer {
 
     boolean isCleanupPendingAt(BlockPos pos) { return this.cleanupBreaker != null && this.cleanupBreaker.isPendingAt(pos); }
 
+    boolean isCleanupRetryPausedAt(BlockPos pos) { return this.cleanupBreaker != null && this.cleanupBreaker.isRetryPausedAt(pos); }
+
     void onCleanupBlockUpdate(BlockPos pos) { this.cleanupBreaker.onServerBlockUpdate(pos); }
 
     void cancelPistonPlacement(BlockPos pistonPos) {

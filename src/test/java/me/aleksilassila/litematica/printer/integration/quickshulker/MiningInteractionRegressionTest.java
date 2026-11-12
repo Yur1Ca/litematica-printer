@@ -74,11 +74,12 @@ class MiningInteractionRegressionTest {
         Abilities abilities;
         Inventory inventory;
         ItemStack held;
+        boolean restricted;
         @Override public Abilities getAbilities() { return abilities; }
         @Override public Inventory getInventory() { return inventory; }
         @Override public ItemStack getMainHandItem() { return held; }
         @Override public boolean blockActionRestricted(net.minecraft.world.level.Level level, BlockPos pos,
-                net.minecraft.world.level.GameType mode) { return false; }
+                net.minecraft.world.level.GameType mode) { return restricted; }
         @Override public float getDestroySpeed(BlockState state) { return speed; }
         @Override public boolean hasCorrectToolForDrops(BlockState state) { return true; }
         @Override public void resetAttackStrengthTicker() { }
@@ -118,6 +119,7 @@ class MiningInteractionRegressionTest {
         //$$ Level() { super(null, null, null, null, 0, 0, null, null, false, 0L); }
         //#endif
         BlockState state;
+        Map<BlockPos, BlockState> states;
         long tick;
         WorldBorder border;
         //#if MC > 11802
@@ -125,8 +127,12 @@ class MiningInteractionRegressionTest {
         //#endif
         PredictionBridge bridge;
         Player player;
-        @Override public BlockState getBlockState(BlockPos pos) { return state; }
+        @Override public BlockState getBlockState(BlockPos pos) {
+            return states == null ? state : states.getOrDefault(pos, Blocks.STONE.defaultBlockState());
+        }
         @Override public WorldBorder getWorldBorder() { return border; }
+        @Override public int getMinY() { return -64; }
+        @Override public int getHeight() { return 384; }
         @Override public long getGameTime() { return tick; }
         @Override public void destroyBlockProgress(int id, BlockPos pos, int stage) { }
         //#if MC >= 260300
@@ -210,7 +216,17 @@ class MiningInteractionRegressionTest {
             throw new UnsupportedOperationException();
         }
     }
+    static class ScopedPrintHandler extends PrintHandler {
+        ScopedPrintHandler() { super(null); }
+        @Override protected boolean canReachIterationPosition(BlockPos pos) { return true; }
+        @Override protected boolean isInSelectionRange(BlockPos pos) { return true; }
+        @Override protected boolean isSchematicBlock(BlockPos pos) { return true; }
+    }
     static class Fixture implements AutoCloseable {
+        //#if MC >= 260300
+        //$$ final List<?> oldStoneTags = Blocks.STONE.builtInRegistryHolder().tags().toList();
+        //$$ final List<?> oldIceTags = Blocks.ICE.builtInRegistryHolder().tags().toList();
+        //#endif
         final Object oldClient = get(null, Minecraft.class, "instance");
         final Object oldNetworkClient = get(null, NetworkUtils.class, "client");
         final Object oldInteractionClient = get(null, InteractionUtils.class, "client");
@@ -228,11 +244,15 @@ class MiningInteractionRegressionTest {
         Port port = new Port();
         MiningInteractionController controller;
         MineHandler mineHandler = alloc(MineHandler.class);
-        PrintHandler printHandler = alloc(PrintHandler.class);
+        PrintHandler printHandler = alloc(ScopedPrintHandler.class);
         InteractionUtils interactions = new InteractionUtils();
         PrintWorkflowScheduler workflows = new PrintWorkflowScheduler(() -> level.tick, null);
         RuntimeScope scope = new RuntimeScope();
         Fixture(float delta, boolean delayed) throws Exception {
+            //#if MC >= 260300
+            //$$ bindWaterSupport(Blocks.STONE, withWaterSupport(this.oldStoneTags));
+            //$$ bindWaterSupport(Blocks.ICE, withWaterSupport(this.oldIceTags));
+            //#endif
             Configs.Break.BREAK_USE_DELAYED_DESTROY.setBooleanValue(delayed);
             Configs.Break.BREAK_AUTO_TOOL.setBooleanValue(false);
             Configs.Core.WORK_SWITCH.setBooleanValue(true);
@@ -255,6 +275,8 @@ class MiningInteractionRegressionTest {
             level.player = player;
             //#if MC > 11802
             level.predictions = new BlockStatePredictionHandler();
+            set(level, ClientLevel.class, "environmentAttributes",
+                    net.minecraft.world.attribute.EnvironmentAttributeSystem.builder().build());
             set(level, ClientLevel.class, "blockStatePredictionHandler", level.predictions);
             //#endif
             level.bridge = new PredictionBridge();
@@ -397,6 +419,10 @@ class MiningInteractionRegressionTest {
             task.buildAction(context);
         }
         @Override public void close() throws Exception {
+            //#if MC >= 260300
+            //$$ bindWaterSupport(Blocks.STONE, this.oldStoneTags);
+            //$$ bindWaterSupport(Blocks.ICE, this.oldIceTags);
+            //#endif
             set(null, Minecraft.class, "instance", oldClient);
             set(null, NetworkUtils.class, "client", oldNetworkClient);
             set(null, InteractionUtils.class, "client", oldInteractionClient);
@@ -408,6 +434,19 @@ class MiningInteractionRegressionTest {
             Configs.Core.WORK_MODE.setOptionListValue((fi.dy.masa.malilib.config.IConfigOptionListEntry) oldMode);
             Configs.Core.WORK_MODE_TYPE.setOptionListValue((fi.dy.masa.malilib.config.IConfigOptionListEntry) oldType);
         }
+
+        //#if MC >= 260300
+        //$$ private static Collection<?> withWaterSupport(List<?> previous) {
+        //$$     var tags = new ArrayList<Object>(previous);
+        //$$     tags.add(net.minecraft.tags.BlockTags.ICE_MELTS_WHEN_DESTROYED_ABOVE);
+        //$$     return tags;
+        //$$ }
+        //$$ private static void bindWaterSupport(net.minecraft.world.level.block.Block block, Collection<?> tags) throws Exception {
+        //$$     var method = Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
+        //$$     method.setAccessible(true);
+        //$$     method.invoke(block.builtInRegistryHolder(), tags);
+        //$$ }
+        //#endif
 
     }
 

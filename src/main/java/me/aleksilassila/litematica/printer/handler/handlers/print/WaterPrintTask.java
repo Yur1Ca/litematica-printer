@@ -12,12 +12,17 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+//#if MC >= 260300
+//$$ import net.minecraft.tags.BlockTags;
+//#endif
+//#if MC >= 12111
+import net.minecraft.world.attribute.EnvironmentAttributes;
+//#endif
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.function.LongSupplier;
@@ -78,23 +83,20 @@ public final class WaterPrintTask implements PrintTask {
         BlockState requiredState = schematic.getBlockState(this.pos);
         BlockState currentState = level.getBlockState(this.pos);
         this.reconcile(level, requiredState, currentState);
-        boolean waitingForSupport = this.stage == WaterTaskStage.PLACE_ICE
-                && !canStartIceWaterWorkflow(level, this.pos);
-        if (waitingForSupport) {
-            this.retryAtTick = Math.max(this.retryAtTick, this.tickClock.getAsLong() + 5L);
+        if (this.stage == WaterTaskStage.WAIT_SUPPORT || this.stage == WaterTaskStage.WAIT_FINAL_CHANGE) {
+            this.retryAtTick = this.tickClock.getAsLong() + 5L;
         }
         return this.stage.waitsForWorldUpdate()
-                || this.stage == WaterTaskStage.RETRY_WAIT
-                || waitingForSupport;
+                || this.stage == WaterTaskStage.RETRY_WAIT;
     }
 
     @Override
     public long nextCheckTick() {
-        if (this.stage == WaterTaskStage.RETRY_WAIT) return this.retryAtTick;
-        if (this.stage.waitsForWorldUpdate()) return this.stageSinceTick + MIN_STALL_TICKS;
-        if (this.stage == WaterTaskStage.PLACE_ICE && this.retryAtTick > this.tickClock.getAsLong()) {
+        if (this.stage == WaterTaskStage.RETRY_WAIT || this.stage == WaterTaskStage.WAIT_SUPPORT
+                || this.stage == WaterTaskStage.WAIT_FINAL_CHANGE) {
             return this.retryAtTick;
         }
+        if (this.stage.waitsForWorldUpdate()) return this.stageSinceTick + MIN_STALL_TICKS;
         return this.tickClock.getAsLong();
     }
 
@@ -107,8 +109,8 @@ public final class WaterPrintTask implements PrintTask {
             case PLACE_ICE -> this.buildIcePlacement(context);
             case BREAK_ICE -> this.breakBlockForWorkflow(context, true);
             case PLACE_FINAL_BLOCK -> PrintTaskBuildResult.PASS;
-            case RESERVED, WAIT_REMOVE_CONFIRM, WAIT_ICE_CONFIRM,
-                    WAIT_WATER_CONFIRM, WAIT_FINAL_CONFIRM, RETRY_WAIT -> PrintTaskBuildResult.SKIP;
+            case RESERVED, WAIT_SUPPORT, WAIT_REMOVE_CONFIRM, WAIT_ICE_CONFIRM,
+                    WAIT_WATER_CONFIRM, WAIT_FINAL_CONFIRM, WAIT_FINAL_CHANGE, RETRY_WAIT -> PrintTaskBuildResult.SKIP;
         };
     }
 
@@ -192,13 +194,18 @@ public final class WaterPrintTask implements PrintTask {
         if (BlockStateUtils.isCorrectWaterLevel(requiredState, currentState)) {
             return WaterStageResolver.Observation.WATER_READY;
         }
+        if ((this.stage == WaterTaskStage.WAIT_FINAL_CONFIRM || this.stage == WaterTaskStage.WAIT_FINAL_CHANGE)
+                && isDryWaterloggedBlock(requiredState, currentState)) {
+            return WaterStageResolver.Observation.DRY_FINAL_BLOCK;
+        }
+        if (!canStartIceWaterWorkflow(level, this.pos)) {
+            return WaterStageResolver.Observation.WITHOUT_WATER_SUPPORT;
+        }
         if (currentState.getBlock() instanceof IceBlock) {
             return WaterStageResolver.Observation.ICE;
         }
         if (BlockStateUtils.isReplaceable(currentState)) {
-            return canStartIceWaterWorkflow(level, this.pos)
-                    ? WaterStageResolver.Observation.REPLACEABLE_WITH_SUPPORT
-                    : WaterStageResolver.Observation.REPLACEABLE_WITHOUT_SUPPORT;
+            return WaterStageResolver.Observation.REPLACEABLE_WITH_SUPPORT;
         }
         return WaterStageResolver.Observation.BLOCKED;
     }
@@ -214,7 +221,7 @@ public final class WaterPrintTask implements PrintTask {
         }
         this.stage = next;
         this.stageSinceTick = this.tickClock.getAsLong();
-        if (next == WaterTaskStage.COMPLETE) {
+        if (next == WaterTaskStage.COMPLETE || next == WaterTaskStage.WAIT_FINAL_CHANGE) {
             this.actionGeneration++;
         }
     }
@@ -247,8 +254,7 @@ public final class WaterPrintTask implements PrintTask {
             return false;
         }
         if (context.currentState.getBlock() instanceof IceBlock) {
-            return isWaterloggedTarget(context.requiredState)
-                    || canIceBecomeWaterSource(context.level, context.blockPos);
+            return true;
         }
         if (isWaterloggedTarget(context.requiredState)
                 && BlockStateUtils.isCorrectWaterLevel(context.requiredState, context.currentState)) {
@@ -261,22 +267,32 @@ public final class WaterPrintTask implements PrintTask {
             return true;
         }
         return isWaterloggedTarget(context.requiredState)
-                || BlockStateUtils.isReplaceable(context.currentState)
-                && canStartIceWaterWorkflow(context.level, context.blockPos);
+                || BlockStateUtils.isReplaceable(context.currentState);
     }
 
     private static boolean canStartIceWaterWorkflow(ClientLevel level, BlockPos pos) {
         return canIceBecomeWaterSource(level, pos);
     }
 
+    @SuppressWarnings("deprecation")
     private static boolean canIceBecomeWaterSource(ClientLevel level, BlockPos pos) {
-        BlockPos belowPos = pos.below();
-        BlockState belowState = level.getBlockState(belowPos);
+        //#if MC >= 12111
+        if (level.environmentAttributes().getValue(EnvironmentAttributes.WATER_EVAPORATES, pos)) {
+        //#else
+        //$$ if (level.dimensionType().ultraWarm()) {
+        //#endif
+            return false;
+        }
+        // Match IceBlock.playerDestroy: collision and contained fluid do not imply water support.
+        BlockState belowState = level.getBlockState(pos.below());
+        //#if MC >= 260300
+        //$$ return belowState.is(BlockTags.ICE_MELTS_WHEN_DESTROYED_ABOVE) || belowState.liquid();
+        //#else
         //#if MC > 11904
-        return !belowState.getCollisionShape(level, belowPos, CollisionContext.empty()).isEmpty()
-                || !belowState.getFluidState().isEmpty();
+        return belowState.blocksMotion() || belowState.liquid();
         //#else
         //$$ return belowState.getMaterial().blocksMotion() || belowState.getMaterial().isLiquid();
+        //#endif
         //#endif
     }
 
@@ -344,16 +360,20 @@ public final class WaterPrintTask implements PrintTask {
 
         @Override
         public void onCancelled(SchematicBlockContext context, Action action) {
-            if (this.token == actionGeneration) {
-                retrySoon();
-            }
+            this.retryAfterFailure(context);
         }
 
         @Override
         public void onFailure(SchematicBlockContext context, Action action) {
-            if (this.token == actionGeneration) {
-                retrySoon();
-            }
+            this.retryAfterFailure(context);
+        }
+
+        private void retryAfterFailure(SchematicBlockContext context) {
+            if (this.token != actionGeneration) return;
+            // Deferred callbacks hold an old context; preserve a final block already present in the world.
+            if (stage == WaterTaskStage.WAIT_FINAL_CONFIRM
+                    && isDryWaterloggedBlock(context.requiredState, context.level.getBlockState(pos))) return;
+            retrySoon();
         }
     }
 }

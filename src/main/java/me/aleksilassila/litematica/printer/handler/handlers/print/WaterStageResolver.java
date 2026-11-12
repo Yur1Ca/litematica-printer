@@ -5,9 +5,10 @@ final class WaterStageResolver {
     enum Observation {
         COMPLETE,
         WATER_READY,
+        DRY_FINAL_BLOCK,
         ICE,
         REPLACEABLE_WITH_SUPPORT,
-        REPLACEABLE_WITHOUT_SUPPORT,
+        WITHOUT_WATER_SUPPORT,
         BLOCKED
     }
 
@@ -23,6 +24,14 @@ final class WaterStageResolver {
     ) {
         if (observation == Observation.COMPLETE) {
             return WaterTaskStage.COMPLETE;
+        }
+        if (observation == Observation.WITHOUT_WATER_SUPPORT) {
+            return WaterTaskStage.WAIT_SUPPORT;
+        }
+        if (observation == Observation.DRY_FINAL_BLOCK
+                && (stage == WaterTaskStage.WAIT_FINAL_CHANGE
+                || stage == WaterTaskStage.WAIT_FINAL_CONFIRM && stalled)) {
+            return WaterTaskStage.WAIT_FINAL_CHANGE;
         }
         if (stage == WaterTaskStage.RETRY_WAIT && !retryReady) {
             return stage;
@@ -46,9 +55,6 @@ final class WaterStageResolver {
         }
         if (observation == Observation.REPLACEABLE_WITH_SUPPORT) {
             return WaterTaskStage.PLACE_ICE;
-        }
-        if (observation == Observation.REPLACEABLE_WITHOUT_SUPPORT) {
-            return WaterTaskStage.RESERVED;
         }
         if (stage == WaterTaskStage.WAIT_REMOVE_CONFIRM && !stalled) {
             return stage;

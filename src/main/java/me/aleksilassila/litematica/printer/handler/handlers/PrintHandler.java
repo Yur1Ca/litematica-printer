@@ -89,7 +89,16 @@ public class PrintHandler extends FeatureModuleBase {
                 && this.gameMode instanceof MiningInteractionPort port
                 && port.isDestroying() && port.matchesDestroyTarget(port.destroyPos())
                 && (InteractionUtils.getRuntime().isActiveDestroyTarget(port.destroyPos())
-                    || this.printTasks.isBreakingTaskPos(port.destroyPos()));
+                    || this.activeWaterMiningPos() != null);
+    }
+
+    @Nullable
+    private BlockPos activeWaterMiningPos() {
+        if (!(this.gameMode instanceof MiningInteractionPort port) || !port.isDestroying()) return null;
+        BlockPos pos = port.destroyPos();
+        return this.printTasks.isBreakingTaskPos(pos) && port.matchesDestroyTarget(pos)
+                && this.canReachIterationPosition(pos) && this.isInSelectionRange(pos)
+                && this.isSchematicBlock(pos) && InteractionUtils.canBreakBlock(pos) ? pos : null;
     }
 
     @Override
@@ -173,8 +182,11 @@ public class PrintHandler extends FeatureModuleBase {
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
         List<BlockPos> retainedTargets = this.targets.retainedTargets();
         Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
-        if (runnableTasks.isEmpty() && retainedTargets.isEmpty()) return normalPositions;
-        List<BlockPos> priority = new ArrayList<>(runnableTasks);
+        BlockPos miningPos = this.activeWaterMiningPos();
+        if (runnableTasks.isEmpty() && retainedTargets.isEmpty() && miningPos == null) return normalPositions;
+        List<BlockPos> priority = new ArrayList<>();
+        if (miningPos != null) priority.add(miningPos);
+        priority.addAll(runnableTasks);
         priority.addAll(retainedTargets);
         return ScanCandidateIterable.prepend(priority, normalPositions);
     }
@@ -221,6 +233,13 @@ public class PrintHandler extends FeatureModuleBase {
         this.action = null;
         this.printTaskAction = null;
         this.ctx = null;
+        BlockPos miningPos = this.activeWaterMiningPos();
+        if (miningPos != null && !miningPos.equals(blockPos)) {
+            // A slow ice break owns vanilla's single mining slot and its held item until
+            // it finishes. Another workflow or placement would reset that progress.
+            this.onIterationDeferred(blockPos);
+            return false;
+        }
         WorldSchematic schematic = this.litematica.schematicWorld();
         if (schematic == null) return false;
         if (!PrintPlanner.canInspect(this.hudStats.isPrintPlacementPending(blockPos),

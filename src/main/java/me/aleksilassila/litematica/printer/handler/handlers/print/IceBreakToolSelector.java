@@ -50,7 +50,19 @@ final class IceBreakToolSelector {
         if (bestSlot >= 0) {
             return InventoryUtils.setPickedItemToHand(bestSlot, bestStack, client);
         }
-        return canBreakWithoutSilkTouch(currentStack);
+        if (canBreakWithoutSilkTouch(currentStack)) {
+            return true;
+        }
+        // Direct warehouse placement leaves the previous tool in hand. Empty hands and
+        // ordinary items can still break ice when every effective tool has Silk Touch.
+        for (int slot = 0; slot < InventoryUtils.getMainStacks(inventory).size(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (canBreakWithoutSilkTouch(stack)
+                    && (!stack.isEmpty() || Inventory.isHotbarSlot(slot))) {
+                return InventoryUtils.setPickedItemToHand(slot, stack, client);
+            }
+        }
+        return false;
     }
 
     private static boolean isEffectiveNonSilkTouchBreakItem(LocalPlayer player, BlockState iceState, ItemStack stack) {

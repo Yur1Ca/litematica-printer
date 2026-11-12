@@ -72,12 +72,33 @@ class TrenchFillQueueLifecycleTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void aWaitingFillOutsideTheHorizontalBoundaryCannotUseDiagonalOrVerticalExpansion(boolean vertical) throws Exception {
+    @Test
+    void aWaitingFillStillOnTheNewBottomBoundaryMayBeSent() throws Exception {
         try (var f = waitingFixture()) {
             assertTrue(f.execute());
-            var moved = vertical ? TrenchFillIntegrationTest.TARGET.above()
-                    : TrenchFillIntegrationTest.TARGET.offset(1, 0, 1);
+            var moved = TrenchFillIntegrationTest.TARGET.above();
+            f.bounds(moved, moved);
+            f.level.tick = 106;
+
+            assertEquals(ActionPort.SendResult.SENT, f.completeWaiting(ActionPort.SendResult.SENT),
+                    "The trench scope also includes the first layer directly below the current selection");
+            assertEquals(1, f.sentThisTick());
+            assertEquals(106L, f.lastSentTick());
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"top", "two_below", "bottom_corner", "horizontal_corner"})
+    void aWaitingFillOutsideTheSideAndBottomFacesCannotExpandFurther(String boundary) throws Exception {
+        try (var f = waitingFixture()) {
+            assertTrue(f.execute());
+            var target = TrenchFillIntegrationTest.TARGET;
+            var moved = switch (boundary) {
+                case "top" -> target.below();
+                case "two_below" -> target.above(2);
+                case "bottom_corner" -> target.above().east();
+                case "horizontal_corner" -> target.offset(1, 0, 1);
+                default -> throw new AssertionError(boundary);
+            };
             f.bounds(moved, moved);
 
             assertEquals(ActionPort.SendResult.NO_QUEUED_ACTION, f.completeWaiting(ActionPort.SendResult.SENT));

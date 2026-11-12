@@ -33,6 +33,7 @@ import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -166,6 +167,99 @@ class MineSelectionRefreshTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void trenchDiscoveryIncludesOnlyTheFirstFluidLayerBelowTheSelection(boolean lava) throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            BlockPos bottom = FIRST.below();
+            f.candidates.state(bottom, (lava ? Blocks.LAVA : Blocks.WATER).defaultBlockState());
+            f.candidates.state(FIRST.above(), Blocks.WATER.defaultBlockState());
+            f.candidates.state(FIRST.below(2), Blocks.WATER.defaultBlockState());
+            f.candidates.state(bottom.east(), Blocks.WATER.defaultBlockState());
+            f.candidates.state(FIRST.offset(1, 0, 1), Blocks.WATER.defaultBlockState());
+
+            f.refreshTrench();
+
+            assertEquals(List.of(bottom), f.readyFillTargets(),
+                    "Only the direct bottom face joins the existing horizontal boundary");
+        }
+    }
+
+    @Test void trenchDiscoveryDoesNotTurnBottomAirIntoAPlatformTarget() throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            f.candidates.state(FIRST.below(), Blocks.AIR.defaultBlockState());
+
+            f.refreshTrench();
+
+            assertTrue(f.readyFillTargets().isEmpty(), "Trench filling still targets fluids, not ordinary air");
+            assertTrue(f.readyWaterloggedTargets().isEmpty());
+        }
+    }
+
+    @Test void trenchDiscoveryReplacesTheOldBottomAfterTheSelectionMoves() throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            BlockPos moved = FIRST.offset(4, 0, 0);
+            f.bounds(FIRST, FIRST);
+            f.candidates.state(FIRST.below(), Blocks.WATER.defaultBlockState());
+            f.candidates.state(moved.below(), Blocks.LAVA.defaultBlockState());
+            f.refreshTrench();
+            assertEquals(List.of(FIRST.below()), f.readyFillTargets());
+
+            f.bounds(moved, moved);
+            f.refreshTrench();
+
+            assertEquals(List.of(moved.below()), f.readyFillTargets(),
+                    "Moving the selected trench must discard its old, unsent bottom targets");
+        }
+    }
+
+    @Test void trenchDiscoveryIncludesAWaterloggedBlockOnTheBottomFace() throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            BlockPos bottom = FIRST.below();
+            f.candidates.state(bottom,
+                    Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.WATERLOGGED, true));
+
+            f.refreshTrench();
+
+            assertEquals(List.of(bottom), f.readyWaterloggedTargets());
+            assertTrue(f.readyFillTargets().isEmpty(), "A waterlogged solid uses the existing break-before-fill path");
+        }
+    }
+
+    @Test void anActiveWaterloggedTrenchFloorContinuesOutsideTheEditedSelection() throws Exception {
+        try (var f = new Fixture(false)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            BlockPos bottom = FIRST.below();
+            f.bounds(bottom, FIRST);
+            f.candidates.state(bottom,
+                    Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.WATERLOGGED, true));
+            f.refreshTrench();
+            f.iterate(bottom);
+            assertTrue(f.mining.port.destroying);
+            assertEquals(bottom, f.mining.port.pos);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
+            float before = f.mining.port.progress;
+
+            f.bounds(FIRST, FIRST);
+            f.refreshTrench();
+            assertFalse(new LitematicaAdapter().isWithinSelectionRange(bottom));
+            f.advanceTick();
+            f.continueActive();
+
+            assertTrue(f.mining.port.destroying, "The new bottom face still owns this waterlogged target");
+            assertEquals(bottom, f.mining.port.pos);
+            assertTrue(f.mining.port.progress > before);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions(),
+                    "A valid bottom target must retain progress without aborting or restarting");
+        }
+    }
+
     @Test void anActiveWaterloggedTrenchBoundaryContinuesOutsideTheEditedSelection() throws Exception {
         try (var f = new Fixture(false)) {
             Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
@@ -292,8 +386,15 @@ class MineSelectionRefreshTest {
             Object state = get(mining.mineHandler, MineHandler.class, "trenchFill");
             return (List<BlockPos>) invoke(state.getClass(), state, "readyFillTargets",
                     new Class<?>[]{long.class, Predicate.class, Predicate.class}, candidates.level.tick,
-                    (Predicate<BlockPos>) pos -> candidates.level.getBlockState(pos).is(Blocks.WATER),
+                    (Predicate<BlockPos>) pos -> candidates.level.getBlockState(pos).getBlock() instanceof LiquidBlock,
                     (Predicate<BlockPos>) pos -> true);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<BlockPos> readyWaterloggedTargets() throws Exception {
+            Object state = get(mining.mineHandler, MineHandler.class, "trenchFill");
+            return (List<BlockPos>) invoke(state.getClass(), state, "readyWaterloggedTargets",
+                    new Class<?>[]{Predicate.class}, (Predicate<BlockPos>) pos -> true);
         }
 
         void callToolSession(String name) throws Exception {

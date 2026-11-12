@@ -103,7 +103,7 @@
   "litematica-printer.config.mine": "Добыча",
   "litematica-printer.config.mine.desc": "Добывает все нежидкие блоки в пределах выделенной области.",
   "litematica-printer.config.mineTrenchMode": "Режим траншеи",
-  "litematica-printer.config.mineTrenchMode.desc": "Перед добычей заполняет жидкости выбранными блоками внутри выделения и непосредственно по обеим сторонам прямого выделения. По умолчанию выключен.",
+  "litematica-printer.config.mineTrenchMode.desc": "Перед добычей заполняет жидкости внутри выделения, в непосредственно прилегающих блоках с четырёх горизонтальных сторон и в слое прямо под нижней гранью, используя список блоков для заполнения траншеи. По умолчанию выключен.",
   "litematica-printer.config.mineTrenchFillBlockList": "Блоки для заполнения траншеи",
   "litematica-printer.config.mineTrenchFillBlockList.desc": "Блоки для заполнения жидкостей в режиме траншеи. По умолчанию песок. Поддерживаются ID предметов, названия и #теги.\nДля Нижнего мира укажите только minecraft:cobblestone. При нехватке материалов ожидает пополнения, не переключаясь на песок. Пустой список или отсутствие подходящих блоков отключает заполнение.",
   "litematica-printer.config.mineSelectionType": "Тип выделения",

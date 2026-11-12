@@ -103,7 +103,7 @@
   "litematica-printer.config.mine": "Mining",
   "litematica-printer.config.mine.desc": "Mine all non-liquid blocks within selection range.",
   "litematica-printer.config.mineTrenchMode": "Trench Mode",
-  "litematica-printer.config.mineTrenchMode.desc": "Before mining, fills fluids inside the selection and in blocks immediately beside both sides of a straight selection using the configured blocks. Disabled by default.",
+  "litematica-printer.config.mineTrenchMode.desc": "Before mining, fills fluids inside the selection, in the blocks immediately beside its four horizontal sides, and in the layer directly beneath its bottom, using the trench filling block list. Disabled by default.",
   "litematica-printer.config.mineTrenchFillBlockList": "Trench Filling Block List",
   "litematica-printer.config.mineTrenchFillBlockList.desc": "Blocks used to fill fluids in trench mode. Defaults to sand. Supports item IDs, display names and #tags.\nFor the Nether, use only minecraft:cobblestone. Missing listed materials waits for resupply without falling back to sand. An empty list or no matching blocks disables filling.",
   "litematica-printer.config.mineSelectionType": "Selection Type",

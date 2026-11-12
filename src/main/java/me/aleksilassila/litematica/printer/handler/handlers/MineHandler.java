@@ -452,7 +452,7 @@ public class MineHandler extends FeatureModuleBase {
         Set<BlockPos> waterlogged = new LinkedHashSet<>();
         List<PrinterBox> sourceBoxes = this.getScanSourceBoxes(interactionBox);
         this.discoverTrenchBoundary(sourceBoxes, discovered, waterlogged);
-        // The trench scope is the selected volume plus exactly one horizontal boundary block.
+        // The trench scope adds exactly one adjacent layer on the sides and below the selected volume.
         // Do not retain old targets: those could be distant sea grass from the same water body.
         long now = this.level.getGameTime();
         this.trenchFill.updateTargets(sourceBoxes, discovered, waterlogged, now,
@@ -610,7 +610,7 @@ public class MineHandler extends FeatureModuleBase {
                     } else if (this.isWaterlogged(state)) {
                         waterlogged.add(pos.immutable());
                     }
-                    for (Direction side : HORIZONTAL_SIDES) {
+                    for (Direction side : TRENCH_BOUNDARY_SIDES) {
                         BlockPos outside = pos.relative(side);
                         if (!box.contains(outside)) {
                             BlockState outsideState = this.level.getBlockState(outside);
@@ -652,8 +652,8 @@ public class MineHandler extends FeatureModuleBase {
         if (this.playerInteractionBox == null || this.playerInteractionBox.get() == null) return false;
         for (PrinterBox box : this.getScanSourceBoxes(this.playerInteractionBox.get())) {
             if (box.contains(pos)) return true;
-            for (Direction side : HORIZONTAL_SIDES) {
-                if (box.contains(pos.relative(side))) return true;
+            for (Direction side : TRENCH_BOUNDARY_SIDES) {
+                if (box.contains(pos.relative(side.getOpposite()))) return true;
             }
         }
         return false;
@@ -673,8 +673,8 @@ public class MineHandler extends FeatureModuleBase {
         return state != null && state.getBlock() instanceof LiquidBlock;
     }
 
-    private static final Direction[] HORIZONTAL_SIDES = {
-            Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+    private static final Direction[] TRENCH_BOUNDARY_SIDES = {
+            Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.DOWN
     };
 
     private boolean isWaterlogged(BlockState state) {

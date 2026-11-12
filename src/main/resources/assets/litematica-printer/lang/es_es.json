@@ -103,7 +103,7 @@
   "litematica-printer.config.mine": "Minería",
   "litematica-printer.config.mine.desc": "Mina todos los bloques no líquidos dentro del área seleccionada.",
   "litematica-printer.config.mineTrenchMode": "Modo zanja",
-  "litematica-printer.config.mineTrenchMode.desc": "Antes de excavar, rellena los fluidos dentro de la selección y en los bloques inmediatamente a ambos lados de una selección recta con los bloques configurados. Desactivado por defecto.",
+  "litematica-printer.config.mineTrenchMode.desc": "Antes de excavar, rellena los fluidos dentro de la selección, en los bloques inmediatamente adyacentes a sus cuatro lados horizontales y en la capa justo debajo de su base, usando la lista de bloques de relleno de zanjas. Desactivado por defecto.",
   "litematica-printer.config.mineTrenchFillBlockList": "Bloques de relleno de zanjas",
   "litematica-printer.config.mineTrenchFillBlockList.desc": "Bloques para rellenar fluidos en el modo zanja. Arena por defecto. Admite ID de objetos, nombres y #etiquetas.\nEn el Nether, usa solo minecraft:cobblestone. Si faltan materiales de la lista, espera el reabastecimiento sin recurrir a arena. Una lista vacía o sin bloques coincidentes desactiva el relleno.",
   "litematica-printer.config.mineSelectionType": "Tipo de selección",

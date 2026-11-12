@@ -122,6 +122,9 @@ class MiningInteractionRegressionTest {
         Map<BlockPos, BlockState> states;
         long tick;
         WorldBorder border;
+        //#if MC < 12111
+        //$$ net.minecraft.world.level.dimension.DimensionType dimensionType;
+        //#endif
         //#if MC > 11802
         BlockStatePredictionHandler predictions;
         //#endif
@@ -131,7 +134,14 @@ class MiningInteractionRegressionTest {
             return states == null ? state : states.getOrDefault(pos, Blocks.STONE.defaultBlockState());
         }
         @Override public WorldBorder getWorldBorder() { return border; }
+        //#if MC < 12111
+        //$$ @Override public net.minecraft.world.level.dimension.DimensionType dimensionType() { return dimensionType; }
+        //#endif
+        //#if MC >= 12104
         @Override public int getMinY() { return -64; }
+        //#else
+        //$$ @Override public int getMinBuildHeight() { return -64; }
+        //#endif
         @Override public int getHeight() { return 384; }
         @Override public long getGameTime() { return tick; }
         @Override public void destroyBlockProgress(int id, BlockPos pos, int stage) { }
@@ -273,10 +283,15 @@ class MiningInteractionRegressionTest {
             level.state = Blocks.STONE.defaultBlockState();
             level.border = new WorldBorder();
             level.player = player;
-            //#if MC > 11802
-            level.predictions = new BlockStatePredictionHandler();
+            //#if MC >= 12111
             set(level, ClientLevel.class, "environmentAttributes",
                     net.minecraft.world.attribute.EnvironmentAttributeSystem.builder().build());
+            //#else
+            //$$ // Headless normal-dimension boundary: ultraWarm defaults to false.
+            //$$ level.dimensionType = alloc(net.minecraft.world.level.dimension.DimensionType.class);
+            //#endif
+            //#if MC > 11802
+            level.predictions = new BlockStatePredictionHandler();
             set(level, ClientLevel.class, "blockStatePredictionHandler", level.predictions);
             //#endif
             level.bridge = new PredictionBridge();

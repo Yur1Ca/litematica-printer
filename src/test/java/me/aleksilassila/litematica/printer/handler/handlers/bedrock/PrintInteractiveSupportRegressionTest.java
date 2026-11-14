@@ -142,10 +142,7 @@ class PrintInteractiveSupportRegressionTest {
             Configs.Core.WORK_RANGE.setIntegerValue(64);
             Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(true);
             Configs.Core.ITERATOR_SHAPE.setOptionListValue(RadiusShapeType.SPHERE);
-            var referenceClient = Reference.class.getDeclaredField("MINECRAFT");
-            referenceClient.setAccessible(true);
-            cachedClients.put(referenceClient, referenceClient.get(null));
-            unsafe.putObject(unsafe.staticFieldBase(referenceClient), unsafe.staticFieldOffset(referenceClient), client);
+            this.installCachedClient(Reference.class.getDeclaredField("MINECRAFT"));
             var player = allocate(SneakPlayer.class);
             player.inventory = client.player.getInventory();
             set(player, Player.class, "inventory", player.inventory);

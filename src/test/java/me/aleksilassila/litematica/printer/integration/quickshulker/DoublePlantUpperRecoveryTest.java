@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -52,7 +53,7 @@ class DoublePlantUpperRecoveryTest {
         final boolean oldWrongBlock = Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue();
         final Schematic schematic = alloc(Schematic.class);
         final Guides guides = new Guides();
-        final List<?> oldSoilTags = Blocks.FARMLAND.builtInRegistryHolder().tags().toList();
+        final List<?> oldSoilTags = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.FARMLAND).tags().toList();
         boolean repairAllowed = true;
 
         RoseFixture() throws Exception {
@@ -96,7 +97,7 @@ class DoublePlantUpperRecoveryTest {
         private void bindSoilTags(Collection<?> tags) throws Exception {
             var method = net.minecraft.core.Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
             method.setAccessible(true);
-            method.invoke(Blocks.FARMLAND.builtInRegistryHolder(), tags);
+            method.invoke(BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.FARMLAND), tags);
         }
     }
 

@@ -17,6 +17,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.*;
 import net.minecraft.core.*;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.world.entity.player.*;
@@ -192,8 +193,8 @@ class MiningInteractionRegressionTest {
     }
     static class Fixture implements AutoCloseable {
         //#if MC >= 260300
-        //$$ final List<?> oldStoneTags = Blocks.STONE.builtInRegistryHolder().tags().toList();
-        //$$ final List<?> oldIceTags = Blocks.ICE.builtInRegistryHolder().tags().toList();
+        //$$ final List<?> oldStoneTags = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.STONE).tags().toList();
+        //$$ final List<?> oldIceTags = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.ICE).tags().toList();
         //#endif
         final Object oldClient = get(null, Minecraft.class, "instance");
         final Object oldNetworkClient = get(null, NetworkUtils.class, "client");
@@ -400,7 +401,7 @@ class MiningInteractionRegressionTest {
         //$$ private static void bindWaterSupport(net.minecraft.world.level.block.Block block, Collection<?> tags) throws Exception {
         //$$     var method = Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
         //$$     method.setAccessible(true);
-        //$$     method.invoke(block.builtInRegistryHolder(), tags);
+        //$$     method.invoke(BuiltInRegistries.BLOCK.wrapAsHolder(block), tags);
         //$$ }
         //#endif
 

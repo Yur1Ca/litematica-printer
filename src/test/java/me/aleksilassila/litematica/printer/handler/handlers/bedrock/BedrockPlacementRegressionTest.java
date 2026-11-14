@@ -493,9 +493,7 @@ class BedrockPlacementRegressionTest {
                 Class.forName(type.getName(), true, type.getClassLoader());
                 for (var field : type.getDeclaredFields()) {
                     if (field.getType() != Minecraft.class || !java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
-                    field.setAccessible(true);
-                    cachedClients.put(field, field.get(null));
-                    unsafe.putObject(unsafe.staticFieldBase(field), unsafe.staticFieldOffset(field), client);
+                    this.installCachedClient(field);
                 }
             }
             set(null, Minecraft.class, "instance", client);
@@ -561,6 +559,12 @@ class BedrockPlacementRegressionTest {
             return ctor.newInstance(level, client.player, InteractionHand.OFF_HAND,
                     new ItemStack(Items.PISTON), hit).getClickedPos();
         }
+        void installCachedClient(Field field) throws IllegalAccessException {
+            field.setAccessible(true);
+            cachedClients.put(field, field.get(null));
+            unsafe.putObject(unsafe.staticFieldBase(field), unsafe.staticFieldOffset(field), client);
+        }
+
         @Override public void close() throws Exception {
             NetworkUtils.clearScopedLookOverride();
             for (var entry : cachedClients.entrySet()) {

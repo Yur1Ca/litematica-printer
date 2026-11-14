@@ -23,6 +23,7 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
 import net.minecraft.network.protocol.Packet;
@@ -228,7 +229,7 @@ class SurvivalMineToolSwitchTest {
     private static final class IceWorkflowFixture implements AutoCloseable {
         final MineSelectionRefreshTest.Fixture f;
         final ToolFixture tool;
-        final List<?> oldTags = Blocks.ICE.builtInRegistryHolder().tags().toList();
+        final List<?> oldTags = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.ICE).tags().toList();
         IceWorkflowFixture(MineSelectionRefreshTest.Fixture f, ToolFixture tool) throws Exception {
             this.f = f;
             this.tool = tool;
@@ -277,7 +278,7 @@ class SurvivalMineToolSwitchTest {
         private static void bindTags(java.util.Collection<?> tags) throws Exception {
             var method = net.minecraft.core.Holder.Reference.class.getDeclaredMethod("bindTags", java.util.Collection.class);
             method.setAccessible(true);
-            method.invoke(Blocks.ICE.builtInRegistryHolder(), tags);
+            method.invoke(BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.ICE), tags);
         }
         @Override public void close() throws Exception { bindTags(oldTags); }
     }

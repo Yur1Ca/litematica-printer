@@ -314,10 +314,7 @@ class PrintReadyResidualFastPathTest {
             dispatch.fixture = this;
             dispatch.hits = new ArrayList<>();
             client.gameMode = dispatch;
-            var referenceClient = Reference.class.getDeclaredField("MINECRAFT");
-            referenceClient.setAccessible(true);
-            cachedClients.put(referenceClient, referenceClient.get(null));
-            unsafe.putObject(unsafe.staticFieldBase(referenceClient), unsafe.staticFieldOffset(referenceClient), client);
+            this.installCachedClient(Reference.class.getDeclaredField("MINECRAFT"));
             Configs.Print.PRINT_SORT_TARGETS.setBooleanValue(true);
             Configs.Print.PLACE_IN_AIR.setBooleanValue(true);
             Configs.Print.PRINT_RESERVE_ITEMS.setBooleanValue(false);

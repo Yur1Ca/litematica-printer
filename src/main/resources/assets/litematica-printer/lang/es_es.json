@@ -10,6 +10,8 @@
   "litematica-printer.config.breakCheckHardness.desc": "Determina si deben omitirse los bloques irrompibles (con dureza -1). Si el servidor solo ha modificado la dureza de algunos bloques, puedes desactivar esta opción.",
   "litematica-printer.config.breakAutoTool": "Cambio automático de herramienta",
   "litematica-printer.config.breakAutoTool.desc": "Cambia automáticamente a una herramienta mejor antes de romper bloques.\nSi está activado el cambio de herramienta de Tweakeroo, se usará este para evitar cambios duplicados.",
+  "litematica-printer.config.breakToolReserve": "Durabilidad reservada al minar",
+  "litematica-printer.config.breakToolReserve.desc": "Protección de herramientas integrada. Reserva 20 puntos de durabilidad por defecto; 0 la desactiva.\nCambia a una herramienta de repuesto segura o pausa la minería si no hay ninguna, sin depender del cambio automático ni del alcance.\nIncluye el desgaste aún no confirmado y una posible rotura de bloque diferida. No añade esperas por bloque; sincroniza el inventario solo cuando hace falta.",
   "litematica-printer.config.breakCooldown": "Espera entre reintentos de minería",
   "litematica-printer.config.breakCooldown.desc": "Tiempo de espera después de romper la misma posición en el modo minería (en ticks del juego). Solo se vuelve a intentar cuando termina la espera.",
   "litematica-printer.config.bedrockStartInterval": "Intervalo de concurrencia",

@@ -1,5 +1,8 @@
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import net.minecraft.network.protocol.Packet;
@@ -39,7 +42,9 @@ public final class InventoryRecoveryFence {
     public static synchronized Ticket prepare(Object connection) {
         State state = CONNECTIONS.computeIfAbsent(connection, ignored -> new State());
         Ticket ticket = new Ticket(state);
-        state.pending = ticket;
+        state.pending.removeIf(reference -> reference.get() == null);
+        // Consumers own live tickets; an abandoned or unsent request must not stay alive here.
+        state.pending.add(new WeakReference<>(ticket));
         return ticket;
     }
 
@@ -56,9 +61,16 @@ public final class InventoryRecoveryFence {
         synchronized (InventoryRecoveryFence.class) {
             State state = CONNECTIONS.computeIfAbsent(connection, ignored -> new State());
             long ordinal = ++state.requests;
-            if (state.pending != null && state.pending.packet == packet) {
-                state.pending.ordinal = ordinal;
-                state.pending = null;
+            var iterator = state.pending.iterator();
+            while (iterator.hasNext()) {
+                Ticket ticket = iterator.next().get();
+                if (ticket == null) {
+                    iterator.remove();
+                } else if (ticket.packet == packet) {
+                    iterator.remove();
+                    ticket.ordinal = ordinal;
+                    break;
+                }
             }
         }
     }
@@ -73,7 +85,7 @@ public final class InventoryRecoveryFence {
         long requests;
         long replies;
         long inputGeneration;
-        Ticket pending;
+        final List<WeakReference<Ticket>> pending = new ArrayList<>();
     }
 
     public static final class Ticket {

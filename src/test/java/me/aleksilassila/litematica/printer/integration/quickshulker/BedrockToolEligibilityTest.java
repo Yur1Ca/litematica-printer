@@ -1,6 +1,7 @@
 //#if MC == 260100 || MC == 260300
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockBreaker;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
@@ -48,6 +49,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Real admission, tool preparation and executor guard; only world/network boundaries are replaced. */
 class BedrockToolEligibilityTest {
+    private int oldToolReserve;
+
+    @BeforeEach void useLegacyToolProtectionPolicy() {
+        this.oldToolReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        // These controls cover the original tool/ACK policy; native reserve has separate tests.
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+    }
+
+    @AfterEach void restoreNativeToolReserve() {
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(this.oldToolReserve);
+    }
+
     private static final BlockPos PISTON = BlockPos.ZERO.above();
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 

@@ -14,6 +14,8 @@
   "litematica-printer.config.breakCheckHardness.desc": "是否繞過堅不可破之石（硬度為-1者）。若伺服器獨改某石硬度，可閉此選項。",
   "litematica-printer.config.breakAutoTool": "自易其器",
   "litematica-printer.config.breakAutoTool.desc": "破石前自擇囊中較適之器。\n若 Tweakeroo 之工具切換已啟，則從 Tweakeroo，以免重切。",
+  "litematica-printer.config.breakToolReserve": "掘具保留耐久",
+  "litematica-printer.config.breakToolReserve.desc": "內置護具，預留耐久二十；零則關閉。\n具將敝，取囊中完具代之；無備具則暫止新掘，不因範圍及自動換具之設而異。\n已發未報之耗與原版延後一擊皆預留；常時連掘，額不足始核囊中之數。",
   "litematica-printer.config.breakCooldown": "採掘重試調息刻",
   "litematica-printer.config.breakCooldown.desc": "採掘模式中，同處破石後須靜候之刻數，期滿方可再試。",
   "litematica-printer.config.breakInterval": "採掘間隔刻",

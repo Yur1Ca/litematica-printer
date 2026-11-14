@@ -10,6 +10,8 @@
   "litematica-printer.config.breakCheckHardness.desc": "是否跳过无法破坏的方块(也就是硬度为-1的方块)，如果只在服务端修改了某些方块的硬度，可以关闭此选项。",
   "litematica-printer.config.breakAutoTool": "自动切换工具",
   "litematica-printer.config.breakAutoTool.desc": "破坏方块前自动切换到背包中更合适的工具。\n如果 Tweakeroo 的工具切换功能已开启，将优先使用 Tweakeroo，避免重复切换。",
+  "litematica-printer.config.breakToolReserve": "挖掘保留耐久",
+  "litematica-printer.config.breakToolReserve.desc": "内置挖掘保护，默认保留 20 点耐久；0 关闭。\n自动切换背包中安全的备用工具，没有备用则暂停新的挖掘，不受自动切工具开关或工作范围影响。\n已提交但未同步的消耗也会预留，并额外防备一次原版延后破坏；正常批量挖掘不增加逐块等待，预算不足时才校准背包。",
   "litematica-printer.config.breakCooldown": "挖掘重试冷却时间",
   "litematica-printer.config.breakCooldown.desc": "同一位置在挖掘模式下破坏后的冷却时间(单位为游戏刻)，冷却结束后才会重试破坏操作。",
   "litematica-printer.config.bedrockStartInterval": "并发间隔",

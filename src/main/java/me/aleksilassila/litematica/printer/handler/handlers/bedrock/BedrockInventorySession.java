@@ -269,12 +269,19 @@ final class BedrockInventorySession {
         var runtime = RuntimeAccess.currentOrNull();
         var service = runtime == null ? null : runtime.toolSwitchService();
         if (service == null || !service.isDurabilityGuardActive()) return true;
+        if (!service.canReserveRawToolUses(requiredUses)) return false;
         ItemStack projected = this.client.player.getMainHandItem().copy();
         if (projected.isDamageableItem()) {
             // The guard evaluates the tool before this use, including all earlier reserved uses.
             projected.setDamageValue(projected.getMaxDamage() - (available - requiredUses + 1));
         }
         return service.isToolUsable(projected);
+    }
+
+    boolean reserveRawBreaks(List<net.minecraft.network.protocol.Packet<?>> packets) {
+        var runtime = RuntimeAccess.currentOrNull();
+        var service = runtime == null ? null : runtime.toolSwitchService();
+        return service == null || service.reserveRawBreaks(packets);
     }
 
     void recordToolUse() {

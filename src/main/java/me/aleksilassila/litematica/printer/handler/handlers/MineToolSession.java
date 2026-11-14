@@ -48,6 +48,7 @@ final class MineToolSession {
     boolean shouldStop(BlockBreakResult result, boolean hasActiveMinePos) {
         return result == BlockBreakResult.IN_PROGRESS
                 || result == BlockBreakResult.ABORTED
+                || result == BlockBreakResult.BLOCKED
                 || hasActiveMinePos
                 || !this.hasInstantBudget()
                 ;
@@ -64,6 +65,9 @@ final class MineToolSession {
     }
 
     boolean ensureHandToolProtected(LocalPlayer player, MineBreakExecutor.Target target) {
+        // The native service must be allowed to find an existing safe spare before the old hand
+        // can reject this target. Preserve the optional-mod precheck when native protection is off.
+        if (Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue() > 0) return true;
         if (player == null || player.getAbilities().instabuild) {
             return true;
         }

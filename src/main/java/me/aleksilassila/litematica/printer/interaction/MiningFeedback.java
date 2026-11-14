@@ -30,8 +30,8 @@ final class MiningFeedback {
         this.resetHitSound();
     }
 
-    void addPending(BlockPos pos, long tick) {
-        if (pos != null) this.pendingDelayedDestroys.put(pos.immutable(), tick);
+    void addPending(BlockPos pos, long deadline) {
+        if (pos != null) this.pendingDelayedDestroys.put(pos.immutable(), deadline);
     }
 
     boolean hasPending(BlockPos pos) {
@@ -42,7 +42,7 @@ final class MiningFeedback {
         if (pos != null) this.pendingDelayedDestroys.remove(pos);
     }
 
-    void cleanupPending(LocalPlayer player, ClientLevel level, long currentTick) {
+    void cleanupPending(ClientLevel level, long currentTick) {
         Iterator<Map.Entry<BlockPos, Long>> iterator = this.pendingDelayedDestroys.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, Long> entry = iterator.next();
@@ -53,13 +53,10 @@ final class MiningFeedback {
                 MineDebugLog.write("mine pending cleared pos=" + MineDebugLog.pos(pos) + " reason=state_cleared");
                 continue;
             }
-            float progress = state.getDestroyProgress(player, level, pos);
-            int timeout = progress <= 0.0F ? 200
-                    : Math.max(8, Math.min((int) Math.ceil(1.0F / progress) + 10, 200));
-            if (currentTick - entry.getValue() >= timeout) {
+            if (currentTick >= entry.getValue()) {
                 iterator.remove();
                 MineDebugLog.write("mine pending timeout pos=" + MineDebugLog.pos(pos)
-                        + " timeoutTicks=" + timeout + " state=" + MineDebugLog.describeState(state));
+                        + " deadline=" + entry.getValue() + " state=" + MineDebugLog.describeState(state));
             }
         }
     }

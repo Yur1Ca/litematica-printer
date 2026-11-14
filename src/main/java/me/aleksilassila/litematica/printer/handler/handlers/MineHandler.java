@@ -357,7 +357,7 @@ public class MineHandler extends FeatureModuleBase {
         MineResultReporter.record(pos, result);
         if (result != BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = null;
-            this.setBlockPosCooldown(pos, ConfigUtils.getBreakCooldown());
+            if (result != BlockBreakResult.BLOCKED) this.setBlockPosCooldown(pos, ConfigUtils.getBreakCooldown());
         }
     }
 
@@ -413,7 +413,7 @@ public class MineHandler extends FeatureModuleBase {
             boolean alreadyFailed = failedPreparations != null && failedPreparations.contains(preparation);
             if (!alreadyFailed && this.toolSession.ensureHandToolProtected(this.player, firstTarget)) {
                 result = this.executeSessionTarget(firstTarget, !this.analyzer.isCurrentToolEffective(firstTarget));
-                break;
+                if (result != BlockBreakResult.BLOCKED) break;
             }
             if (!alreadyFailed) {
                 if (failedPreparations == null) failedPreparations = new HashSet<>();
@@ -464,6 +464,10 @@ public class MineHandler extends FeatureModuleBase {
         boolean switchForRecovery = this.player != null
                 && target.shouldSwitchToRecoveryTool(this.player.getMainHandItem());
         BlockBreakResult result = this.executeMineTarget(target, allowToolSwitch || switchForRecovery);
+        if (result == BlockBreakResult.BLOCKED) {
+            MineResultReporter.record(target.pos(), result);
+            return result;
+        }
         if (result != BlockBreakResult.FAILED) {
             this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
         }
@@ -679,7 +683,7 @@ public class MineHandler extends FeatureModuleBase {
         MineResultReporter.record(pos, result);
         if (result == BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = pos.immutable();
-        } else {
+        } else if (result != BlockBreakResult.BLOCKED) {
             this.trenchFill.removeWaterloggedTarget(pos);
         }
         skipIteration.set(true);

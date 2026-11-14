@@ -108,6 +108,9 @@ public final class BedrockBreaker {
             if (!this.placer.prepareTool(state, true)
                     || !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBedrockBreak(pos, state), this.placer)
                     || !this.placer.prepareCriticalToolTick()) return null;
+        } else if (me.aleksilassila.litematica.printer.config.Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue() > 0
+                && !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBedrockBreak(pos, state), this.placer)) {
+            return null;
         }
         float progress = hardness == 0.0F || this.client.player.getAbilities().instabuild
                 ? 1.0F : fallback ? state.getDestroyProgress(this.client.player, this.level, pos)
@@ -121,7 +124,10 @@ public final class BedrockBreaker {
                 && !appendAction(packets, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, direction)) return null;
         var attempt = new CleanupAttempt(pos.immutable(), direction, state, this.level.getGameTime(), open, fallback,
                 normalizedTool(this.client.player.getMainHandItem()));
-        return new PreparedCleanup(attempt, packets, InventoryUtils.getSelectedSlot(this.client.player.getInventory()), hardness > 0.0F);
+        boolean usesTool = hardness > 0.0F
+                || me.aleksilassila.litematica.printer.config.Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue() > 0
+                    && this.client.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.ShearsItem;
+        return new PreparedCleanup(attempt, packets, InventoryUtils.getSelectedSlot(this.client.player.getInventory()), usesTool);
     }
 
     private boolean sendCleanup(List<PreparedCleanup> prepared) {
@@ -136,7 +142,7 @@ public final class BedrockBreaker {
             }
             packets.addAll(entry.packets());
         }
-        if (!NetworkUtils.sendPacketBatch(packets)) return false;
+        if (!this.placer.reserveRawBreaks(packets) || !NetworkUtils.sendPacketBatch(packets)) return false;
         for (var entry : prepared) {
             var attempt = entry.attempt();
             if (entry.usesTool()) this.placer.recordToolUse(entry.toolSlot());

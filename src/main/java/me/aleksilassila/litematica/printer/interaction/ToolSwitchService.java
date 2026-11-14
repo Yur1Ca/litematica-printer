@@ -4,20 +4,26 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.ToolInventorySelector;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.List;
 
-/** Coordinates Printer's ordinary effective-tool selection with Tweakeroo's own tool policies. */
+/** Coordinates effective-tool selection, native mining budgets and Tweakeroo's additional restrictions. */
 public final class ToolSwitchService {
     private final Minecraft client;
     private final TweakerooToolSwitchPort tweakeroo;
     private final InventorySwitchGuard switchGuard;
+    private final MiningDurabilityGuard durabilityGuard;
 
     public ToolSwitchService(
             Minecraft client,
@@ -27,11 +33,12 @@ public final class ToolSwitchService {
         this.client = client;
         this.tweakeroo = tweakeroo;
         this.switchGuard = switchGuard;
+        this.durabilityGuard = new MiningDurabilityGuard(client);
     }
 
     /**
-     * Prepares the hand for one damage-producing break packet. Printer may select an effective
-     * tool, but only Tweakeroo decides whether a nearly-broken tool should be replaced.
+     * Prepares one damage-producing break without spending its budget. The controller reserves
+     * the actual use only when it is about to start a new mining target.
      */
     public ToolPreparationResult prepareForBreak(BlockPos pos, BlockState state, boolean allowEffectiveSwitch) {
         LocalPlayer player = this.client.player;
@@ -41,6 +48,12 @@ public final class ToolSwitchService {
         }
         if (this.switchGuard.isWaiting()) {
             return ToolPreparationResult.SWITCHED_WAITING_SYNC;
+        }
+        if (!this.durabilityGuard.prepare()) {
+            return ToolPreparationResult.SWITCHED_WAITING_SYNC;
+        }
+        if (this.durabilityGuard.enabled()) {
+            return this.prepareProtectedBreak(player, pos, state, allowEffectiveSwitch);
         }
 
         int beforeSlot = InventoryUtils.getSelectedSlot(player.getInventory());
@@ -62,6 +75,88 @@ public final class ToolSwitchService {
             return ToolPreparationResult.SWITCHED_WAITING_SYNC;
         }
         return ToolPreparationResult.READY;
+    }
+
+    private ToolPreparationResult prepareProtectedBreak(LocalPlayer player, BlockPos pos, BlockState state,
+                                                        boolean allowEffectiveSwitch) {
+        int selected = InventoryUtils.getSelectedSlot(player.getInventory());
+        boolean replacement = !this.canUseSlot(player, selected, pos, state);
+        if (replacement && (!this.tweakeroo.isDurabilityGuardActive()
+                || this.tweakeroo.isCurrentToolUsable(player.getMainHandItem()))
+                && this.durabilityGuard.needsCurrentCalibration(state, pos)) {
+            // Unbreaking and rejected attempts can exhaust the conservative budget while this
+            // tool still has plenty of durability. Keep it selected until the receipt settles it.
+            this.durabilityGuard.requestCalibration();
+            return ToolPreparationResult.SWITCHED_WAITING_SYNC;
+        }
+        if (!replacement && (!allowEffectiveSwitch
+                || !this.tweakeroo.isEffectiveToolSwitchEnabled() && !Configs.Break.BREAK_AUTO_TOOL.getBooleanValue())) {
+            return ToolPreparationResult.READY;
+        }
+        // The external effective-tool search cannot filter this guard's shadow budgets. Keep
+        // its enable switch, but choose among safe slots here so it cannot restore a worn tool.
+        int candidate = ToolInventorySelector.findBestUsableToolSlot(player, state, this.client.level, pos,
+                slot -> this.canUseSlot(player, slot, pos, state), replacement);
+        if (candidate < 0) return replacement ? this.awaitCalibrationOrBlock() : ToolPreparationResult.READY;
+        if (!this.equipProtectedSlot(player, candidate)) return this.awaitCalibrationOrBlock();
+        if (!this.canUseSlot(player, InventoryUtils.getSelectedSlot(player.getInventory()), pos, state)) {
+            return this.awaitCalibrationOrBlock();
+        }
+        this.switchGuard.markSwitchIfNeeded(player.getMainHandItem());
+        return ToolPreparationResult.SWITCHED_WAITING_SYNC;
+    }
+
+    private boolean canUseSlot(LocalPlayer player, int slot, BlockPos pos, BlockState state) {
+        return this.durabilityGuard.canUse(slot, state, pos)
+                && (!this.tweakeroo.isDurabilityGuardActive()
+                    || this.tweakeroo.isCurrentToolUsable(player.getInventory().getItem(slot)));
+    }
+
+    private ToolPreparationResult awaitCalibrationOrBlock() {
+        return this.durabilityGuard.requestCalibration()
+                ? ToolPreparationResult.SWITCHED_WAITING_SYNC : ToolPreparationResult.BLOCKED_BY_DURABILITY;
+    }
+
+    private boolean equipProtectedSlot(LocalPlayer player, int source) {
+        var menu = player.inventoryMenu;
+        if (this.client.player != player || menu == null || player.containerMenu != menu
+                || !menu.getCarried().isEmpty() || this.client.gameMode == null) return false;
+        var inventory = player.getInventory();
+        ItemStack expected = inventory.getItem(source).copy();
+        if (Inventory.isHotbarSlot(source)) {
+            InventoryUtils.setHotbarSlot(source, inventory);
+            return this.client.player == player && player.containerMenu == menu
+                    && InventoryUtils.getSelectedSlot(inventory) == source
+                    && sameStack(expected, player.getMainHandItem());
+        }
+        if (source < 9 || source >= 36) return false;
+        int selected = InventoryUtils.getSelectedSlot(inventory);
+        ItemStack previous = player.getMainHandItem().copy();
+        boolean applied = false;
+        this.durabilityGuard.beginSwap(source, selected);
+        try {
+            this.client.gameMode.handleContainerInput(menu.containerId, source, selected, ContainerInput.SWAP, player);
+            applied = this.client.player == player && player.containerMenu == menu && menu.getCarried().isEmpty()
+                    && InventoryUtils.getSelectedSlot(inventory) == selected
+                    && sameStack(expected, player.getMainHandItem()) && sameStack(previous, inventory.getItem(source));
+            return applied;
+        } finally {
+            this.durabilityGuard.endSwap(applied);
+        }
+    }
+
+    private static boolean sameStack(ItemStack expected, ItemStack actual) {
+        return expected.getCount() == actual.getCount() && ItemStack.isSameItemSameComponents(expected, actual);
+    }
+
+    /** Equip the caller's qualified tool by its exact slot, preserving shared durability accounting. */
+    public boolean equipBreakToolSlot(int slot) {
+        var player = this.client.player;
+        if (player == null || slot < 0 || slot >= 36 || this.switchGuard.isWaiting()
+                || !this.isToolUsable(player.getInventory().getItem(slot)) || !this.durabilityGuard.prepare()
+                || !this.equipProtectedSlot(player, slot)) return false;
+        this.switchGuard.markSwitchIfNeeded(player.getMainHandItem());
+        return true;
     }
 
     /** Bedrock follows a pure hotbar selection with its own native equipment-tick acknowledgement. */
@@ -95,12 +190,41 @@ public final class ToolSwitchService {
     }
 
     public boolean isDurabilityGuardActive() {
-        return this.tweakeroo.isDurabilityGuardActive();
+        return this.durabilityGuard.enabled() || this.tweakeroo.isDurabilityGuardActive();
     }
 
     public boolean isToolUsable(ItemStack stack) {
-        return this.tweakeroo.isCurrentToolUsable(stack);
+        return this.durabilityGuard.isStackUsable(stack)
+                && (!this.tweakeroo.isDurabilityGuardActive() || this.tweakeroo.isCurrentToolUsable(stack));
     }
+
+    public boolean reserveForBreak(BlockPos pos, BlockState state) { return this.durabilityGuard.reserve(state, pos); }
+
+    public boolean canReserveRawToolUses(int uses) { return this.durabilityGuard.canReserveRawToolUses(uses); }
+
+    public boolean reserveRawBreaks(List<Packet<?>> packets) { return this.durabilityGuard.reserveRawBreaks(packets); }
+
+    /** A hold already owns its one reservation; continuing it must not require another START's credit. */
+    public boolean canContinueReservedBreak(BlockPos pos, BlockState state) {
+        return this.durabilityGuard.prepare() && this.durabilityGuard.canContinue(state, pos)
+                && (!this.tweakeroo.isDurabilityGuardActive()
+                    || this.tweakeroo.isCurrentToolUsable(this.client.player.getMainHandItem()));
+    }
+
+    /** A native paid hold survives ordinary wear receipts, but never a different tool or component set. */
+    public boolean canContinueReservedBreak(BlockPos pos, BlockState state, ItemStack startedTool) {
+        if (!this.durabilityGuard.enabled() || this.client.player == null) return false;
+        ItemStack held = this.client.player.getMainHandItem();
+        ItemStack compared = startedTool.copy();
+        if (compared.isDamageableItem()) compared.setDamageValue(held.getDamageValue());
+        return ItemStack.matches(compared, held) && this.canContinueReservedBreak(pos, state);
+    }
+
+    public void onInventoryInput(Packet<?> packet) { this.durabilityGuard.onInventoryInput(packet); }
+
+    public void onInventorySynchronized(Object connection) { this.durabilityGuard.onInventorySynchronized(connection); }
+
+    public void reset() { this.durabilityGuard.reset(); }
 
     private static boolean stackFingerprintChanged(ItemStack before, ItemStack after) {
         if (before.isEmpty() || after.isEmpty()) {

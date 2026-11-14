@@ -34,6 +34,8 @@ public class MixinConnection implements PacketBatchConnection {
     private Packet<?> printer$trackRecoveryInput(Packet<?> packet) {
         me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils.observeUseItemOn(this, packet);
         me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence.inputSent(this, packet);
+        var runtime = RuntimeAccess.currentOrNull();
+        if (runtime != null) runtime.toolSwitchService().onInventoryInput(packet);
         return packet;
     }
 

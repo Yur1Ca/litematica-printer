@@ -272,6 +272,8 @@ class MiningInteractionRegressionTest {
             set(modules, FeatureModuleSet.class, "print", printHandler);
             set(printHandler, PrintHandler.class, "printTasks", workflows);
             set(runtime, PrinterRuntime.class, "modules", modules);
+            set(runtime, PrinterRuntime.class, "toolSwitchService",
+                    get(controller, MiningInteractionController.class, "toolSwitchService"));
             set(runtime, PrinterRuntime.class, "interactionUtils", interactions);
             RuntimeAccess.install(runtime);
             for (var name : List.of("mc", "level", "player", "connection", "gameMode")) {
@@ -657,7 +659,11 @@ class MiningInteractionRegressionTest {
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void changingTheHeldItemCancelsTheOldSessionBeforeAutomaticRestart(boolean printing) throws Exception {
+        int previousReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
         try (var f = new Fixture(0.2f, true)) {
+            // This original protocol fixture replaces an unrelated held field without inventory
+            // movement/receipts. Native protection's real hotbar changes are covered separately.
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
             if (printing) {
                 Configs.Core.WORK_MODE_TYPE.setOptionListValue(PrintModeType.PRINTER);
                 f.interactions.continueDestroyBlock(TARGET);
@@ -674,6 +680,8 @@ class MiningInteractionRegressionTest {
                     ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK), actions(f));
             assertEquals(0.2f, f.port.progress, 0.0001f);
             assertFalse(f.level.state.isAir());
+        } finally {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previousReserve);
         }
     }
 

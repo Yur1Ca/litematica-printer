@@ -1,12 +1,15 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.testsupport.BedrockInventoryTestAccess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -18,6 +21,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Reproduces delayed client equipment attributes while retaining the real tool acknowledgement gate. */
 class BedrockCleanupEquipmentProgressTest {
+    private int oldToolReserve;
+
+    @BeforeEach void useLegacyToolProtectionPolicy() {
+        this.oldToolReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        // These controls cover the original tool/ACK policy; native reserve has separate tests.
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+    }
+
+    @AfterEach void restoreNativeToolReserve() {
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(this.oldToolReserve);
+    }
+
     private static final BlockPos PISTON = BlockPos.ZERO.above();
 
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }

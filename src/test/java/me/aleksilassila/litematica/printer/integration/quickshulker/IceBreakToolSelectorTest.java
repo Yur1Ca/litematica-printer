@@ -95,10 +95,10 @@ class IceBreakToolSelectorTest {
 
         boolean select() throws Exception {
             var selector = Class.forName("me.aleksilassila.litematica.printer.handler.handlers.print.IceBreakToolSelector");
-            var method = selector.getDeclaredMethod("switchToNonSilkTouchBreakItem", Minecraft.class);
+            var method = selector.getDeclaredMethod("switchToNonSilkTouchBreakItem", Minecraft.class, net.minecraft.core.BlockPos.class);
             method.setAccessible(true);
             try {
-                return (boolean) method.invoke(null, client);
+                return (boolean) method.invoke(null, client, player.blockPosition());
             } catch (InvocationTargetException error) {
                 if (error.getCause() instanceof Exception cause) throw cause;
                 if (error.getCause() instanceof Error cause) throw cause;

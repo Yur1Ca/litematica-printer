@@ -1,6 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
@@ -29,6 +30,13 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Ordered native snapshots renew conservative budgets without owning the world's mutation lane. */
 class BedrockInventoryRefreshTest {
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
+
+    /** These legacy refresh scenarios deliberately use a ten-durability tool below the new reserve. */
+    private static AutoCloseable withoutNativeToolReserve() {
+        int previous = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+        return () -> Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previous);
+    }
 
     private static Object call(Object owner, String name, Class<?>[] types, Object... args) throws Exception {
         Method method = owner.getClass().getDeclaredMethod(name, types);
@@ -288,7 +296,7 @@ class BedrockInventoryRefreshTest {
     }
 
     @Test void aToolOnlyBackgroundRefreshStillOwnsItsTicketBeforeAnyOffhandSwap() throws Exception {
-        try (var f = new BedrockInventorySessionTest.Fixture()) {
+        try (var reserve = withoutNativeToolReserve(); var f = new BedrockInventorySessionTest.Fixture()) {
             var tool = new ItemStack(Items.DIAMOND_PICKAXE);
             tool.setDamageValue(tool.getMaxDamage() - 10);
             f.player().getInventory().setItem(0, tool);
@@ -324,7 +332,7 @@ class BedrockInventoryRefreshTest {
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void aBackgroundReplyKeepsLaterMaterialCostsSeparateFromToolCostsBeforeRefilling(boolean materialCost) throws Exception {
-        try (var f = new BedrockInventorySessionTest.Fixture()) {
+        try (var reserve = withoutNativeToolReserve(); var f = new BedrockInventorySessionTest.Fixture()) {
             var tool = new ItemStack(Items.DIAMOND_PICKAXE);
             tool.setDamageValue(tool.getMaxDamage() - 10);
             f.player().getInventory().setItem(0, tool);

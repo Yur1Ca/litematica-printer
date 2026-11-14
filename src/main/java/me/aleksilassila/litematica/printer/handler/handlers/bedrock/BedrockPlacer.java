@@ -94,6 +94,10 @@ public final class BedrockPlacer {
 
     boolean canReserveToolUses(int requiredUses) { return this.inventory.canReserveToolUses(requiredUses); }
 
+    boolean reserveRawBreaks(java.util.List<net.minecraft.network.protocol.Packet<?>> packets) {
+        return this.inventory.reserveRawBreaks(packets);
+    }
+
     void recordToolUse() { this.inventory.recordToolUse(); }
 
     void recordToolUse(int slot) { this.inventory.recordToolUse(slot); }

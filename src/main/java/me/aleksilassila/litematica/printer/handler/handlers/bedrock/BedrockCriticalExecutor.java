@@ -85,7 +85,8 @@ final class BedrockCriticalExecutor {
                 || me.aleksilassila.litematica.printer.runtime.RuntimeAccess.get().inventorySwitchGuard().isWaiting()
                 || !offhand.is(Items.PISTON) || this.placer.availablePistons() < selected.size()) return List.of();
         try {
-            if (!NetworkUtils.sendPacketBatch(List.copyOf(packets))) return List.of();
+            if (!this.placer.reserveRawBreaks(packets)
+                    || !NetworkUtils.sendPacketBatch(List.copyOf(packets))) return List.of();
             this.placer.recordRawUses(selected.size(), -1, 0);
             reservedToolUses.forEach((slot, uses) -> {
                 for (int used = 0; used < uses; used++) this.placer.recordToolUse(slot);
@@ -129,7 +130,8 @@ final class BedrockCriticalExecutor {
         try {
             var packets = BedrockCriticalPackets.prepareBody(level, client.player, pistonPos, executeFacing,
                     ownedTorchPositions, placement);
-            if (packets.isEmpty() || !NetworkUtils.sendPacketBatch(packets)) return false;
+            if (packets.isEmpty() || !this.placer.reserveRawBreaks(packets)
+                    || !NetworkUtils.sendPacketBatch(packets)) return false;
             this.placer.recordRawUses(1, -1, 0);
             this.placer.recordToolUse();
             return true;

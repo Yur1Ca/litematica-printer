@@ -1,6 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockMachineLayout;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacer;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTarget;
@@ -22,6 +23,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RedstoneTorchBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -34,6 +37,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Uses the real tool, power and packet preflight; captures the complete transport batch. */
 class BedrockCriticalBatchTest {
+    private int oldToolReserve;
+
+    @BeforeEach void useLegacyToolProtectionPolicy() {
+        this.oldToolReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        // These controls cover the original tool/ACK policy; native reserve has separate tests.
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+    }
+
+    @AfterEach void restoreNativeToolReserve() {
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(this.oldToolReserve);
+    }
+
     private static final BlockPos FIRST = BlockPos.ZERO;
     private static final BlockPos SECOND = FIRST.south(3);
 

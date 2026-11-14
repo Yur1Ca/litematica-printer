@@ -32,6 +32,45 @@ class InventoryRecoveryFenceTest {
         assertTrue(ticket.invalidated());
     }
 
+    @Test void independentlyPreparedConsumersEachReceiveTheirOwnOrderedReply() {
+        Object connection = new Object();
+        var mining = InventoryRecoveryFence.prepare(connection);
+        var restock = InventoryRecoveryFence.prepare(connection);
+        InventoryRecoveryFence.sent(connection, mining.packet());
+        InventoryRecoveryFence.sent(connection, restock.packet());
+
+        assertFalse(mining.complete());
+        assertFalse(restock.complete());
+        InventoryRecoveryFence.received(connection);
+        assertTrue(mining.complete());
+        assertFalse(restock.complete());
+        InventoryRecoveryFence.received(connection);
+        assertTrue(mining.complete());
+        assertTrue(restock.complete());
+        assertFalse(mining.invalidated());
+        assertFalse(restock.invalidated());
+    }
+
+    @Test void actualPacketWriteOrderBindsPreparedConsumersAcrossUnrelatedStatsRequests() {
+        Object connection = new Object();
+        var mining = InventoryRecoveryFence.prepare(connection);
+        InventoryRecoveryFence.invalidate(connection);
+        var restock = InventoryRecoveryFence.prepare(connection);
+        InventoryRecoveryFence.sent(connection, restock.packet());
+        InventoryRecoveryFence.sent(connection, request());
+        InventoryRecoveryFence.sent(connection, mining.packet());
+
+        InventoryRecoveryFence.received(connection);
+        assertTrue(restock.complete());
+        assertFalse(mining.complete());
+        InventoryRecoveryFence.received(connection);
+        assertFalse(mining.complete());
+        InventoryRecoveryFence.received(connection);
+        assertTrue(mining.complete());
+        assertTrue(mining.invalidated());
+        assertFalse(restock.invalidated());
+    }
+
     @Test void replacingATicketOnTheSameConnectionRetainsOutstandingReplyCounts() {
         Object connection = new Object();
         var old = InventoryRecoveryFence.prepare(connection);

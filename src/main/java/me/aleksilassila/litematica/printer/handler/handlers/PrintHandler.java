@@ -25,6 +25,7 @@ import me.aleksilassila.litematica.printer.handler.handlers.print.SortedSchemati
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -91,8 +92,9 @@ public class PrintHandler extends FeatureModuleBase {
                 && this.mc.level == this.level && this.mc.player == this.player
                 && this.mc.getConnection() == this.connection && this.mc.gameMode == this.gameMode
                 && this.gameMode instanceof MiningInteractionPort port
-                && port.isDestroying() && port.matchesDestroyTarget(port.destroyPos())
-                && (InteractionUtils.getRuntime().isActiveDestroyTarget(port.destroyPos())
+                && port.isDestroying()
+                && (port.matchesDestroyTarget(port.destroyPos())
+                    && InteractionUtils.getRuntime().isActiveDestroyTarget(port.destroyPos())
                     || this.activeWaterMiningPos() != null);
     }
 
@@ -100,7 +102,9 @@ public class PrintHandler extends FeatureModuleBase {
     private BlockPos activeWaterMiningPos() {
         if (!(this.gameMode instanceof MiningInteractionPort port) || !port.isDestroying()) return null;
         BlockPos pos = port.destroyPos();
-        return this.printTasks.isBreakingTaskPos(pos) && port.matchesDestroyTarget(pos)
+        return this.printTasks.isBreakingTaskPos(pos)
+                && (port.matchesDestroyTarget(pos) || RuntimeAccess.get().toolSwitchService()
+                    .canContinueReservedBreak(pos, this.level.getBlockState(pos), port.destroyingItem()))
                 && this.canReachIterationPosition(pos) && this.isInSelectionRange(pos)
                 && this.isSchematicBlock(pos) && InteractionUtils.canBreakBlock(pos) ? pos : null;
     }

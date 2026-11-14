@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
@@ -126,6 +127,8 @@ public final class BedrockInventory {
         var runtime = RuntimeAccess.currentOrNull();
         var service = runtime == null ? null : runtime.toolSwitchService();
         boolean guarded = service != null && service.isDurabilityGuardActive();
+        boolean preferCurrent = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue() > 0;
+        ItemStack current = player.getMainHandItem();
         ItemStack best = ItemStack.EMPTY;
         ItemStack unsafe = ItemStack.EMPTY;
         float bestScore = 0F, unsafeScore = 0F;
@@ -137,12 +140,14 @@ public final class BedrockInventory {
             if (!(score > 0F)) continue;
             boolean preferred = cleanup && isPreferredCleanupTool(stack, state);
             if (guarded && !service.isToolUsable(stack)) {
-                if (unsafe.isEmpty() || preferred && !unsafePreferred || preferred == unsafePreferred && score > unsafeScore) {
+                if (unsafe.isEmpty() || preferred && !unsafePreferred || preferred == unsafePreferred && score > unsafeScore
+                        || preferCurrent && preferred == unsafePreferred && score == unsafeScore && stack == current) {
                     unsafe = stack;
                     unsafeScore = score;
                     unsafePreferred = preferred;
                 }
-            } else if (best.isEmpty() || preferred && !bestPreferred || preferred == bestPreferred && score > bestScore) {
+            } else if (best.isEmpty() || preferred && !bestPreferred || preferred == bestPreferred && score > bestScore
+                    || preferCurrent && preferred == bestPreferred && score == bestScore && stack == current) {
                 best = stack;
                 bestScore = score;
                 bestPreferred = preferred;
@@ -151,7 +156,6 @@ public final class BedrockInventory {
         if (!best.isEmpty()) return best;
         // With no usable candidate, let the existing guard attempt its own replacement.
         if (!unsafe.isEmpty()) return unsafe;
-        ItemStack current = player.getMainHandItem();
         return isAllowedBedrockTool(current, state) ? current : ItemStack.EMPTY;
     }
 

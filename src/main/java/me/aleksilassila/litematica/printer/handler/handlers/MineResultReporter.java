@@ -33,6 +33,7 @@ final class MineResultReporter {
                 HudStatsManager.getRuntime().trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
                 HudStatsManager.getRuntime().recordDeferred(HudStatsManager.Mode.MINE, HudStatus.MINING_INTERRUPTED);
             }
+            case BLOCKED -> HudStatsManager.getRuntime().recordDeferred(HudStatsManager.Mode.MINE, HudStatus.MINING_INTERRUPTED);
             case FAILED -> HudStatsManager.getRuntime().recordFailure(HudStatsManager.Mode.MINE, HudStatus.BREAKING_FAILED);
         }
     }

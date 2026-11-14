@@ -46,10 +46,17 @@ class BedrockWarehouseRestockFlowTest {
 
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
+    /** Isolate material ownership from the new protection: the cleanup setup intentionally has ten uses. */
+    private static AutoCloseable withoutNativeToolReserve() {
+        int previous = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+        return () -> Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previous);
+    }
+
     @Test void fastCleanupToolWearDoesNotDelayAnAlreadyCalibratedWarehouseMaterialRequest() throws Exception {
         boolean enabled = Configs.Special.VOID_WAREHOUSE_RESTOCK.getBooleanValue();
         Configs.Special.VOID_WAREHOUSE_RESTOCK.setBooleanValue(true);
-        try (var f = new Fixture()) {
+        try (var reserve = withoutNativeToolReserve(); var f = new Fixture()) {
             f.fastCleanupWithMissingTorch();
 
             assertFalse(f.engine.prepareMaterials(f.warehouseRequests));
@@ -71,7 +78,7 @@ class BedrockWarehouseRestockFlowTest {
     void warehouseMaterialPreparationStillHonorsCountCostsAndOutstandingInventoryFences(String boundary) throws Exception {
         boolean enabled = Configs.Special.VOID_WAREHOUSE_RESTOCK.getBooleanValue();
         Configs.Special.VOID_WAREHOUSE_RESTOCK.setBooleanValue(true);
-        try (var f = new Fixture()) {
+        try (var reserve = withoutNativeToolReserve(); var f = new Fixture()) {
             f.fastCleanupWithMissingTorch();
             if (boundary.equals("material_cost")) {
                 f.inventory.recordRawUses(1, -1, 0);

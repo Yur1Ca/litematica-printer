@@ -8,9 +8,13 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShearsItem;
 import net.minecraft.world.level.block.state.BlockState;
+
+import java.util.function.IntPredicate;
 
 /** Selects and equips the most effective tool for one block state. */
 public final class ToolInventorySelector {
@@ -70,6 +74,41 @@ public final class ToolInventorySelector {
             RuntimeAccess.get().inventorySwitchGuard().markSwitchIfNeeded(bestStack);
         }
         return true;
+    }
+
+    /** Finds an exact inventory slot; the caller supplies the centralized safety policy. */
+    public static int findBestUsableToolSlot(
+            LocalPlayer player,
+            BlockState state,
+            ClientLevel level,
+            BlockPos pos,
+            IntPredicate usableSlot,
+            boolean replacement
+    ) {
+        int selected = InventoryUtils.getSelectedSlot(player.getInventory());
+        ItemStack current = player.getMainHandItem();
+        boolean preferSilk = ToolSelectionUtils.prefersSilkTouchForDrops(state);
+        boolean currentUsable = !replacement && usableSlot.test(selected);
+        float bestProgress = currentUsable ? destroyProgress(player, level, pos, state, current) : -1F;
+        boolean bestSilk = currentUsable && preferSilk && ToolSelectionUtils.hasSilkTouch(current);
+        int bestSlot = -1;
+        var stacks = InventoryUtils.getMainStacks(player.getInventory());
+        for (int slot = 0; slot < Math.min(36, stacks.size()); slot++) {
+            ItemStack stack = stacks.get(slot);
+            if (slot == selected || stack.isEmpty() || replacement && !stack.isDamageableItem()
+                    || replacement && stack.get(DataComponents.TOOL) == null && !(stack.getItem() instanceof ShearsItem)
+                    || replacement && state.requiresCorrectToolForDrops() && !stack.isCorrectToolForDrops(state)
+                    || !usableSlot.test(slot)) continue;
+            float progress = destroyProgress(player, level, pos, state, stack);
+            if (!(progress > 0F)) continue;
+            boolean silk = preferSilk && ToolSelectionUtils.hasSilkTouch(stack);
+            if (silk && !bestSilk || silk == bestSilk && progress > bestProgress) {
+                bestProgress = progress;
+                bestSilk = silk;
+                bestSlot = slot;
+            }
+        }
+        return bestSlot;
     }
 
     private static float destroyProgress(

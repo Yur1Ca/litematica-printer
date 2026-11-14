@@ -35,6 +35,9 @@ public interface MiningInteractionPort {
 
     void ensureCarriedItemSent();
 
+    /** Return an expired Mine delivery to its source after both confirmation stores release it. */
+    default void onPendingDestroyExpired(BlockPos pos) { }
+
     ServerboundPlayerActionPacket actionPacket(
             ServerboundPlayerActionPacket.Action action,
             BlockPos pos,

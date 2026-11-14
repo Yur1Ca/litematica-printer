@@ -305,14 +305,15 @@ abstract class ModPlugin : Plugin<Project> {
                                 }
 
                                 val tweakerooCompatibilityAdapter = relative.endsWith("/utils/mods/TweakerooUtils.java")
-                                if (!tweakerooCompatibilityAdapter && listOf(
+                                val miningDurabilityGuard = relative.endsWith("/interaction/MiningDurabilityGuard.java")
+                                if (!tweakerooCompatibilityAdapter && !miningDurabilityGuard && listOf(
                                         "switchToSafeTool",
                                         "getCurrentToolSafeBreakBudget",
                                         "protectCurrentToolBeforeBreak",
                                         "isToolAllowedByDurabilityProtection",
                                         "ITEM_SWAP_DURABILITY_THRESHOLD"
                                     ).any(text::contains)) {
-                                    violations += "$relative: local durability policy is forbidden; delegate to Tweakeroo"
+                                    violations += "$relative: durability policy must stay in MiningDurabilityGuard or the Tweakeroo compatibility adapter"
                                 }
 
                                 if (relative.endsWith("/guide/Guides.java")

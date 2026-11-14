@@ -1,6 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
 import me.aleksilassila.litematica.printer.interaction.ToolPreparationResult;
 import me.aleksilassila.litematica.printer.interaction.ToolSwitchService;
@@ -19,6 +20,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,8 +35,18 @@ import static org.junit.jupiter.api.Assertions.*;
 /** The real cleanup boundary distinguishes unchanged inventory from actual menu mutations. */
 class BedrockHotbarToolSwitchTest {
     private static final BlockPos PISTON = new BlockPos(0, 65, 0);
+    private int previousNativeReserve;
 
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
+
+    @BeforeEach void isolateTheExistingTweakerooToolPolicy() {
+        previousNativeReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+    }
+
+    @AfterEach void restoreNativeToolPolicy() {
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previousNativeReserve);
+    }
 
     @ParameterizedTest @ValueSource(strings = {"hotbar", "inventory", "inventory_then_hotbar"})
     void onlyASelectionWithUnchangedInventoryCanSkipTheFullMenuFence(String change) throws Exception {
@@ -92,6 +105,51 @@ class BedrockHotbarToolSwitchTest {
 
             assertEquals(guardActive ? 3 : 0, InventoryUtils.getSelectedSlot(f.client.player.getInventory()),
                     "A guarded nearly-broken candidate must not undo the usable tool selected on the previous tick");
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void nativeProtectionKeepsTheCurrentEqualToolAcrossWearReceipts(boolean cleanup) throws Exception {
+        int previous = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        try (var f = new BedrockAdmissionPipelineTest.Fixture()) {
+            // This new-policy control explicitly overrides the legacy-policy class fixture.
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(20);
+            var inventory = f.client.player.getInventory();
+            var current = new ItemStack(Items.DIAMOND_PICKAXE);
+            current.setDamageValue(10);
+            inventory.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            inventory.setItem(3, current);
+            InventoryUtils.setSelectedSlot(inventory, 3);
+            var state = Blocks.PISTON.defaultBlockState();
+            assertEquals(inventory.getItem(0).getDestroySpeed(state), current.getDestroySpeed(state));
+            assertTrue(f.runtime.toolSwitchService().isDurabilityGuardActive());
+            var finder = BedrockInventory.class.getDeclaredMethod("findBestTool",
+                    net.minecraft.client.player.LocalPlayer.class, BlockState.class, boolean.class);
+            finder.setAccessible(true);
+
+            for (int receipt = 0; receipt < 3; receipt++) {
+                if (receipt > 0) {
+                    var contents = new java.util.ArrayList<>(f.client.player.inventoryMenu.slots.stream()
+                            .map(slot -> slot.getItem().copy()).toList());
+                    var worn = contents.get(39).copy();
+                    worn.setDamageValue(10 + receipt);
+                    contents.set(39, worn);
+                    f.client.player.inventoryMenu.initializeContents(
+                            f.client.player.inventoryMenu.getStateId() + 1, contents, ItemStack.EMPTY);
+                }
+                assertTrue(cleanup ? BedrockInventory.switchToCleanupTool(state) : BedrockInventory.switchToBestTool(state));
+                assertEquals(3, InventoryUtils.getSelectedSlot(inventory),
+                        "Equal effectiveness must keep the healthy current pickaxe instead of distributing wear to the earlier slot");
+                assertSame(inventory.getItem(3), finder.invoke(null, f.client.player, state, cleanup));
+            }
+
+            var faster = new ItemStack(Items.NETHERITE_PICKAXE);
+            inventory.setItem(0, faster);
+            assertTrue(faster.getDestroySpeed(state) > inventory.getItem(3).getDestroySpeed(state));
+            assertTrue(cleanup ? BedrockInventory.switchToCleanupTool(state) : BedrockInventory.switchToBestTool(state));
+            assertEquals(0, InventoryUtils.getSelectedSlot(inventory), "A genuinely faster tool can still replace the current one");
+        } finally {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previous);
         }
     }
 

@@ -1,6 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacer;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import net.minecraft.core.BlockPos;
@@ -8,6 +9,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -20,6 +23,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Captures actual coordinator cleanup packets; block removal is never simulated. */
 class BedrockCleanupBatchTest {
+    private int oldToolReserve;
+
+    @BeforeEach void useLegacyToolProtectionPolicy() {
+        this.oldToolReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        // These controls cover the original tool/ACK policy; native reserve has separate tests.
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(0);
+    }
+
+    @AfterEach void restoreNativeToolReserve() {
+        Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(this.oldToolReserve);
+    }
+
     private static final BlockPos FIRST = new BlockPos(-2, 1, 0);
     private static final BlockPos SECOND = new BlockPos(2, 1, 0);
     private static final BlockPos THIRD = new BlockPos(0, 1, 3);

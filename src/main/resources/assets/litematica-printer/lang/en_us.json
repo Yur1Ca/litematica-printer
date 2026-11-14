@@ -10,6 +10,8 @@
   "litematica-printer.config.breakCheckHardness.desc": "Whether to skip unbreakable blocks (blocks with hardness of -1). If only the hardness of certain blocks has been modified on the server side, you can disable this option.",
   "litematica-printer.config.breakAutoTool": "Auto Tool Switch",
   "litematica-printer.config.breakAutoTool.desc": "Automatically switch to a better tool before breaking blocks.\nIf Tweakeroo's tool switch is enabled, Tweakeroo is used instead to avoid duplicate switching.",
+  "litematica-printer.config.breakToolReserve": "Mining Durability Reserve",
+  "litematica-printer.config.breakToolReserve.desc": "Built-in mining protection. Keep at least 20 durability by default; 0 disables it.\nSwitches to a safe spare in your inventory, or pauses new mining if none is available, regardless of auto-tool switching or work range.\nReserves unconfirmed wear plus one possible vanilla delayed break. Normal batches do not wait per block; inventory calibration happens only when needed.",
   "litematica-printer.config.breakCooldown": "Mining Retry Cooldown",
   "litematica-printer.config.breakCooldown.desc": "Cooldown time after breaking the same position in mining mode (in game ticks). Retry only after the cooldown ends.",
   "litematica-printer.config.bedrockStartInterval": "Concurrency Interval",

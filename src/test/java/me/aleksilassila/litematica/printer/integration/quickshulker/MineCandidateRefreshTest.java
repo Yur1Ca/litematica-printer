@@ -44,7 +44,7 @@ class MineCandidateRefreshTest {
         }
     }
 
-    @Test void refreshPreservesDistanceThenCoordinateOrder() throws Exception {
+    @Test void refreshPreservesDescendingLayersAndStableRows() throws Exception {
         try (var fixture = new MineCandidateRefreshFixture(true)) {
             for (BlockPos pos : List.of(new BlockPos(1, 0, 0), new BlockPos(0, 1, 0),
                     new BlockPos(0, 0, 1), BlockPos.ZERO)) {
@@ -52,7 +52,7 @@ class MineCandidateRefreshTest {
                 fixture.enqueue(pos);
             }
             var targets = fixture.views(fixture.refresh());
-            assertEquals(List.of(BlockPos.ZERO, new BlockPos(0, 0, 1), new BlockPos(1, 0, 0), new BlockPos(0, 1, 0)),
+            assertEquals(List.of(new BlockPos(0, 1, 0), BlockPos.ZERO, new BlockPos(1, 0, 0), new BlockPos(0, 0, 1)),
                     targets.stream().map(MineCandidateRefreshFixture.TargetView::pos).toList());
         }
     }

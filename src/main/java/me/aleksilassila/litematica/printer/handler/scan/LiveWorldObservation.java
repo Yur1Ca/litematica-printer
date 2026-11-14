@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.WorldSchematic;
+import fi.dy.masa.litematica.world.ChunkSchematicState;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -36,15 +37,24 @@ final class LiveWorldObservation implements WorldObservationPort {
             boolean breakExtraBlocks
     ) {
         if (!this.level.hasChunk(chunkX, chunkZ)) return false;
-        return intent != ScanIntent.PRINT
-                || breakExtraBlocks
-                || this.schematic == null
-                || !this.schematic.getChunk(chunkX, chunkZ).isEmpty();
+        if (intent != ScanIntent.PRINT || this.schematic == null) return true;
+        var chunk = this.schematic.getChunk(chunkX, chunkZ);
+        return chunk.getState().atLeast(ChunkSchematicState.FILLED) && (breakExtraBlocks || !chunk.isEmpty());
     }
 
     @Override
     public BlockState worldState(BlockPos pos) {
         return this.level.getBlockState(pos);
+    }
+
+    @Override
+    public boolean hasCandidatesInSection(ScanIntent intent, int sectionX, int sectionY,
+                                          int sectionZ, boolean breakExtraBlocks) {
+        if (intent != ScanIntent.PRINT || breakExtraBlocks || this.schematic == null) return true;
+        var chunk = this.schematic.getChunk(sectionX, sectionZ);
+        var sections = chunk.getSections();
+        int index = ((sectionY << 4) - this.schematic.getMinY()) >> 4;
+        return index >= 0 && index < sections.length && sections[index] != null && !sections[index].hasOnlyAir();
     }
 
     @Override

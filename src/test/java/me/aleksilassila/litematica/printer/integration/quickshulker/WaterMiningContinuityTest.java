@@ -13,7 +13,10 @@ import me.aleksilassila.litematica.printer.handler.handlers.print.*;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
+import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
+import me.aleksilassila.litematica.printer.interaction.MiningInteractionController;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.world.level.block.Blocks;
@@ -109,6 +112,73 @@ class WaterMiningContinuityTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(strings = {"native", "native_hand_change", "hud", "pending"})
+    void leavingScopePreservesTheHandlersLiveOwnershipUntilItEnds(String ownership) throws Exception {
+        try (var f = new PrintFixture()) {
+            if (ownership.equals("pending")) f.installPendingBridge();
+            WaterPrintTask task = f.waterTask(true);
+            var schematic = (WorldSchematic) f.schematicField.get(SchematicWorldHandler.INSTANCE);
+            HudStatsManager hud = (HudStatsManager) get(f.handler, FeatureModuleBase.class, "hudStats");
+            if (ownership.equals("hud")) {
+                f.workflows.tick(f.level, schematic);
+                hud.trackExpectedBlockState(HudStatsManager.Mode.PRINT, TARGET, Blocks.ICE.defaultBlockState());
+                assertTrue(hud.isPrintPlacementPending(TARGET));
+            } else if (ownership.startsWith("native")) {
+                f.handler.canIterationBlockPos(TARGET);
+                assertTrue(f.port.destroying, "The real controller must own an open native mining session");
+                if (ownership.equals("native_hand_change")) {
+                    f.player.held = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE);
+                    assertFalse(f.port.matchesDestroyTarget(TARGET), "Hand matching is not proof that the native hold was aborted");
+                }
+            } else {
+                for (int tick = 0; tick < 12 && !f.controller.isPendingDelayedDestroy(TARGET); tick++) {
+                    f.level.tick = tick;
+                    f.controller.tick();
+                    f.handler.canIterationBlockPos(TARGET);
+                }
+                assertTrue(f.controller.isPendingDelayedDestroy(TARGET), "A real STOP must still await its world receipt");
+                assertFalse(f.port.destroying);
+                f.level.states.put(TARGET.below(), Blocks.AIR.defaultBlockState());
+                f.workflows.wake(TARGET.below());
+                f.workflows.tick(f.level, schematic);
+                assertFalse(f.workflows.isBreakingTaskPos(TARGET), "Support loss really changed the task's stage");
+            }
+            assertFalse(task.hasInFlightOwnership(), "This case must exercise the Handler's external ownership predicate");
+            int packetsBeforeScopeChange = f.connection.packets.size();
+            f.handler.reachable = false;
+            f.handler.selected = false;
+            f.handler.scope = new PrinterBox(TARGET.east(32));
+
+            f.handler.positions().iterator().hasNext();
+
+            assertTrue(f.workflows.isActiveTaskPos(TARGET), "Scope cleanup must preserve live " + ownership + " ownership");
+            assertEquals(packetsBeforeScopeChange, f.connection.packets.size(), "Scope cleanup cannot cancel an owner");
+            if (ownership.startsWith("native")) {
+                assertFalse(f.handler.shouldKeepMiningOnIdleInput(), "Range checks do not authorize continued native mining");
+                f.idleInput(false);
+                assertFalse(f.port.destroying);
+                assertEquals(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, f.connection.packets.getLast().getAction());
+            } else if (ownership.equals("hud")) {
+                hud.confirmBlockUpdate(TARGET, Blocks.ICE.defaultBlockState());
+                assertFalse(hud.isPrintPlacementPending(TARGET));
+            } else {
+                f.level.states.put(TARGET, Blocks.AIR.defaultBlockState());
+                f.controller.confirmServerBlockUpdate(TARGET);
+                assertFalse(f.controller.isPendingDelayedDestroy(TARGET));
+            }
+            f.handler.positions().iterator().hasNext();
+
+            assertFalse(f.workflows.isActiveTaskPos(TARGET), "An ended owner must not retain an out-of-scope task forever");
+        }
+    }
+
+    private static final class PendingGameMode extends GameMode {
+        PendingGameMode() { super(); }
+        @Override public boolean litematica_printer$isPendingDelayedDestroy(BlockPos pos) {
+            return this.controller.isPendingDelayedDestroy(pos);
+        }
+    }
+
     static class Schematic extends WorldSchematic {
         Schematic() { super(null, null, null, null); }
         @Override public BlockState getBlockState(BlockPos pos) {
@@ -120,11 +190,12 @@ class WaterMiningContinuityTest {
         boolean reachable;
         boolean selected;
         boolean schematic;
+        PrinterBox scope;
         TestHandler() { super(null); }
         @Override protected boolean canReachIterationPosition(BlockPos pos) { return reachable; }
         @Override protected boolean isInSelectionRange(BlockPos pos) { return selected; }
         @Override protected boolean isSchematicBlock(BlockPos pos) { return schematic; }
-        Iterable<BlockPos> positions() { return super.getIterationPositions(new PrinterBox(TARGET)); }
+        Iterable<BlockPos> positions() { return super.getIterationPositions(this.scope); }
         @Override protected List<PrinterBox> getScanSourceBoxes(PrinterBox box) { return List.of(box); }
         @Override protected Iterable<BlockPos> getCachedFilteredIterationPositions(
                 PrinterBox box, ScanIntent intent, Predicate<BlockPos> filter) {
@@ -135,14 +206,21 @@ class WaterMiningContinuityTest {
     static class PrintFixture extends Fixture {
         final Object previousConfigClient = get(null, ConfigUtils.class, "client");
         final Object previousBoxClient = get(null, PrinterBox.class, "client");
+        final PrinterRuntime scopedRuntime = RuntimeAccess.get();
+        final Object previousToolSwitchService = get(scopedRuntime, PrinterRuntime.class, "toolSwitchService");
         final Field schematicField = SchematicWorldHandler.class.getDeclaredField("world");
         final Object previousSchematic;
         final TestHandler handler = alloc(TestHandler.class);
-        final PrintTargetScheduler targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(null), () -> {});
+        final me.aleksilassila.litematica.printer.handler.scan.ScanEngine scanEngine = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                () -> me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL,
+                () -> level, new me.aleksilassila.litematica.printer.handler.scan.ScanCache());
+        final PrintTargetScheduler targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(scanEngine), () -> {});
         final boolean previousSorted = Configs.Print.PRINT_SORT_TARGETS.getBooleanValue();
 
         PrintFixture() throws Exception {
             super(0.2f, true);
+            set(scopedRuntime, PrinterRuntime.class, "toolSwitchService",
+                    get(controller, MiningInteractionController.class, "toolSwitchService"));
             schematicField.setAccessible(true);
             previousSchematic = schematicField.get(SchematicWorldHandler.INSTANCE);
             schematicField.set(SchematicWorldHandler.INSTANCE, alloc(Schematic.class));
@@ -152,11 +230,13 @@ class WaterMiningContinuityTest {
             handler.reachable = true;
             handler.selected = true;
             handler.schematic = true;
+            handler.scope = new PrinterBox(TARGET);
             set(handler, FeatureModuleBase.class, "mc", client);
             set(handler, FeatureModuleBase.class, "level", level);
             set(handler, FeatureModuleBase.class, "gameMode", client.gameMode);
             set(handler, FeatureModuleBase.class, "player", player);
             set(handler, FeatureModuleBase.class, "connection", connection);
+            set(handler, FeatureModuleBase.class, "scanEngine", scanEngine);
             set(RuntimeAccess.get().modules(), FeatureModuleSet.class, "print", handler);
             set(handler, FeatureModuleBase.class, "litematica", new LitematicaAdapter());
             set(handler, FeatureModuleBase.class, "hudStats", new HudStatsManager(null, () -> level.tick));
@@ -170,7 +250,19 @@ class WaterMiningContinuityTest {
             level.states.put(ORDINARY, Blocks.AIR.defaultBlockState());
         }
 
+        void installPendingBridge() throws Exception {
+            var gameMode = alloc(PendingGameMode.class);
+            gameMode.port = port;
+            gameMode.controller = controller;
+            set(gameMode, MultiPlayerGameMode.class, "minecraft", client);
+            set(gameMode, MultiPlayerGameMode.class, "connection", connection);
+            set(gameMode, MultiPlayerGameMode.class, "localPlayerMode", net.minecraft.world.level.GameType.SURVIVAL);
+            client.gameMode = gameMode;
+            set(handler, FeatureModuleBase.class, "gameMode", gameMode);
+        }
+
         @Override public void close() throws Exception {
+            set(scopedRuntime, PrinterRuntime.class, "toolSwitchService", previousToolSwitchService);
             schematicField.set(SchematicWorldHandler.INSTANCE, previousSchematic);
             set(null, ConfigUtils.class, "client", previousConfigClient);
             set(null, PrinterBox.class, "client", previousBoxClient);

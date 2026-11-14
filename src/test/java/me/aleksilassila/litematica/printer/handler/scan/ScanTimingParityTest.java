@@ -105,7 +105,9 @@ class ScanTimingParityTest {
         assertEquals(ScanAvailability.COMPLETE, ((ScanCandidateIterable) stream).availability());
         assertSame(timing, engine.timing());
         assertTrue(timing.snapshot().samples().stream().anyMatch(s -> s.stage() == Stage.CANDIDATE_SETUP));
-        assertTrue(timing.snapshot().samples().stream().anyMatch(s -> s.stage() == Stage.CANDIDATE_LOOKUP));
+        assertFalse(((ScanCandidateIterable) stream).isValid());
+        assertFalse(timing.snapshot().samples().stream().anyMatch(s -> s.stage() == Stage.CANDIDATE_LOOKUP),
+                "A closed source is rejected before starting another candidate lookup");
     }
 
     private static List<BlockPos> drain(PositionCursor cursor) {

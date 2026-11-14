@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +12,25 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TrenchFillStateTest {
+    @Test void partialDiscoveryKeepsKnownTargetsAndBackpressuresBeforeRetainingTheWholeSelection() {
+        TrenchFillState state = new TrenchFillState();
+        var scope = List.of(new PrinterBox(0, 0, 0, 2047, 0, 0));
+        state.refreshScope(scope, 1L, pos -> true, pos -> false);
+        java.util.LinkedHashSet<BlockPos> discovered = new java.util.LinkedHashSet<>();
+        for (int x = 0; x < 2048; x++) discovered.add(new BlockPos(x, 0, 0));
+        state.retainBatch(discovered, Set.of());
+        assertEquals(1024, state.targetCount());
+        assertEquals(0, state.remainingCapacity());
+        state.refreshScope(scope, 2L, pos -> true, pos -> false);
+        assertTrue(state.hasFillTarget(BlockPos.ZERO), "An unfinished next slice cannot clear a retained target");
+        state.removeFillTarget(BlockPos.ZERO);
+        assertEquals(1, state.remainingCapacity());
+        BlockPos next = new BlockPos(1024, 0, 0);
+        state.retainBatch(Set.of(next), Set.of());
+        assertTrue(state.hasFillTarget(next));
+        assertEquals(1024, state.targetCount());
+    }
+
     @Test
     void delayedWorldConfirmationKeepsTheTargetInFlight() {
         TrenchFillState state = new TrenchFillState();

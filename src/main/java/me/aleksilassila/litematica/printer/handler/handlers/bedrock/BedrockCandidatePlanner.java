@@ -1,5 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.handler.scan.ScanWorkSlice;
+
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
@@ -8,14 +10,13 @@ import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.HashMap;
@@ -23,13 +24,19 @@ import java.util.Map;
 
 public final class BedrockCandidatePlanner {
     private static final int REJECTED_PLAN_RETRY_TICKS = 20;
+    private static final int MAX_REJECTED_PLANS = 1024;
+    private static final int REJECTED_PRUNE_PER_TICK = 64;
     private final ScanEngine scanEngine;
     private final LitematicaAdapter litematica;
     private final BedrockCandidateBacklog<BedrockCandidatePlan> candidateBacklog = new BedrockCandidateBacklog<>();
     /** Avoid rebuilding the same unavailable piston layout on every scan pass. */
-    private final Long2ObjectOpenHashMap<RejectedPlan> rejectedPlans = new Long2ObjectOpenHashMap<>();
+    private final Long2ObjectLinkedOpenHashMap<RejectedPlan> rejectedPlans = new Long2ObjectLinkedOpenHashMap<>();
+    private long lastRejectedPruneTick = Long.MIN_VALUE;
+    private boolean rejectionRetryDue;
+    private PrinterBox sourceScope;
     private final Map<BlockPos, Long> retryUntil = new HashMap<>();
     private boolean sourceHasMore;
+    private long deliveryGeneration;
     private long plannerTick;
     private Vec3 sourceEyePosition;
     private int sourceWorkRange;
@@ -46,6 +53,7 @@ public final class BedrockCandidatePlanner {
     /** Reopen only a completed bedrock source whose live eligibility or rejection deadline changed. */
     public boolean refreshEligibility(ClientLevel level, LocalPlayer player) {
         if (level == null || player == null) return false;
+        this.pruneRejectedPlans(level.getGameTime());
         if (this.sourceEyePosition == null) {
             this.captureEligibility(player);
             return false;
@@ -54,14 +62,10 @@ public final class BedrockCandidatePlanner {
         // walking repeatedly rescans its prefix and starves positions at the edge of the range.
         if (this.sourceHasMore) return false;
         boolean contextChanged = this.eligibilityChanged(player);
-        long now = level.getGameTime();
-        long revision = this.scanEngine.dirtyVersion();
-        boolean retryDue = this.rejectedPlans.values().stream().anyMatch(
-                rejected -> rejected.revision() != revision || rejected.retryTick() <= now);
+        boolean retryDue = this.rejectionRetryDue;
         if (!contextChanged && !retryDue) return false;
         if (contextChanged) this.rejectedPlans.clear();
-        else this.rejectedPlans.values().removeIf(
-                rejected -> rejected.revision() != revision || rejected.retryTick() <= now);
+        this.rejectionRetryDue = false;
         this.captureEligibility(player);
         // A deadline must produce another source, not merely keep the outer coordinator busy.
         // Owner reset preserves all other features' sessions and the world's dirty revision.
@@ -94,11 +98,14 @@ public final class BedrockCandidatePlanner {
     }
 
     public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, LocalPlayer player, int maxEffectiveExecutions, int scanGuardLimit) {
+        long generation = ++this.deliveryGeneration;
         this.plannerTick++;
+        this.sourceScope = sourceBox;
         this.candidateBacklog.setCapacity(Math.max(maxEffectiveExecutions * 2, 16));
         this.pruneCandidateBacklog(sourceBox, level);
         int selectionLimit = this.getCandidateSelectionLimit(maxEffectiveExecutions);
         List<BedrockCandidatePlan> candidates = this.getEligibleCandidates();
+        ScanCandidateIterable discoveryGuard = null;
         boolean backlogNeedsScanAdvance = this.candidateBacklog.remainingCapacity() == 0
                 && this.sourceHasMore;
         if ((candidates.size() < selectionLimit || backlogNeedsScanAdvance)
@@ -110,14 +117,15 @@ public final class BedrockCandidatePlanner {
                     scanGuardLimit
             );
             this.sourceHasMore = shard.hasMoreSource();
+            discoveryGuard = shard.sourceGuard();
             for (BedrockCandidatePlan candidate : shard.candidates()) {
                 this.candidateBacklog.offer(candidate.pos(), candidate);
             }
             candidates = this.getEligibleCandidates();
         }
 
-        // Refresh the bounded backlog before ordering: a dirty plan can change priority
-        // and must not reserve a local conflict slot ahead of an independent live plan.
+        // Refresh the bounded backlog before admission: dirty geometry and active reservations
+        // must not reserve a local conflict slot ahead of an independent eligible plan.
         List<BedrockCandidatePlan> liveCandidates = new ArrayList<>(candidates.size());
         for (BedrockCandidatePlan cachedCandidate : candidates) {
             BedrockCandidatePlan candidate = this.refreshModeledCandidate(
@@ -132,9 +140,8 @@ public final class BedrockCandidatePlanner {
             this.candidateBacklog.offer(candidate.pos(), candidate);
             liveCandidates.add(candidate);
         }
-        liveCandidates.sort(Comparator
-                .comparingInt(BedrockCandidatePlan::priority)
-                .thenComparingInt(BedrockCandidatePlan::neighborTargetCount));
+        liveCandidates.sort(java.util.Comparator.comparing(BedrockCandidatePlan::pos,
+                this.scanEngine.targetComparator("bedrock")));
 
         selectionLimit = Math.min(liveCandidates.size(), selectionLimit);
         List<BedrockCandidatePlan> liveSelection = new ArrayList<>(selectionLimit);
@@ -142,6 +149,12 @@ public final class BedrockCandidatePlanner {
         for (BedrockCandidatePlan candidate : liveCandidates) {
             if (liveSelection.size() >= selectionLimit) {
                 break;
+            }
+            // Admission probes mutate exposure/cooldown state, so run them once in stable
+            // order, outside the comparator and before reserving this pass's local footprint.
+            BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
+            if (!BedrockController.canAccept(candidate.pos()) || this.hasActiveConflict(candidate)) {
+                continue;
             }
             if (!conflicts.tryReserve(candidate)) {
                 continue;
@@ -154,7 +167,36 @@ public final class BedrockCandidatePlanner {
             BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
             filtered.add(candidate.pos());
         }
-        return filtered;
+        ScanCandidateIterable guard = discoveryGuard;
+        boolean discoveryPending = this.sourceHasMore;
+        return new ScanCandidateIterable() {
+            private int remaining = filtered.size();
+
+            @Override public boolean isValid() {
+                return generation == deliveryGeneration && (guard == null || guard.isValid());
+            }
+
+            @Override public boolean isBuffered() { return true; }
+
+            @Override public ScanAvailability availability() {
+                if (!this.isValid()) return ScanAvailability.COMPLETE;
+                if (this.remaining > 0) return ScanAvailability.READY;
+                return discoveryPending ? ScanAvailability.PAUSED : ScanAvailability.COMPLETE;
+            }
+
+            @Override public Iterator<BlockPos> iterator() {
+                this.remaining = filtered.size();
+                Iterator<BlockPos> ready = filtered.iterator();
+                return new Iterator<>() {
+                    @Override public boolean hasNext() { return isValid() && ready.hasNext(); }
+                    @Override public BlockPos next() {
+                        if (!this.hasNext()) throw new java.util.NoSuchElementException("bedrock candidate batch was exhausted or replaced");
+                        remaining--;
+                        return ready.next();
+                    }
+                };
+            }
+        };
     }
 
     public void recordSubmissionResult(BlockPos pos, boolean submitted) {
@@ -184,42 +226,41 @@ public final class BedrockCandidatePlanner {
     }
 
     public void reset() {
+        this.deliveryGeneration++;
         this.candidateBacklog.clear();
         this.rejectedPlans.clear();
+        this.lastRejectedPruneTick = Long.MIN_VALUE;
+        this.rejectionRetryDue = false;
+        this.sourceScope = null;
         this.retryUntil.clear();
         this.sourceHasMore = false;
         this.plannerTick = 0L;
         this.sourceEyePosition = null;
     }
 
-    private List<BedrockCandidatePlan> getEligibleCandidates() {
-        List<BedrockCandidatePlan> verticalCandidates = new ArrayList<>();
-        List<BedrockCandidatePlan> sideCandidates = new ArrayList<>();
-        for (BedrockCandidatePlan candidate : this.candidateBacklog.snapshot()) {
-            if (BedrockController.isPositionOnRetryCooldown(candidate.pos())) {
-                continue;
-            }
-            if (this.retryUntil.getOrDefault(candidate.pos(), Long.MIN_VALUE) > this.plannerTick) {
-                continue;
-            }
-            if (candidate.layout().isHorizontal()) {
-                sideCandidates.add(candidate);
-            } else {
-                verticalCandidates.add(candidate);
-            }
+    private boolean hasActiveConflict(BedrockCandidatePlan candidate) {
+        for (BlockPos pos : candidate.structuralPositions()) {
+            if (BedrockController.isPositionReservedByOtherTarget(pos, null)) return true;
         }
-        return verticalCandidates.isEmpty() ? sideCandidates : verticalCandidates;
+        return candidate.placement() != null
+                && BedrockController.isTorchPlacementReservedByOtherTarget(candidate.placement(), null);
+    }
+
+    private List<BedrockCandidatePlan> getEligibleCandidates() {
+        List<BedrockCandidatePlan> candidates = new ArrayList<>();
+        for (BedrockCandidatePlan candidate : this.candidateBacklog.snapshot()) {
+            if (BedrockController.isPositionOnRetryCooldown(candidate.pos())) continue;
+            if (this.retryUntil.getOrDefault(candidate.pos(), Long.MIN_VALUE) > this.plannerTick) continue;
+            candidates.add(candidate);
+        }
+        return candidates;
     }
 
     private void pruneCandidateBacklog(PrinterBox sourceBox, ClientLevel level) {
         this.candidateBacklog.removeIf((pos, ignored) -> !sourceBox.contains(pos)
                 || !this.litematica.isWithinSelectionRange(pos)
                 || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos)));
-        this.rejectedPlans.keySet().removeIf(key -> {
-            BlockPos pos = BlockPos.of(key);
-            return !sourceBox.contains(pos)
-                    || !this.litematica.isWithinSelectionRange(pos);
-        });
+        this.pruneRejectedPlans(level.getGameTime());
         this.retryUntil.keySet().removeIf(pos -> !this.candidateBacklog.contains(pos));
     }
 
@@ -232,7 +273,7 @@ public final class BedrockCandidatePlanner {
         int scanLimit = this.getCandidateScanLimit(scanGuardLimit);
         Iterable<BlockPos> source = this.scanEngine.iterable(
                 "bedrock",
-                List.of(sourceBox),
+                this.selectedSourceBoxes(sourceBox),
                 level,
                 null,
                 player,
@@ -244,14 +285,13 @@ public final class BedrockCandidatePlanner {
                         && !this.isRejectedAtCurrentRevision(pos, level.getGameTime())
         );
         Iterator<BlockPos> iterator = source.iterator();
-        List<BedrockCandidatePlan> verticalCandidates = new ArrayList<>();
-        List<BedrockCandidatePlan> sideCandidates = new ArrayList<>();
+        List<BedrockCandidatePlan> candidates = new ArrayList<>();
         boolean allowSide = Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
         int scanned = 0;
         int modeled = 0;
         boolean hasMoreSource = false;
         long modelingStart = System.nanoTime();
-        long modelingBudgetNanos = Math.max(1L, Configs.Core.SCAN_TIME_BUDGET_MS.getIntegerValue()) * 1_000_000L;
+        long modelingBudgetNanos = ScanWorkSlice.configuredTimeLimitNanos();
 
         while (scanned < scanLimit) {
             // Always model at least one candidate so a very small budget cannot
@@ -275,23 +315,36 @@ public final class BedrockCandidatePlanner {
             modeled++;
             BedrockCandidatePlan candidate = this.buildModeledCandidate(level, pos, allowSide);
             if (candidate != null) {
-                if (candidate.layout() != null && candidate.layout().isHorizontal()) {
-                    sideCandidates.add(candidate);
-                } else {
-                    verticalCandidates.add(candidate);
-                }
+                candidates.add(candidate);
             } else {
-                this.rejectedPlans.put(pos.asLong(), new RejectedPlan(this.scanEngine.dirtyVersion(), level.getGameTime() + REJECTED_PLAN_RETRY_TICKS));
+                this.rejectedPlans.putAndMoveToLast(pos.asLong(),
+                        new RejectedPlan(this.scanEngine.dirtyVersion(), level.getGameTime() + REJECTED_PLAN_RETRY_TICKS));
+                if (this.rejectedPlans.size() > MAX_REJECTED_PLANS) this.rejectedPlans.removeFirst();
             }
         }
 
         if (scanned >= scanLimit) {
             hasMoreSource = true;
         }
-        List<BedrockCandidatePlan> candidates = new ArrayList<>(verticalCandidates.size() + sideCandidates.size());
-        candidates.addAll(verticalCandidates);
-        candidates.addAll(sideCandidates);
-        return new CandidateShard(candidates, hasMoreSource);
+        return new CandidateShard(candidates, hasMoreSource,
+                source instanceof ScanCandidateIterable scanSource ? scanSource : null);
+    }
+
+    /** Clip discovery to the same selection checked live below, before traversing its volume. */
+    private List<PrinterBox> selectedSourceBoxes(PrinterBox interactionBox) {
+        List<PrinterBox> selected = new ArrayList<>();
+        for (PrinterBox box : this.litematica.createSelectionBoxes()) {
+            int minX = Math.max(box.minX, interactionBox.minX);
+            int minY = Math.max(box.minY, interactionBox.minY);
+            int minZ = Math.max(box.minZ, interactionBox.minZ);
+            int maxX = Math.min(box.maxX, interactionBox.maxX);
+            int maxY = Math.min(box.maxY, interactionBox.maxY);
+            int maxZ = Math.min(box.maxZ, interactionBox.maxZ);
+            if (minX <= maxX && minY <= maxY && minZ <= maxZ) {
+                selected.add(new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ));
+            }
+        }
+        return selected;
     }
 
     /**
@@ -348,12 +401,33 @@ public final class BedrockCandidatePlanner {
     }
 
     private boolean isRejectedAtCurrentRevision(BlockPos pos, long gameTick) {
-        var rejected = this.rejectedPlans.get(pos.asLong());
+        var rejected = this.rejectedPlans.getAndMoveToLast(pos.asLong());
         // Movement and range settings do not dirty the world; range-dependent failures must expire.
         if (rejected != null && rejected.revision() == this.scanEngine.dirtyVersion()
                 && gameTick < rejected.retryTick()) return true;
         this.rejectedPlans.remove(pos.asLong());
         return false;
+    }
+
+    private void pruneRejectedPlans(long gameTick) {
+        if (this.lastRejectedPruneTick == gameTick) return;
+        this.lastRejectedPruneTick = gameTick;
+        long revision = this.scanEngine.dirtyVersion();
+        int remaining = Math.min(REJECTED_PRUNE_PER_TICK, this.rejectedPlans.size());
+        while (remaining-- > 0 && !this.rejectedPlans.isEmpty()) {
+            long key = this.rejectedPlans.firstLongKey();
+            RejectedPlan rejected = this.rejectedPlans.get(key);
+            BlockPos pos = BlockPos.of(key);
+            boolean due = rejected.revision() != revision || rejected.retryTick() <= gameTick;
+            if (due || this.sourceScope != null && !this.sourceScope.contains(pos)
+                    || !this.litematica.isWithinSelectionRange(pos)) {
+                this.rejectedPlans.removeFirst();
+                this.rejectionRetryDue |= due;
+            } else {
+                // Rotate the finite memo so a valid prefix cannot hide expired later entries.
+                this.rejectedPlans.getAndMoveToLast(key);
+            }
+        }
     }
 
     private int getCandidateScanLimit(int scanGuardLimit) {
@@ -363,7 +437,8 @@ public final class BedrockCandidatePlanner {
         return scanGuardLimit > 0 ? scanGuardLimit : Integer.MAX_VALUE;
     }
 
-    private record CandidateShard(List<BedrockCandidatePlan> candidates, boolean hasMoreSource) {
+    private record CandidateShard(List<BedrockCandidatePlan> candidates, boolean hasMoreSource,
+                                  ScanCandidateIterable sourceGuard) {
     }
 
     private record RejectedPlan(long revision, long retryTick) { }

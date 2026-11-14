@@ -347,7 +347,7 @@ class FillMaterialRegressionTest {
             var coordinator = Class.forName("me.aleksilassila.litematica.printer.handler.ModuleScanCoordinator")
                     .getDeclaredConstructors()[0];
             coordinator.setAccessible(true);
-            set(fill, FeatureModuleBase.class, "scanCoordinator", coordinator.newInstance(null, null, scan));
+            set(fill, FeatureModuleBase.class, "scanCoordinator", coordinator.newInstance(null, null));
         }
 
         void blocklist(String... entries) throws Exception {

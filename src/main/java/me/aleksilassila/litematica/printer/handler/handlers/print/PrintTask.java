@@ -10,6 +10,16 @@ import org.jetbrains.annotations.Nullable;
 public interface PrintTask {
     BlockPos pos();
 
+    /** Unknown workflows retain ownership conservatively until they explicitly report otherwise. */
+    default boolean hasStarted() {
+        return true;
+    }
+
+    /** History alone is not ownership, but unknown workflows keep the conservative policy. */
+    default boolean hasInFlightOwnership() {
+        return this.hasStarted();
+    }
+
     default boolean owns(@Nullable BlockPos pos) {
         return pos != null && pos.equals(this.pos());
     }

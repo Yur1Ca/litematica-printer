@@ -154,6 +154,21 @@ class TrenchFillIntegrationTest {
             set(handler, FeatureModuleBase.class, "mc", client);
             set(handler, FeatureModuleBase.class, "level", level);
             set(handler, FeatureModuleBase.class, "player", player);
+            var scan = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                    () -> me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL,
+                    () -> client.level, new me.aleksilassila.litematica.printer.handler.scan.ScanCache());
+            set(handler, FeatureModuleBase.class, "scanEngine", scan);
+            set(handler, FeatureModuleBase.class, "id", MineHandler.NAME);
+            var hostType = Class.forName("me.aleksilassila.litematica.printer.handler.ModuleScanHost");
+            var hostConstructor = hostType.getDeclaredConstructor(FeatureModuleBase.class);
+            hostConstructor.setAccessible(true);
+            var coordinatorType = Class.forName("me.aleksilassila.litematica.printer.handler.ModuleScanCoordinator");
+            var coordinatorConstructor = coordinatorType.getDeclaredConstructor(
+                    Class.forName("me.aleksilassila.litematica.printer.handler.ModuleScanCoordinator$Host"),
+                    AtomicReference.class);
+            coordinatorConstructor.setAccessible(true);
+            set(handler, FeatureModuleBase.class, "scanCoordinator",
+                    coordinatorConstructor.newInstance(hostConstructor.newInstance(handler), null));
             set(handler, FeatureModuleBase.class, "litematica", new LitematicaAdapter());
             set(handler, FeatureModuleBase.class, "playerInteractionBox",
                     new AtomicReference<>(new PrinterBox(-8, -8, -8, 8, 8, 8)));
@@ -230,6 +245,7 @@ class TrenchFillIntegrationTest {
         }
 
         boolean execute(BlockPos pos, AtomicReference<Boolean> skip) throws Exception {
+            assertSame(client, playerUtilsClient.get(null), "The range helper must use this fixture's client");
             var method = MineHandler.class.getDeclaredMethod("executeTrenchFill", BlockPos.class, AtomicReference.class);
             method.setAccessible(true);
             method.invoke(handler, pos, skip);

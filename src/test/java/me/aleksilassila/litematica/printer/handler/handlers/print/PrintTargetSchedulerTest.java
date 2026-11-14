@@ -154,4 +154,18 @@ class PrintTargetSchedulerTest {
         assertTrue(targets.retainedTargets().isEmpty());
         assertTrue(targets.acceptScanCandidate(pos));
     }
+    @Test
+    void ordinaryRetriesShareTheFreshCandidateRankInsteadOfPrepending() {
+        var engine = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                () -> null, () -> null, new me.aleksilassila.litematica.printer.handler.scan.ScanCache());
+        var targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(engine), () -> {});
+        BlockPos first = new BlockPos(0, 10, 0);
+        BlockPos retry = new BlockPos(7, 10, 1);
+        BlockPos last = new BlockPos(0, 10, 1);
+        targets.onResult(retry, PrintPlacementResult.deferred(false), false);
+        var selected = targets.mergeOrdinaryTargets(List.of(first, last));
+        var result = new java.util.ArrayList<BlockPos>();
+        selected.forEach(result::add);
+        assertEquals(List.of(first, retry, last), result);
+    }
 }

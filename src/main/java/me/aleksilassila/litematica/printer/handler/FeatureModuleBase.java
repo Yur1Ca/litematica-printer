@@ -57,6 +57,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     @Nullable
     private final ConfigOptionList selectionType;
     private boolean iterationConsumedEffectiveExecution = true;
+    private long additionalIterationActionNanos;
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -103,7 +104,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         this.playerInteractionBox = this.interactionBoxTracker.getBoxReference();
         this.externalScanBoxRef = this.playerInteractionBox == null ? null : new AtomicReference<>();
         this.scanCoordinator = new ModuleScanCoordinator(
-                new ModuleScanHost(this), this.externalScanBoxRef, this.scanEngine);
+                new ModuleScanHost(this), this.externalScanBoxRef);
         this.selectionScope = new ModuleSelectionScope(this, selectionType);
         this.runtimeLoop = new ModuleRuntimeLoop(this);
         this.updateVariables(TickContext.capture());
@@ -119,6 +120,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         this.resetScanRuntime();
         this.resetPlayerTracking();
         this.iterationConsumedEffectiveExecution = true;
+        this.additionalIterationActionNanos = 0L;
         this.clearScanSourceCache();
         this.runtimeLoop.reset();
         this.onRuntimeReset();
@@ -154,7 +156,11 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
             return false;
         }
         PrinterBox playerInteractionBox = this.playerInteractionBox.get();
-        if (playerInteractionBox == null || !this.canIterate()) {
+        if (playerInteractionBox == null) {
+            this.scanCoordinator.clearScopeDiagnostics();
+            return false;
+        }
+        if (!this.canIterate()) {
             return false;
         }
         return this.scanCoordinator.run(playerInteractionBox);
@@ -287,6 +293,8 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
 
     /** Inventory gains wake only the feature that explicitly owns a waiting target. */
     protected void onInventoryAvailabilityChanged() {
+        this.scanEngine.resetOwner(this.id);
+        this.requestFullScan();
     }
 
     public int getPendingIterationWorkCount() {
@@ -326,6 +334,19 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
 
     final void beginEffectiveExecution() {
         this.iterationConsumedEffectiveExecution = true;
+    }
+
+    final void beginIterationActionAccounting() {
+        this.additionalIterationActionNanos = 0L;
+    }
+
+    /** Accounts for real action dispatch performed by a feature's completion hook. */
+    protected final void recordIterationActionNanos(long nanos) {
+        this.additionalIterationActionNanos += Math.max(0L, nanos);
+    }
+
+    final long additionalIterationActionNanos() {
+        return this.additionalIterationActionNanos;
     }
 
     final boolean consumedEffectiveExecution() {

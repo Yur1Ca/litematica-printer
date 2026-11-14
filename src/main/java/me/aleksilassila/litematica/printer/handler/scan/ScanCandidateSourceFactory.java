@@ -26,7 +26,6 @@ import java.util.function.Predicate;
  * for a completed scan.</p>
  */
 final class ScanCandidateSourceFactory {
-    private static final int BUDGET_CHECK_INTERVAL = 8;
 
     private final ScanSessionStore sessions;
     private final ScanBudget budget;
@@ -84,17 +83,25 @@ final class ScanCandidateSourceFactory {
                 this.snapshotRevision,
                 this.generationSequence
         );
+        long sourceRevision = session.sourceRevision();
         return new ScanCandidateIterable() {
-            private final ScanAvailability[] state = {ScanAvailability.READY};
+            private final ScanAvailability[] state = {session.hasPendingSource(tickTime)
+                    ? ScanAvailability.READY : ScanAvailability.COMPLETE};
 
             @Override
             public ScanAvailability availability() {
-                return this.state[0];
+                return this.isValid() ? this.state[0] : ScanAvailability.COMPLETE;
+            }
+
+            @Override public boolean isValid() {
+                return session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
+                        && session.sourceRevision() == sourceRevision;
             }
 
             @Override
             public Iterator<BlockPos> iterator() {
                 return new Iterator<>() {
+                    private final long deliveryGeneration = session.beginDeliveryIterator();
                     private final LongSet emitted = new LongOpenHashSet();
                     private final WorldObservationPort observation = level == null
                             ? null
@@ -105,9 +112,16 @@ final class ScanCandidateSourceFactory {
                     private BlockPos next;
                     private boolean prepared;
                     private int considered;
-                    private int budgetChecks;
 
                     private void prepare() {
+                        if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
+                                || session.sourceRevision() != sourceRevision
+                                || !session.acceptsDeliveryIterator(this.deliveryGeneration)) {
+                            this.next = null;
+                            this.prepared = true;
+                            state[0] = ScanAvailability.COMPLETE;
+                            return;
+                        }
                         if (this.prepared) {
                             return;
                         }
@@ -115,14 +129,21 @@ final class ScanCandidateSourceFactory {
                         state[0] = ScanAvailability.READY;
 
                         long lookupStart = metrics.timing.start();
-                        long budgetStart = System.nanoTime();
+                        long budgetStart = ScanCandidateSourceFactory.this.budget.start();
                         boolean budgetHit = false;
                         try {
-                            while (this.considered < scanLimit && session.canScan(tickTime)) {
-                                if (!unbounded && ++this.budgetChecks % BUDGET_CHECK_INTERVAL == 0
+                            while (this.considered < scanLimit) {
+                                if (!unbounded
                                         && ScanCandidateSourceFactory.this.budget.isExceeded(
                                         metricsOwnerKey, budgetStart)) {
                                     budgetHit = true;
+                                    break;
+                                }
+                                if (!session.canScan(tickTime)) {
+                                    if (session.wasPaused()) {
+                                        budgetHit = true;
+                                        state[0] = ScanAvailability.PAUSED;
+                                    }
                                     break;
                                 }
 
@@ -132,9 +153,11 @@ final class ScanCandidateSourceFactory {
                                         () -> !unbounded && ScanCandidateSourceFactory.this.budget.isExceeded(
                                                 metricsOwnerKey, budgetStart),
                                         preFilter,
-                                        unbounded
+                                        unbounded,
+                                        () -> unbounded || ScanCandidateSourceFactory.this.budget.tryAdvance()
                                 );
-                                if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)) {
+                                if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
+                                        || session.sourceRevision() != sourceRevision) {
                                     break;
                                 }
                                 if (candidate == null) {

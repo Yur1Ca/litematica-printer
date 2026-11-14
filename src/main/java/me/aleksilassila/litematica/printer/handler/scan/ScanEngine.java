@@ -9,6 +9,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.List;
+import java.util.Comparator;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
@@ -87,6 +88,20 @@ public final class ScanEngine implements RuntimeComponent {
 
     public void resetOwner(String ownerKey) {
         this.cache.resetOwner(ownerKey);
+    }
+
+    /** Returns temporary delivery ownership without invalidating reusable world facts. */
+    public void reoffer(String ownerKey, BlockPos pos) {
+        this.cache.reoffer(ownerKey, pos);
+    }
+
+    /** The same fixed construction order used by this owner's scan source. */
+    public Comparator<BlockPos> targetComparator(String ownerKey) {
+        return this.cache.targetComparator(ownerKey);
+    }
+
+    public ScanWorkSlice openWorkSlice(String ownerKey) {
+        return this.cache.openWorkSlice(ownerKey);
     }
 
     public ScanCache.ScanMetrics metricsFor(String ownerKey) {

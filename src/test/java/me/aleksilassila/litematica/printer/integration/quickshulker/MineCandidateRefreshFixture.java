@@ -134,6 +134,9 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         analyzer = construct(ANALYZER, new Class<?>[]{Minecraft.class, TweakerooAdapter.class}, mining.client, tweakeroo);
         queue = construct(QUEUE, new Class<?>[0]);
         Object session = construct(type("MineToolSession"), new Class<?>[]{TweakerooAdapter.class}, tweakeroo);
+        MiningInteractionRegressionTest.set(mining.mineHandler, FeatureModuleBase.class, "scanEngine",
+                new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                        () -> null, () -> level, new me.aleksilassila.litematica.printer.handler.scan.ScanCache()));
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "analyzer", analyzer);
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "tweakeroo", tweakeroo);
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "toolSession", session);
@@ -143,7 +146,15 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
 
     static final class CountingLevel extends MiningInteractionRegressionTest.Level {
         LevelChunkSection section;
+        int trenchReads;
+        int trenchReadLimit;
+        Map<BlockPos, BlockState> trenchWorld;
+        @Override public boolean hasChunk(int x, int z) { return true; }
         @Override public BlockState getBlockState(BlockPos pos) {
+            if (++this.trenchReads > this.trenchReadLimit && this.trenchReadLimit > 0) {
+                throw new AssertionError("Trench discovery exceeded its bounded world-read slice");
+            }
+            if (this.trenchWorld != null) return this.trenchWorld.getOrDefault(pos, Blocks.AIR.defaultBlockState());
             return section.getBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
         }
     }

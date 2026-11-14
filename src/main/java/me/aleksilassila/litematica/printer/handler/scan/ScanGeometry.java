@@ -29,6 +29,10 @@ final class ScanGeometry {
                 | ((long) sectionY & 0xFFFFFL);
     }
 
+    static int sectionX(long key) { return (int) (key >> 42); }
+    static int sectionY(long key) { return (int) (key << 44 >> 44); }
+    static int sectionZ(long key) { return (int) (key << 22 >> 42); }
+
     static long distanceSqr(BlockPos pos, int centerX, int centerY, int centerZ) {
         long dx = pos.getX() - (long) centerX;
         long dy = pos.getY() - (long) centerY;

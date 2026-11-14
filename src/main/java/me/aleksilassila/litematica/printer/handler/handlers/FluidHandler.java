@@ -12,6 +12,8 @@ import me.aleksilassila.litematica.printer.handler.HudStatus;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
+import me.aleksilassila.litematica.printer.handler.scan.StableCandidateMerge;
+import me.aleksilassila.litematica.printer.handler.scan.BoundedTargetSet;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -48,7 +50,8 @@ public class FluidHandler extends FeatureModuleBase {
     private List<String> fluidBlocks = new ArrayList<>();
     private Set<Fluid> fluids = Set.of();
     private int observedScanConfigHash = Integer.MIN_VALUE;
-    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
+    private final Set<BlockPos> retryTargets = new BoundedTargetSet(BoundedTargetSet.DEFAULT_CAPACITY, null,
+            pos -> this.scanEngine.reoffer(this.getId(), pos));
     private final Set<BlockPos> inFlightTargets = new LinkedHashSet<>();
     private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
@@ -178,18 +181,10 @@ public class FluidHandler extends FeatureModuleBase {
                         && this.isTargetFluid(pos))
                 .toList();
         if (scanSourceBoxes.isEmpty()) {
-            return retainedTargets;
+            return StableCandidateMerge.merge(retainedTargets, List.of(), this.scanEngine.targetComparator(NAME));
         }
 
-        // Finish the initial pass, then let ModuleScanCoordinator enter lazy mode. The lazy
-        // policy bounds restart frequency while retaining recovery when a client-side fluid
-        // condition changes; dirty regions still run first.
-        //
-        // Iterate the scan session directly (Beta2.6 behaviour). The session cursor resumes from
-        // where the previous tick left off and yields distance-ordered targets for as long as the
-        // per-tick scan budget allows. No intermediate FIFO queue: a queue serialised work to one
-        // target per tick and let already-placed ("zombie") entries accumulate to ~15k, which read
-        // as a slow ring-by-ring expansion even though the scan itself finished in 3 ticks.
+        // Keep fresh discovery lazy; ordinary retries join at their stable construction rank.
         Iterable<BlockPos> source = this.scanEngine.iterable(
                 NAME,
                 scanSourceBoxes,
@@ -203,9 +198,8 @@ public class FluidHandler extends FeatureModuleBase {
                         && !this.inFlightTargets.contains(pos),
                 pos -> reachPredicate.test(pos) && selectionPredicate.test(pos)
         );
-        return retainedTargets.isEmpty()
-                ? source
-                : com.google.common.collect.Iterables.concat(retainedTargets, source);
+        return StableCandidateMerge.merge(retainedTargets, source, this.scanEngine.targetComparator(NAME),
+                pos -> this.retryTargets.add(pos.immutable()));
     }
 
     @Override

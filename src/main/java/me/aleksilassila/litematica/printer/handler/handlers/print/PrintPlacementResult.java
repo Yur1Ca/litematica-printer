@@ -22,7 +22,7 @@ public record PrintPlacementResult(
         return new PrintPlacementResult(false, skipIteration, TaskEvent.MATERIAL_UNAVAILABLE, -1);
     }
 
-    /** A neighbouring world update must make this target placeable before it is scanned again. */
+    /** A world condition blocks this target; the caller retains a delayed local retry. */
     public static PrintPlacementResult worldBlocked() {
         return new PrintPlacementResult(false, false, TaskEvent.WORLD_BLOCKED, -1);
     }

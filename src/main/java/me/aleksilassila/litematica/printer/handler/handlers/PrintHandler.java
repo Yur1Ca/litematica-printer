@@ -8,9 +8,11 @@ import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.guide.guides.RailGuide;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.HudStatus;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
+import me.aleksilassila.litematica.printer.handler.scan.ScanAvailability;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementResult;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskAction;
@@ -55,16 +57,18 @@ public class PrintHandler extends FeatureModuleBase {
     public PrintHandler(PrinterRuntime runtime) {
         super(runtime, NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
         this.printTasks = new PrintWorkflowScheduler(runtime::currentTick, runtime.strippableBlocks());
-        runtime.events().subscribe(event -> {
-            if (event instanceof RuntimeEvent.BlockUpdated update) {
-                this.printTasks.wake(new BlockPos(update.x(), update.y(), update.z()));
-            } else if (event instanceof RuntimeEvent.MaterialAvailabilityChanged) {
-                this.onInventoryAvailabilityChanged();
-            }
-        });
         this.targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(this.scanEngine), () -> {
             this.scanEngine.resetOwner(NAME);
             this.scanEngine.resetOwner("print_sorted");
+        });
+        runtime.events().subscribe(event -> {
+            if (event instanceof RuntimeEvent.BlockUpdated update) {
+                BlockPos pos = new BlockPos(update.x(), update.y(), update.z());
+                this.printTasks.wake(pos);
+                this.targets.wake(pos);
+            } else if (event instanceof RuntimeEvent.MaterialAvailabilityChanged) {
+                this.onInventoryAvailabilityChanged();
+            }
         });
         this.placementExecutor = new PrintPlacementExecutor(
                 this.actionBroker,
@@ -101,6 +105,13 @@ public class PrintHandler extends FeatureModuleBase {
                 && this.isSchematicBlock(pos) && InteractionUtils.canBreakBlock(pos) ? pos : null;
     }
 
+    private boolean hasInFlightWorkflowOwnership(BlockPos pos) {
+        return this.hudStats.isPrintPlacementPending(pos)
+                || this.gameMode instanceof MiningInteractionPort port
+                    && port.isDestroying() && pos.equals(port.destroyPos())
+                || InteractionUtils.getRuntime().isPendingDelayedDestroy(pos);
+    }
+
     @Override
     protected int getTickInterval() {
         if (this.printTasks.hasActiveWorkflow()) {
@@ -127,6 +138,10 @@ public class PrintHandler extends FeatureModuleBase {
     @Override
     protected boolean hasWaitingIterationWork() {
         return this.printTasks.hasActiveWorkflow() && !this.printTasks.hasReadyWorkflow();
+    }
+
+    @Override public int getPendingIterationWorkCount() {
+        return this.targets.pendingTargetCount() + this.printTasks.pendingTaskCount();
     }
 
     @Override
@@ -162,6 +177,7 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     protected void onRuntimeReset() {
+        this.scanEngine.resetOwner("print_sorted");
         RailGuide.clearRepairState();
         this.action = null;
         this.printTaskAction = null;
@@ -177,17 +193,22 @@ public class PrintHandler extends FeatureModuleBase {
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         this.iterationBox = playerInteractionBox;
         WorldSchematic schematic = this.litematica.schematicWorld();
-        this.targets.retainWithin(this.getScanSourceBoxes(playerInteractionBox),
+        List<PrinterBox> sourceBoxes = this.getScanSourceBoxes(playerInteractionBox);
+        List<BlockPos> released = this.printTasks.retainWithin(sourceBoxes, this::hasInFlightWorkflowOwnership);
+        String owner = Configs.Print.PRINT_SORT_TARGETS.getBooleanValue() ? "print_sorted" : NAME;
+        for (BlockPos pos : released) this.scanEngine.reoffer(owner, pos);
+        this.targets.retainWithin(sourceBoxes,
                 pos -> this.canReachIterationPosition(pos) && this.isInSelectionRange(pos));
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
-        List<BlockPos> retainedTargets = this.targets.retainedTargets();
-        Iterable<BlockPos> normalPositions = this.getNormalIterationPositions(playerInteractionBox, schematic);
+        ScanCandidateIterable ready = this.targets.readyOrdinaryTargets(this.level.getGameTime());
+        Iterable<BlockPos> normalPositions = ready.availability() == ScanAvailability.READY
+                ? ready : this.targets.mergeOrdinaryTargets(
+                        this.getNormalIterationPositions(playerInteractionBox, schematic), this.level.getGameTime());
         BlockPos miningPos = this.activeWaterMiningPos();
-        if (runnableTasks.isEmpty() && retainedTargets.isEmpty() && miningPos == null) return normalPositions;
+        if (runnableTasks.isEmpty() && miningPos == null) return normalPositions;
         List<BlockPos> priority = new ArrayList<>();
         if (miningPos != null) priority.add(miningPos);
         priority.addAll(runnableTasks);
-        priority.addAll(retainedTargets);
         return ScanCandidateIterable.prepend(priority, normalPositions);
     }
 
@@ -255,6 +276,7 @@ public class PrintHandler extends FeatureModuleBase {
                         Configs.Placement.FALLING_CHECK.getBooleanValue(),
                         (pendingPos, expectedState) -> this.level.getBlockState(pendingPos).equals(expectedState)
                 )) {
+            this.targets.deferUntil(blockPos, this.level.getGameTime() + 4L);
             return false;
         }
         if (this.shouldSkipRequiredState(ctx.requiredState)) {
@@ -271,8 +293,13 @@ public class PrintHandler extends FeatureModuleBase {
         }
 //        Action action = guide.getAction(ctx);
         Optional<Action> action = this.guides.buildAction(ctx);
-        if (action.isEmpty())
+        if (action.isEmpty()) {
+            if (!this.ctx.currentState.equals(this.ctx.requiredState)) {
+                this.targets.deferUntil(blockPos, this.level.getGameTime() + 4L);
+                this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.NO_VALID_FACE);
+            }
             return false;
+        }
         this.action = action.get();
         this.printTaskAction = this.printTasks.createActionHandle(ctx, this.action);
         return true;
@@ -328,11 +355,18 @@ public class PrintHandler extends FeatureModuleBase {
         PrintTaskAction taskAction = this.printTaskAction;
         PrintPlacementResult result = this.placementExecutor.execute(this.ctx, this.action, taskAction);
         this.targets.onResult(blockPos, result, taskAction != null);
+        if (taskAction == null) {
+            if (result.taskEvent() == PrintPlacementResult.TaskEvent.MATERIAL_UNAVAILABLE) {
+                this.targets.waitForMaterial(blockPos, this.level.getGameTime(), result.skipIteration());
+            } else if (result.taskEvent() == PrintPlacementResult.TaskEvent.WORLD_BLOCKED) {
+                this.targets.deferUntil(blockPos, this.level.getGameTime() + 4L);
+            }
+        }
         if (!result.consumedEffectiveExecution()) {
             setIterationConsumedEffectiveExecution(false);
         }
         if (taskAction != null) {
-            this.applyTaskEvent(taskAction, result.taskEvent());
+            this.applyTaskEvent(taskAction, result);
         }
         if (result.skipIteration()) {
             skipIteration.set(true);
@@ -342,13 +376,13 @@ public class PrintHandler extends FeatureModuleBase {
         }
     }
 
-    private void applyTaskEvent(PrintTaskAction taskAction, PrintPlacementResult.TaskEvent taskEvent) {
-        switch (taskEvent) {
+    private void applyTaskEvent(PrintTaskAction taskAction, PrintPlacementResult result) {
+        switch (result.taskEvent()) {
             case SUCCESS -> this.printTasks.onActionSuccess(taskAction, this.ctx, this.action);
             case QUEUED -> this.printTasks.onActionQueued(taskAction, this.ctx, this.action);
             case DEFERRED -> this.printTasks.onActionDeferred(this.ctx);
             case CANCELLED -> this.printTasks.onActionCancelled(taskAction, this.ctx, this.action);
-            case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx);
+            case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx, result.skipIteration());
             case WORLD_BLOCKED -> {
                 // Falling blocks are ordinary targets, not multi-stage workflow actions.
             }

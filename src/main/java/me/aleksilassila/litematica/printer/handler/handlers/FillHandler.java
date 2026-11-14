@@ -15,6 +15,8 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
+import me.aleksilassila.litematica.printer.handler.scan.StableCandidateMerge;
+import me.aleksilassila.litematica.printer.handler.scan.BoundedTargetSet;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.PrinterUtils;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
@@ -58,7 +60,8 @@ public class FillHandler extends FeatureModuleBase {
     private List<PrinterBox> fillScanBoxes = List.of();
     private int fillScanConfigHash;
     private int observedFillScanConfigHash = Integer.MIN_VALUE;
-    private final Set<BlockPos> retryTargets = new LinkedHashSet<>();
+    private final Set<BlockPos> retryTargets = new BoundedTargetSet(BoundedTargetSet.DEFAULT_CAPACITY, null,
+            pos -> this.scanEngine.reoffer(this.getId(), pos));
     private final Set<BlockPos> inFlightTargets = new LinkedHashSet<>();
     private final Map<BlockPos, Long> inFlightSince = new HashMap<>();
 
@@ -227,7 +230,7 @@ public class FillHandler extends FeatureModuleBase {
                 .toList();
         if (scanSourceBoxes.isEmpty() || fullScanSourceBoxes.isEmpty() || fullScanSourceBox == null) {
             this.clearFillTargets();
-            return retainedTargets;
+            return StableCandidateMerge.merge(retainedTargets, List.of(), this.scanEngine.targetComparator(NAME));
         }
 
         int configHash = this.getFillScanConfigHash();
@@ -239,12 +242,10 @@ public class FillHandler extends FeatureModuleBase {
             this.fillScanBoxes = List.copyOf(fullScanSourceBoxes);
         }
 
-        // ScanEngine already exposes a resumable candidate iterable and its explicit pause
-        // state. A second look-ahead iterator would hide budget pauses from the coordinator.
+        // The merge retains the source pause contract and needs only one fresh lookahead.
         Iterable<BlockPos> source = this.createSourceIterator(scanSourceBoxes, reachPredicate, selectionPredicate);
-        return retainedTargets.isEmpty()
-                ? source
-                : com.google.common.collect.Iterables.concat(retainedTargets, source);
+        return StableCandidateMerge.merge(retainedTargets, source, this.scanEngine.targetComparator(NAME),
+                pos -> this.retryTargets.add(pos.immutable()));
     }
 
     private Iterable<BlockPos> createSourceIterator(

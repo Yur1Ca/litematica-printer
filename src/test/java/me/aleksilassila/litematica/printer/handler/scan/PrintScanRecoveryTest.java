@@ -132,21 +132,48 @@ class PrintScanRecoveryTest {
         }
     }
 
+    @Test void runtimeResetImmediatelyResuppliesACompletedSortedSourceWhileItsWorldStillMismatches() throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Print.PRINT_SORT_TARGETS.setBooleanValue(true);
+            f.world.tick(10L);
+            assertEquals(List.of(BlockPos.ZERO), ScanIntegrationFixture.drain(f.handler.positions()));
+            // Retire candidate ownership without changing the world, as after a sent action
+            // whose block update has not arrived before an activation transition.
+            f.targets.onResult(BlockPos.ZERO, new PrintPlacementResult(
+                    true, false, PrintPlacementResult.TaskEvent.SUCCESS, -1), false);
+            assertTrue(ScanIntegrationFixture.drain(f.handler.positions()).isEmpty());
+            assertEquals(ScanAvailability.COMPLETE, f.queue.availability());
+            long dirty = f.world.engine().dirtyVersion();
+
+            // FeatureModuleBase resets the public owner; exercise PRINT's actual reset hook too.
+            f.world.engine().resetOwner(PrintHandler.NAME);
+            f.handler.runtimeReset();
+
+            assertEquals(List.of(BlockPos.ZERO), ScanIntegrationFixture.drain(f.handler.positions()),
+                    "Activation reset must resupply the sorted owner immediately, in the same tick");
+            assertEquals(dirty, f.world.engine().dirtyVersion());
+            assertTrue(f.world.level.getBlockState(BlockPos.ZERO).isAir(), "No world update resolves this target");
+        }
+    }
+
     @ParameterizedTest @EnumSource(value = ScanAvailability.class, names = {"PAUSED", "COMPLETE"})
-    void retryPrefixPreservesTailAvailabilityWithoutProbingItEarly(ScanAvailability tailState) throws Exception {
+    void retryMergePreservesTailAvailabilityWithOneLazyLookahead(ScanAvailability tailState) throws Exception {
         try (var f = new Fixture(false)) {
             f.targets.onResult(BlockPos.ZERO, PrintPlacementResult.deferred(false), false);
             var tail = new CountingScanSource(List.of(), false, tailState);
-            f.handler.normalPositions = tail;
-
-            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class, f.handler.positions(),
+            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class,
+                    f.targets.mergeOrdinaryTargets(tail, f.world.level.getGameTime()),
                     "An ordinary retry prefix must preserve the live source's availability");
             assertFalse(source.isBuffered());
             assertEquals(ScanAvailability.READY, source.availability(), "The retained retry is available first");
             Iterator<BlockPos> iterator = source.iterator();
-            assertTrue(iterator.hasNext());
             assertEquals(0, tail.iterators, "Creating the mixed iterator must not create its live tail early");
-            assertEquals(0, tail.probes, "Checking a retained retry must not advance the live scan cursor");
+            assertEquals(0, tail.probes, "Construction alone must not advance the live scan cursor");
+            assertTrue(iterator.hasNext());
+            assertTrue(iterator.hasNext());
+            assertEquals(1, tail.iterators);
+            assertEquals(1, tail.probes, "Comparing ordinary work needs only one probe of the empty tail");
+            assertEquals(0, tail.fetches);
 
             assertEquals(BlockPos.ZERO, iterator.next());
             assertEquals(tailState, source.availability(), "Once the prefix is consumed, expose the tail state");
@@ -161,9 +188,8 @@ class PrintScanRecoveryTest {
             f.targets.onResult(BlockPos.ZERO, PrintPlacementResult.deferred(false), false);
             BlockPos next = BlockPos.ZERO.east();
             var tail = new CountingScanSource(List.of(BlockPos.ZERO, next, next), buffered, ScanAvailability.COMPLETE);
-            f.handler.normalPositions = tail;
-
-            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class, f.handler.positions());
+            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class,
+                    f.targets.mergeOrdinaryTargets(tail, f.world.level.getGameTime()));
 
             assertEquals(buffered, source.isBuffered(), "Only a buffered tail may bypass the live scan budget");
             assertEquals(List.of(BlockPos.ZERO, next), ScanIntegrationFixture.drain(source),
@@ -174,21 +200,23 @@ class PrintScanRecoveryTest {
         }
     }
 
-    @Test void mixedRetryStreamWithRawTailKeepsBudgetChecksAndDoesNotProbeTailBeforeTheRetry() throws Exception {
+    @Test void mixedRetryStreamWithRawTailKeepsBudgetChecksAndOnlyOneFreshLookahead() throws Exception {
         try (var f = new Fixture(false)) {
             f.targets.onResult(BlockPos.ZERO, PrintPlacementResult.deferred(false), false);
             BlockPos next = BlockPos.ZERO.east();
             var tail = new CountingRawSource(List.of(BlockPos.ZERO, next, next));
-            f.handler.normalPositions = tail;
-
-            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class, f.handler.positions());
+            ScanCandidateIterable source = assertInstanceOf(ScanCandidateIterable.class,
+                    f.targets.mergeOrdinaryTargets(tail, f.world.level.getGameTime()));
             assertFalse(source.isBuffered(), "A raw iterable tail must remain subject to the scan budget");
             Iterator<BlockPos> iterator = source.iterator();
-            assertTrue(iterator.hasNext());
             assertEquals(0, tail.iterators);
             assertEquals(0, tail.probes);
+            assertTrue(iterator.hasNext());
+            assertEquals(1, tail.iterators);
+            assertEquals(2, tail.fetches, "Discard the retry duplicate, then retain exactly one fresh lookahead");
             assertEquals(BlockPos.ZERO, iterator.next());
             assertTrue(iterator.hasNext());
+            assertEquals(2, tail.fetches, "An earlier retry must not consume the next fresh target");
             assertEquals(next, iterator.next());
             assertFalse(iterator.hasNext());
             assertEquals(ScanAvailability.COMPLETE, source.availability());
@@ -219,7 +247,11 @@ class PrintScanRecoveryTest {
             assertEquals(1, executions[0], "The original per-tick execution limit still applies");
             assertEquals(16, f.world.cache.metricsFor("print").acceptedTargets(),
                     "The real runner must invoke PRINT's post-execution replenishment hook");
-            assertEquals(30, ScanIntegrationFixture.drain(f.queue).size());
+            List<BlockPos> remaining = new java.util.ArrayList<>(
+                    ScanIntegrationFixture.drain(f.targets.readyOrdinaryTargets(11L)));
+            remaining.addAll(ScanIntegrationFixture.drain(f.targets.readyOrdinaryTargets(11L)));
+            assertEquals(30, remaining.size(), "The persistent lookahead and the next warm round retain every unexecuted target");
+            assertEquals(30, new java.util.HashSet<>(remaining).size(), "Ownership transfer must not duplicate a retained target");
         }
     }
 
@@ -231,6 +263,7 @@ class PrintScanRecoveryTest {
         Iterable<BlockPos> normalPositions;
         private TestPrintHandler() { super(null); }
         Iterable<BlockPos> positions() { return super.getIterationPositions(new PrinterBox(BlockPos.ZERO)); }
+        void runtimeReset() { super.onRuntimeReset(); }
         @Override protected List<PrinterBox> getScanSourceBoxes(PrinterBox box) {
             return this.sourceBoxes == null ? List.of(box) : this.sourceBoxes;
         }
@@ -258,6 +291,7 @@ class PrintScanRecoveryTest {
         final List<BlockPos> positions;
         int iterators;
         int probes;
+        int fetches;
 
         CountingRawSource(List<BlockPos> positions) { this.positions = positions; }
 
@@ -270,7 +304,7 @@ class PrintScanRecoveryTest {
                     return delegate.hasNext();
                 }
 
-                @Override public BlockPos next() { return delegate.next(); }
+                @Override public BlockPos next() { fetches++; return delegate.next(); }
             };
         }
     }
@@ -357,6 +391,8 @@ class PrintScanRecoveryTest {
             set(handler, PrintHandler.class, "targets", this.targets);
             set(handler, PrintHandler.class, "guides", new Guides());
             set(handler, PrintHandler.class, "printTasks", this.workflows);
+            set(handler, PrintHandler.class, "fallingPlacements",
+                    new me.aleksilassila.litematica.printer.handler.handlers.print.FallingPlacementTracker());
             set(handler, PrintHandler.class, "printSkipFilters", new String[0]);
         }
 

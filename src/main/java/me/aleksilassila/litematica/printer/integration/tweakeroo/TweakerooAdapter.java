@@ -98,6 +98,15 @@ public final class TweakerooAdapter implements TweakerooToolSwitchPort {
         );
     }
 
+    /** Dynamic eligibility fingerprint; handlers do not depend on optional-mod bindings. */
+    public int breakRestrictionConfigHash() {
+        if (!this.isLoaded()) return 0;
+        int result = TweakerooUtils.getBreakRestrictionListType().hashCode();
+        result = 31 * result + TweakerooUtils.getBreakRestrictionBlacklist().hashCode();
+        result = 31 * result + TweakerooUtils.getBreakRestrictionWhitelist().hashCode();
+        return result;
+    }
+
     public boolean allowsConfiguredBreak(BlockState state) {
         Object optionListValue = Configs.Mine.EXCAVATE_LIMIT.getOptionListValue();
         UsageRestriction.ListType listType = optionListValue instanceof UsageRestriction.ListType type

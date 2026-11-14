@@ -5,9 +5,11 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Reason;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.core.scan.ScanOrderShadow;
+import me.aleksilassila.litematica.printer.core.scan.ConstructionOrder;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import me.aleksilassila.litematica.printer.config.Configs;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -23,6 +25,8 @@ final class ScanSessionStore implements AutoCloseable {
     private final RuntimeTiming timing;
     private final ScanOrderShadow shadow;
     private final SchematicPositionQuery printCandidates;
+    private final SectionSnapshotStore snapshots;
+    private final Map<String, ConstructionOrder> orders = new HashMap<>();
     private long shadowSuperseded;
     private long shadowOverwritten;
 
@@ -39,17 +43,28 @@ final class ScanSessionStore implements AutoCloseable {
         this(schematicIndex, timing, shadow, schematicIndex);
     }
 
-    ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing, SectionSnapshotStore snapshots) {
-        this(schematicIndex, timing, timing.enabled() && Boolean.getBoolean("litematica.printer.scanShadow")
-                ? new ScanOrderShadow() : null, schematicIndex.unresolvedPrintQuery(snapshots));
+    ScanSessionStore(RuntimeTiming timing, SectionSnapshotStore snapshots) {
+        this(null, timing, null, null, snapshots);
     }
 
     private ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing,
                              ScanOrderShadow shadow, SchematicPositionQuery printCandidates) {
+        this(schematicIndex, timing, shadow, printCandidates, null);
+    }
+
+    private ScanSessionStore(SchematicBlockIndex schematicIndex, RuntimeTiming timing,
+                              ScanOrderShadow shadow, SchematicPositionQuery printCandidates,
+                              SectionSnapshotStore snapshots) {
         this.schematicIndex = schematicIndex;
         this.timing = timing;
         this.shadow = shadow;
         this.printCandidates = printCandidates;
+        this.snapshots = snapshots;
+    }
+
+    ConstructionOrder orderFor(String ownerKey) {
+        ConstructionOrder order = this.orders.get(ScanCache.normalizeMetricsOwnerKey(ownerKey));
+        return order == null ? new ConstructionOrder(0, 0, ownerKey.startsWith("mine")) : order;
     }
 
     void collectComparisons() {
@@ -122,12 +137,30 @@ final class ScanSessionStore implements AutoCloseable {
         }
     }
 
+    void reoffer(String ownerKey, BlockPos pos) {
+        String prefix = ownerKey + ":";
+        for (Map.Entry<String, SectionScanSession> entry : this.sessions.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) entry.getValue().reoffer(pos);
+        }
+    }
+
     void resetIntent(ScanIntent intent) {
         Iterator<SectionScanSession> iterator = this.sessions.values().iterator();
         while (iterator.hasNext()) {
             SectionScanSession session = iterator.next();
             if (session.isFor(intent)) {
                 session.recordReason(Reason.CHUNK_REPLACED);
+                session.close();
+                iterator.remove();
+            }
+        }
+    }
+
+    void invalidatePrintChunk(int chunkX, int chunkZ) {
+        Iterator<SectionScanSession> iterator = this.sessions.values().iterator();
+        while (iterator.hasNext()) {
+            SectionScanSession session = iterator.next();
+            if (session.isFor(ScanIntent.PRINT) && session.intersectsChunkAndNeighbors(chunkX, chunkZ)) {
                 session.close();
                 iterator.remove();
             }
@@ -146,6 +179,8 @@ final class ScanSessionStore implements AutoCloseable {
             LongSupplier generationSequence
     ) {
         ScanRegion region = ScanRegion.from(sourceBounds, player);
+        ConstructionOrder order = this.orders.computeIfAbsent(ScanCache.normalizeMetricsOwnerKey(ownerKey),
+                ignored -> new ConstructionOrder(region.centerX(), region.centerZ(), intent == ScanIntent.MINE));
         String key = ownerKey + ":" + intent.name();
         SectionScanSession session = this.sessions.get(key);
         if (session == null || !session.canReuse(region)) {
@@ -161,12 +196,23 @@ final class ScanSessionStore implements AutoCloseable {
                     generationSequence,
                     this.schematicIndex,
                     this.shadow,
-                    this.printCandidates
+                    this.printCandidates,
+                    this.snapshots,
+                    order
             );
             this.sessions.put(key, session);
         } else {
             session.updateRegion(region, sourceBoxes);
         }
+        long eligibility = Configs.Core.WORK_RANGE.getIntegerValue();
+        eligibility = 31L * eligibility + Configs.Core.ITERATOR_SHAPE.getOptionListValue().hashCode();
+        eligibility = 31L * eligibility + Boolean.hashCode(Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue());
+        if (player != null) {
+            eligibility = 31L * eligibility + Double.doubleToLongBits(player.getX());
+            eligibility = 31L * eligibility + Double.doubleToLongBits(player.getEyeY());
+            eligibility = 31L * eligibility + Double.doubleToLongBits(player.getZ());
+        }
+        session.updateEligibility(eligibility);
         return session;
     }
 
@@ -176,6 +222,7 @@ final class ScanSessionStore implements AutoCloseable {
             session.close();
         }
         this.sessions.clear();
+        this.orders.clear();
         if (this.shadow != null) this.shadow.reset();
     }
 

@@ -116,11 +116,12 @@ final class ScanIntegrationFixture implements AutoCloseable {
     static final class TestLevel extends ClientLevel {
         long tick;
         BlockState defaultState;
+        boolean allChunksLoaded;
         Map<BlockPos, BlockState> world;
         Map<BlockPos, Integer> reads;
         private TestLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
         @Override public long getGameTime() { return this.tick; }
-        @Override public boolean hasChunk(int x, int z) { return x == 0 && z == 0; }
+        @Override public boolean hasChunk(int x, int z) { return this.allChunksLoaded || x == 0 && z == 0; }
         @Override public BlockState getBlockState(BlockPos pos) {
             this.reads.merge(pos.immutable(), 1, Integer::sum);
             return this.world.getOrDefault(pos, this.defaultState);
@@ -135,8 +136,10 @@ final class ScanIntegrationFixture implements AutoCloseable {
     }
 
     static final class TestChunk extends ChunkSchematic {
+        int schematicReads;
         private TestChunk() { super(null, null); }
         @Override public BlockState getBlockState(BlockPos pos) {
+            this.schematicReads++;
             int section = (pos.getY() + 64) >> 4;
             LevelChunkSection[] sections = getSections();
             return section < 0 || section >= sections.length || sections[section] == null

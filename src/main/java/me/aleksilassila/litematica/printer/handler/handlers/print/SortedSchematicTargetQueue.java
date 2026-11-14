@@ -1,8 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.print;
 
 import fi.dy.masa.litematica.world.WorldSchematic;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
@@ -13,15 +12,9 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.FallingBlock;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Predicate;
@@ -29,10 +22,13 @@ import java.util.function.Predicate;
 public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     private static final int MAX_SORT_BUFFER = 4096;
     private final ScanEngine scanEngine;
-    private final Deque<BlockPos> queue = new ArrayDeque<>();
-    private final LongSet queuedKeys = new LongOpenHashSet();
+    private final Long2ObjectLinkedOpenHashMap<BlockPos> queue = new Long2ObjectLinkedOpenHashMap<>();
+    private boolean insertionOrdered = true;
     private List<PrinterBox> boxes = List.of();
     private boolean hasMoreSource;
+    private ScanCandidateIterable sourceGuard;
+    private long generation;
+    private long replacementGeneration;
     private long lastFillTick = Long.MIN_VALUE;
     private long lastDirtyVersion = Long.MIN_VALUE;
     private long lastPrintSourceRevision = Long.MIN_VALUE;
@@ -43,9 +39,12 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
 
     public void clear() {
         this.queue.clear();
-        this.queuedKeys.clear();
+        this.insertionOrdered = true;
+        this.generation++;
+        this.replacementGeneration++;
         this.boxes = List.of();
         this.hasMoreSource = false;
+        this.sourceGuard = null;
         this.lastFillTick = Long.MIN_VALUE;
         this.lastDirtyVersion = Long.MIN_VALUE;
         this.lastPrintSourceRevision = Long.MIN_VALUE;
@@ -59,22 +58,75 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
                                        WorldSchematic schematic, LocalPlayer player, int scanGuardLimit,
                                        boolean fillWhenBuffered, Predicate<BlockPos> candidateFilter) {
         if (!this.boxes.equals(sourceBoxes)) {
-            this.queue.clear();
-            this.queuedKeys.clear();
+            // The source cursor already advanced past buffered entries. Moving the window
+            // must retain its still-valid prefix instead of delaying it until a full follow-up.
+            this.queue.values().removeIf(pos -> sourceBoxes.stream().noneMatch(box -> box.contains(pos)));
+            if (this.queue.size() <= 1) this.insertionOrdered = true;
+            this.generation++;
             this.hasMoreSource = true;
             this.lastFillTick = Long.MIN_VALUE;
         }
         this.boxes = List.copyOf(sourceBoxes);
         this.fill(sourceBoxes, level, schematic, player, scanGuardLimit, fillWhenBuffered, candidateFilter);
-        return this;
+        return this.currentView();
     }
+
+    private ScanCandidateIterable currentView() {
+        long viewGeneration = this.generation;
+        ScanCandidateIterable guard = this.sourceGuard;
+        return new ScanCandidateIterable() {
+            @Override public boolean isValid() {
+                return viewGeneration == generation && (guard == null || guard.isValid());
+            }
+            @Override public ScanAvailability availability() {
+                return this.isValid() ? SortedSchematicTargetQueue.this.availability() : ScanAvailability.COMPLETE;
+            }
+            @Override public boolean isBuffered() { return true; }
+            @Override public Iterator<BlockPos> iterator() {
+                Iterator<BlockPos> iterator = SortedSchematicTargetQueue.this.iterator();
+                return new Iterator<>() {
+                    @Override public boolean hasNext() { return isValid() && iterator.hasNext(); }
+                    @Override public BlockPos next() {
+                        if (!this.hasNext()) throw new java.util.NoSuchElementException("sorted source was replaced");
+                        return iterator.next();
+                    }
+                };
+            }
+        };
+    }
+
+    /** Captures already buffered work and its source guard without producing new candidates. */
+    public ScanCandidateIterable bufferedPositions() { return this.currentView(); }
+
+    long replacementGeneration() { return this.replacementGeneration; }
+
+    /** Scope changes retain delivery ownership; cleared or replaced sources do not. */
+    boolean canRetain(BlockPos pos, long replacementGeneration) {
+        return this.replacementGeneration == replacementGeneration && this.isValid()
+                && this.boxes.stream().anyMatch(box -> box.contains(pos));
+    }
+
+    /** Return a dropped delivery reference to its owner without discarding classification facts. */
+    public void reoffer(String ownerKey, BlockPos pos) { this.scanEngine.reoffer(ownerKey, pos); }
 
     public boolean hasPendingWork() {
         return !this.queue.isEmpty() || this.hasMoreSource;
     }
 
+    public int pendingTargetCount() { return this.queue.size(); }
+
+    public Comparator<BlockPos> targetComparator() {
+        return this.scanEngine.targetComparator("print_sorted");
+    }
+
+    @Override
+    public boolean isValid() {
+        return this.sourceGuard == null || this.sourceGuard.isValid();
+    }
+
     @Override
     public ScanAvailability availability() {
+        if (!this.isValid()) return ScanAvailability.COMPLETE;
         if (!this.queue.isEmpty()) {
             return ScanAvailability.READY;
         }
@@ -87,33 +139,62 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
     }
 
     public void requeue(BlockPos pos) {
-        if (pos == null || this.queuedKeys.add(ScanEngine.key(pos))) {
-            if (pos != null) {
-                this.queue.addLast(pos.immutable());
-            }
+        if (pos == null || this.queue.containsKey(ScanEngine.key(pos))) return;
+        if (this.queue.isEmpty()) {
+            this.queue.put(ScanEngine.key(pos), pos.immutable());
+            this.insertionOrdered = true;
+        } else {
+            this.append(pos.immutable(), this.targetComparator());
         }
     }
 
     public void remove(BlockPos pos) {
-        if (pos == null) return;
+        if (pos != null) {
+            this.queue.remove(ScanEngine.key(pos));
+            if (this.queue.size() <= 1) this.insertionOrdered = true;
+        }
+    }
+
+    private boolean append(BlockPos pos, Comparator<BlockPos> order) {
         long key = ScanEngine.key(pos);
-        this.queuedKeys.remove(key);
-        this.queue.removeIf(candidate -> ScanEngine.key(candidate) == key);
+        if (this.queue.containsKey(key)) return false;
+        if (this.insertionOrdered && !this.queue.isEmpty()
+                && order.compare(this.queue.get(this.queue.lastLongKey()), pos) > 0) {
+            this.insertionOrdered = false;
+        }
+        this.queue.put(key, pos);
+        return true;
     }
 
     private void fill(List<PrinterBox> sourceBoxes, ClientLevel level, WorldSchematic schematic,
                       LocalPlayer player, int scanGuardLimit, boolean fillWhenBuffered,
                       Predicate<BlockPos> candidateFilter) {
+        if (!this.isValid()) {
+            this.queue.clear();
+            this.insertionOrdered = true;
+            this.generation++;
+            this.replacementGeneration++;
+            this.hasMoreSource = true;
+            this.lastFillTick = Long.MIN_VALUE;
+        }
         // Observe schematic replacement even after a clean queue has exhausted its old source.
         // Creating the iterable does not consume a candidate or advance its cursor.
         Iterable<BlockPos> candidates = this.scanEngine.iterable(
                 "print_sorted", sourceBoxes, level, schematic, player, scanGuardLimit,
                 ScanIntent.PRINT, pos -> true, candidateFilter
         );
+        this.sourceGuard = candidates instanceof ScanCandidateIterable scanSource ? scanSource : null;
+        if (this.sourceGuard != null) {
+            // Owner wakeups and due repair can reopen a completed source without changing the
+            // world's dirty revision. Initial availability observes pending work without scanning.
+            this.hasMoreSource = this.sourceGuard.availability() != ScanAvailability.COMPLETE;
+        }
         long printSourceRevision = this.scanEngine.printSourceRevision();
         if (printSourceRevision != this.lastPrintSourceRevision) {
             this.queue.clear();
-            this.queuedKeys.clear();
+            this.insertionOrdered = true;
+            this.generation++;
+            this.replacementGeneration++;
             this.hasMoreSource = true;
             this.lastFillTick = Long.MIN_VALUE;
             this.lastPrintSourceRevision = printSourceRevision;
@@ -150,23 +231,19 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         int collectLimit = scanGuardLimit > 0
                 ? Math.min(scanGuardLimit, remainingBuffer)
                 : remainingBuffer;
-        Item heldItem = player.getMainHandItem().getItem();
-        Vec3 eye = player.getEyePosition();
-        Vec3 view = player.getLookAngle().normalize();
-        List<TargetScore> targets = new ArrayList<>();
+        int collected = 0;
+        Comparator<BlockPos> order = this.targetComparator();
         this.hasMoreSource = false;
         long collectionStart = this.scanEngine.timing().start();
         try {
             Iterator<BlockPos> iterator = candidates.iterator();
             // hasNext() can advance the scan session. Check capacity before even probing it,
             // so the first candidate of the next batch remains in the source cursor.
-            while (targets.size() < collectLimit && iterator.hasNext()) {
+            while (collected < collectLimit && iterator.hasNext()) {
                 BlockPos candidate = iterator.next();
-                if (this.queuedKeys.add(ScanEngine.key(candidate))) {
-                    targets.add(scoreTarget(schematic, heldItem, eye, view, candidate));
-                }
+                if (this.append(candidate.immutable(), order)) collected++;
             }
-            this.hasMoreSource = targets.size() >= collectLimit;
+            this.hasMoreSource = collected >= collectLimit;
             if (candidates instanceof ScanCandidateIterable scanSource) {
                 if (scanSource.availability() == ScanAvailability.PAUSED) this.hasMoreSource = true;
                 else if (scanSource.availability() == ScanAvailability.COMPLETE) this.hasMoreSource = false;
@@ -174,12 +251,8 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         } finally {
             this.scanEngine.timing().finish("print", Stage.PRINT_COLLECTION, collectionStart);
         }
-        long sortStart = this.scanEngine.timing().start();
-        try { targets.sort(TargetScore.COMPARATOR); }
-        finally { this.scanEngine.timing().finish("print", Stage.PRINT_SORT, sortStart); }
-        for (TargetScore target : targets) {
-            this.queue.addLast(target.pos());
-        }
+        // The source already has construction order. The bounded iterator snapshot below also
+        // merges newly discovered earlier ranks with positions retained from an older slice.
     }
 
     static boolean shouldRefill(
@@ -202,81 +275,41 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
 
     @Override
     public Iterator<BlockPos> iterator() {
+        List<BlockPos> snapshot = new ArrayList<>(this.queue.values());
+        ScanCandidateIterable guard = this.sourceGuard;
+        long snapshotGeneration = this.generation;
+        if (snapshot.size() > 1 && !this.insertionOrdered) {
+            long sortStart = this.scanEngine.timing().start();
+            try {
+                snapshot.sort(this.targetComparator());
+                // Reorder the same live membership once. Older iterators keep their own
+                // finite snapshots; later monotone refills and removals need no repeat sort.
+                this.queue.clear();
+                for (BlockPos pos : snapshot) this.queue.put(ScanEngine.key(pos), pos);
+                this.insertionOrdered = true;
+            }
+            finally { this.scanEngine.timing().finish("print", Stage.PRINT_SORT, sortStart); }
+        }
         return new Iterator<>() {
-            // Retry insertions belong to the next iteration pass. Reading the live queue until it
-            // becomes empty lets a failed target remove and requeue itself forever, especially
-            // when placeBlocksPerTick=0 disables the effective-execution limit.
-            private int remaining = queue.size();
+            private int index;
 
             @Override
             public boolean hasNext() {
-                return this.remaining > 0 && !queue.isEmpty();
+                if (snapshotGeneration != generation || guard != null && !guard.isValid()) return false;
+                while (this.index < snapshot.size()
+                        && !queue.containsKey(ScanEngine.key(snapshot.get(this.index)))) this.index++;
+                return this.index < snapshot.size();
             }
 
             @Override
             public BlockPos next() {
-                if (this.remaining > 0 && !queue.isEmpty()) {
-                    this.remaining--;
-                    BlockPos result = queue.removeFirst();
-                    queuedKeys.remove(ScanEngine.key(result));
-                    return result;
+                if (!this.hasNext()) {
+                    throw new java.util.NoSuchElementException("sorted schematic target queue is exhausted");
                 }
-                throw new java.util.NoSuchElementException("sorted schematic target queue is exhausted");
+                BlockPos result = snapshot.get(this.index++);
+                SortedSchematicTargetQueue.this.remove(result);
+                return result;
             }
         };
-    }
-
-    private static TargetScore scoreTarget(
-            WorldSchematic schematic,
-            Item heldItem,
-            Vec3 eye,
-            Vec3 view,
-            BlockPos pos
-    ) {
-        double dx = pos.getX() + 0.5D - eye.x;
-        double dy = pos.getY() + 0.5D - eye.y;
-        double dz = pos.getZ() + 0.5D - eye.z;
-        double distanceSqr = dx * dx + dy * dy + dz * dz;
-        double viewAngleScore = distanceSqr < 1.0E-6D
-                ? 0.0D
-                : -(view.x * dx + view.y * dy + view.z * dz) / Math.sqrt(distanceSqr);
-        BlockState requiredState = schematic.getBlockState(pos);
-        return new TargetScore(
-                pos,
-                requiredState.getBlock().asItem() != heldItem,
-                requiredState.getBlock() instanceof FallingBlock,
-                pos.getY(),
-                distanceSqr,
-                viewAngleScore
-        );
-    }
-
-    static record TargetScore(
-            BlockPos pos,
-            boolean heldItemMismatch,
-            boolean fallingBlock,
-            int y,
-            double distanceSqr,
-            double viewAngleScore
-    ) {
-        /**
-         * A strict total order is required here: TimSort is allowed to reject a comparator whose
-         * ordering changes depending on the pair being compared.  In particular, comparing two
-         * falling blocks by Y but a falling/non-falling pair by distance is not transitive.
-         *
-         * <p>Let ordinary placements make progress before falling dependencies. Falling targets
-         * must then be ordered bottom-up before material locality; otherwise a held upper anvil
-         * can outrank a lower sand support and repeatedly fail the support check. Coordinates are
-         * the deterministic final tie-breaker so incremental batches produce the same order.</p>
-         */
-        static final Comparator<TargetScore> COMPARATOR = Comparator
-                .comparing(TargetScore::fallingBlock)
-                .thenComparingInt(score -> score.fallingBlock ? score.y : 0)
-                .thenComparing(TargetScore::heldItemMismatch)
-                .thenComparingDouble(TargetScore::distanceSqr)
-                .thenComparingDouble(TargetScore::viewAngleScore)
-                .thenComparingInt(score -> score.pos.getY())
-                .thenComparingInt(score -> score.pos.getX())
-                .thenComparingInt(score -> score.pos.getZ());
     }
 }

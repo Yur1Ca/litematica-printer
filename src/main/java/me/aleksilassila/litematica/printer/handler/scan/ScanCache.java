@@ -12,15 +12,16 @@ import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Comparator;
 import java.util.function.Predicate;
 
 public final class ScanCache {
-    private final SchematicBlockIndex schematicIndex = new SchematicBlockIndex();
     private final ScanSessionStore sessions;
     private final RuntimeTiming timing;
     private final DirtyRegionTracker dirtyRegions;
     private final ScanBudget budget = new ScanBudget();
     private final SectionSnapshotStore snapshots = new SectionSnapshotStore();
+    private final LocalSchematicTracker schematicSource = new LocalSchematicTracker();
 
     private Object levelIdentity;
     private Object schematicIdentity;
@@ -45,7 +46,7 @@ public final class ScanCache {
     private ScanCache(DirtyRegionTracker dirtyRegions, RuntimeTiming timing) {
         this.dirtyRegions = dirtyRegions;
         this.timing = timing;
-        this.sessions = new ScanSessionStore(this.schematicIndex, timing, this.snapshots);
+        this.sessions = new ScanSessionStore(timing, this.snapshots);
     }
 
     public RuntimeTiming timing() { return this.timing; }
@@ -53,7 +54,7 @@ public final class ScanCache {
     public void clear() {
         this.sessions.close();
         this.sessions.clearMetrics();
-        this.schematicIndex.clear();
+        this.schematicSource.clear();
         this.levelIdentity = null;
         this.schematicIdentity = null;
         this.snapshotRevision = 0L;
@@ -105,10 +106,11 @@ public final class ScanCache {
                 && this.tickTime == tickTime && this.runtimeEpoch.equals(epoch)) {
             return;
         }
-        if (!this.runtimeEpoch.equals(epoch) || this.levelIdentity != level || this.schematicIdentity != schematic) {
+        if (!this.runtimeEpoch.equals(epoch) || this.levelIdentity != level || this.schematicIdentity != schematic
+                || tickTime < this.tickTime) {
             this.sessions.close();
             this.sessions.clearMetrics();
-            this.schematicIndex.clear();
+            this.schematicSource.clear();
             this.dirtyRegions.clear();
             this.levelIdentity = level;
             this.schematicIdentity = schematic;
@@ -166,6 +168,21 @@ public final class ScanCache {
             return;
         }
         this.sessions.resetOwner(ownerKey);
+    }
+
+    public void reoffer(String ownerKey, BlockPos pos) {
+        if (ownerKey == null || ownerKey.isBlank() || pos == null) return;
+        this.sessions.reoffer(ownerKey, pos);
+    }
+
+    public Comparator<BlockPos> targetComparator(String ownerKey) {
+        var order = this.sessions.orderFor(ownerKey);
+        return (first, second) -> order.compare(first.asLong(), second.asLong());
+    }
+
+    public ScanWorkSlice openWorkSlice(String ownerKey) {
+        String metricsOwner = normalizeMetricsOwnerKey(ownerKey);
+        return this.budget.openSlice(metricsOwner, this.sessions.metrics(metricsOwner));
     }
 
     public Iterable<BlockPos> rawIterable(
@@ -274,20 +291,19 @@ public final class ScanCache {
         if (sourceBoxes == null || sourceBoxes.isEmpty()) {
             return List.of();
         }
-        if (intent == ScanIntent.PRINT && this.schematicIndex.ensureBuilt(
-                schematic, this.timing, normalizeMetricsOwnerKey(ownerKey),
-                !Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue())) {
-            // Classification flags and every PRINT cursor belong to the same schematic snapshot.
-            // World-only intents retain their cached observations and scan progress.
-            this.snapshotRevision++;
-            this.printSourceRevision++;
-            this.snapshots.invalidatePrint();
-            this.sessions.resetIntent(ScanIntent.PRINT);
-        }
         String cacheOwnerKey = this.cacheOwnerKey(ownerKey, intent);
         String metricsOwnerKey = normalizeMetricsOwnerKey(ownerKey);
+        long budgetStart = this.budget.start();
         long setupStart = this.timing.start();
         try {
+            if (intent == ScanIntent.PRINT) {
+                this.schematicSource.observe(schematic, sourceBoxes, (chunkX, chunkZ) -> {
+                    this.snapshotRevision++;
+                    this.printSourceRevision++;
+                    this.snapshots.invalidatePrintChunk(chunkX, chunkZ, -2048, 2047);
+                    this.sessions.invalidatePrintChunk(chunkX, chunkZ);
+                });
+            }
             return new ScanCandidateSourceFactory(
                     this.sessions,
                     this.budget,
@@ -310,6 +326,7 @@ public final class ScanCache {
                     unbounded
             );
         } finally {
+            if (!unbounded) this.budget.record(metricsOwnerKey, this.sessions.metrics(metricsOwnerKey), budgetStart);
             this.timing.finish(metricsOwnerKey, Stage.CANDIDATE_SETUP, setupStart);
         }
     }
@@ -321,7 +338,7 @@ public final class ScanCache {
         return ownerKey;
     }
 
-    private static String normalizeMetricsOwnerKey(String ownerKey) {
+    static String normalizeMetricsOwnerKey(String ownerKey) {
         int separator = ownerKey.length();
         int underscore = ownerKey.indexOf('_');
         if (underscore >= 0) {

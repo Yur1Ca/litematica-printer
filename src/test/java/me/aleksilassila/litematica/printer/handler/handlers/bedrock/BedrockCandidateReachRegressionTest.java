@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.function.LongSupplier;
 
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.get;
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.set;
@@ -63,7 +64,10 @@ class BedrockCandidateReachRegressionTest {
             }
             set(f.client.player, Entity.class, "position", new Vec3(0.8, 62.01, 0.5));
             f.engine();
-            var scan = new ScanEngine(() -> RuntimeEpoch.INITIAL, () -> level, new ScanCache());
+            ScanCache cache = new ScanCache();
+            Object budget = get(cache, ScanCache.class, "budget");
+            set(budget, budget.getClass(), "nanoClock", (LongSupplier) () -> 0L);
+            var scan = new ScanEngine(() -> RuntimeEpoch.INITIAL, () -> level, cache);
             scan.beginTick(level, null, 1L);
             var planner = new BedrockCandidatePlanner(scan, new LitematicaAdapter());
             var source = new PrinterBox(TARGET);

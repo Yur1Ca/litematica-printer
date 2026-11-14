@@ -37,6 +37,8 @@ public final class WaterPrintTask implements PrintTask {
     private long stageSinceTick;
     private long retryAtTick;
     private long actionGeneration;
+    private boolean started;
+    private long queuedActionToken = -1L;
 
     private WaterPrintTask(BlockPos pos, LongSupplier tickClock) {
         this.pos = pos.immutable();
@@ -52,6 +54,17 @@ public final class WaterPrintTask implements PrintTask {
     @Override
     public BlockPos pos() {
         return this.pos;
+    }
+
+    @Override public boolean hasStarted() { return this.started || this.queuedActionToken >= 0L; }
+
+    @Override
+    public boolean hasInFlightOwnership() {
+        return this.queuedActionToken >= 0L
+                || this.stage == WaterTaskStage.WAIT_REMOVE_CONFIRM
+                || this.stage == WaterTaskStage.WAIT_ICE_CONFIRM
+                || this.stage == WaterTaskStage.WAIT_WATER_CONFIRM
+                || this.stage == WaterTaskStage.WAIT_FINAL_CONFIRM;
     }
 
     WaterTaskStage stage() {
@@ -149,12 +162,14 @@ public final class WaterPrintTask implements PrintTask {
                 : InteractionUtils.getRuntime().continueDestroyBlockWithoutTracking(
                         context.blockPos, Direction.DOWN);
         if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
+            this.started = true;
             this.transition(ice
                     ? WaterTaskStage.WAIT_WATER_CONFIRM
                     : WaterTaskStage.WAIT_REMOVE_CONFIRM);
             return PrintTaskBuildResult.SKIP;
         }
         if (result == BlockBreakResult.IN_PROGRESS) {
+            this.started = true;
             return PrintTaskBuildResult.SKIP;
         }
         this.retrySoon();
@@ -333,15 +348,21 @@ public final class WaterPrintTask implements PrintTask {
 
         @Override
         public void onQueued(SchematicBlockContext context, Action action) {
-            this.markSubmitted();
+            this.markSubmitted(false);
         }
 
         @Override
         public void onSuccess(SchematicBlockContext context, Action action) {
-            this.markSubmitted();
+            this.markSubmitted(true);
         }
 
-        private void markSubmitted() {
+        private void markSubmitted(boolean sent) {
+            if (sent) {
+                started = true;
+                if (queuedActionToken == this.token) queuedActionToken = -1L;
+            } else {
+                queuedActionToken = this.token;
+            }
             if (this.token == actionGeneration
                     && (stage == this.expected || stage == this.success)) {
                 transition(this.success);
@@ -359,10 +380,14 @@ public final class WaterPrintTask implements PrintTask {
         }
 
         private void retryAfterFailure(SchematicBlockContext context) {
+            if (queuedActionToken == this.token) queuedActionToken = -1L;
             if (this.token != actionGeneration) return;
             // Deferred callbacks hold an old context; preserve a final block already present in the world.
             if (stage == WaterTaskStage.WAIT_FINAL_CONFIRM
-                    && isDryWaterloggedBlock(context.requiredState, context.level.getBlockState(pos))) return;
+                    && isDryWaterloggedBlock(context.requiredState, context.level.getBlockState(pos))) {
+                started = true;
+                return;
+            }
             retrySoon();
         }
     }

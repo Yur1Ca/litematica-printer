@@ -17,6 +17,12 @@ interface WorldObservationPort {
         return this.hasChunk(chunkX, chunkZ);
     }
 
+    /** Coarse source metadata may reject a section without observing each cell. */
+    default boolean hasCandidatesInSection(ScanIntent intent, int sectionX, int sectionY,
+                                           int sectionZ, boolean breakExtraBlocks) {
+        return true;
+    }
+
     BlockState worldState(BlockPos pos);
 
     @Nullable BlockState schematicState(BlockPos pos);

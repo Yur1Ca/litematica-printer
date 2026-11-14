@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,57 +46,38 @@ class SortedSchematicTargetQueueTest {
     }
 
     @Test
-    void mixedFallingTargetsHaveATransitiveTotalOrder() {
-        Random random = new Random(0x48_41_4E_41L);
-        List<SortedSchematicTargetQueue.TargetScore> scores = new ArrayList<>(4096);
-        for (int index = 0; index < 4096; index++) {
-            BlockPos pos = new BlockPos(
-                    random.nextInt(16 * 21),
-                    random.nextInt(384) - 64,
-                    random.nextInt(16 * 21)
-            );
-            scores.add(new SortedSchematicTargetQueue.TargetScore(
-                    pos,
-                    random.nextBoolean(),
-                    random.nextBoolean(),
-                    pos.getY(),
-                    random.nextDouble() * 20000.0D,
-                    random.nextDouble() * 2.0D - 1.0D
-            ));
-        }
+    void bufferedCandidatesUseStableRowsAndLayersAcrossRefillBatches() {
+        ScanEngine engine = new ScanEngine(() -> null, () -> null, new ScanCache());
+        SortedSchematicTargetQueue queue = new SortedSchematicTargetQueue(engine);
+        BlockPos firstRow = new BlockPos(0, 10, 0);
+        BlockPos secondRowStart = new BlockPos(7, 10, 1);
+        BlockPos secondRowEnd = new BlockPos(0, 10, 1);
+        BlockPos upperLayer = new BlockPos(0, 11, 0);
+        queue.requeue(upperLayer);
+        queue.requeue(secondRowEnd);
+        queue.requeue(firstRow);
+        queue.requeue(secondRowStart);
 
-        // This is the production failure mode: TimSort throws when the comparator contract is
-        // violated by a sufficiently large mixed batch.
-        scores.sort(SortedSchematicTargetQueue.TargetScore.COMPARATOR);
-        for (int index = 1; index < scores.size(); index++) {
-            assertTrue(SortedSchematicTargetQueue.TargetScore.COMPARATOR.compare(
-                    scores.get(index - 1), scores.get(index)) <= 0);
-        }
+        List<BlockPos> result = new ArrayList<>();
+        queue.forEach(result::add);
 
-        // One million deterministic triples cover mixed falling/non-falling and material groups.
-        for (int index = 0; index < 1_000_000; index++) {
-            var left = scores.get(random.nextInt(scores.size()));
-            var middle = scores.get(random.nextInt(scores.size()));
-            var right = scores.get(random.nextInt(scores.size()));
-            int leftMiddle = SortedSchematicTargetQueue.TargetScore.COMPARATOR.compare(left, middle);
-            int middleRight = SortedSchematicTargetQueue.TargetScore.COMPARATOR.compare(middle, right);
-            if (leftMiddle <= 0 && middleRight <= 0) {
-                assertTrue(SortedSchematicTargetQueue.TargetScore.COMPARATOR.compare(left, right) <= 0);
-            }
-        }
+        assertEquals(List.of(firstRow, secondRowStart, secondRowEnd, upperLayer), result);
     }
 
     @Test
-    void fallingTargetsAreBottomUpBeforeHeldItemPreference() {
-        var lowerSand = new SortedSchematicTargetQueue.TargetScore(
-                new BlockPos(0, 10, 0), true, true, 10, 100.0D, 1.0D);
-        var upperAnvil = new SortedSchematicTargetQueue.TargetScore(
-                new BlockPos(0, 11, 0), false, true, 11, 1.0D, 0.0D);
-        List<SortedSchematicTargetQueue.TargetScore> scores = new ArrayList<>(List.of(upperAnvil, lowerSand));
-
-        scores.sort(SortedSchematicTargetQueue.TargetScore.COMPARATOR);
-
-        assertEquals(lowerSand, scores.get(0));
-        assertEquals(upperAnvil, scores.get(1));
+    void insertionsCannotReplaceRemovedSnapshotTargetsWithinTheSamePass() {
+        ScanEngine engine = new ScanEngine(() -> null, () -> null, new ScanCache());
+        SortedSchematicTargetQueue queue = new SortedSchematicTargetQueue(engine);
+        BlockPos first = new BlockPos(0, 0, 0);
+        BlockPos second = new BlockPos(1, 0, 0);
+        BlockPos later = new BlockPos(2, 0, 0);
+        queue.requeue(first);
+        queue.requeue(second);
+        var iterator = queue.iterator();
+        assertEquals(first, iterator.next());
+        queue.remove(second);
+        queue.requeue(later);
+        assertFalse(iterator.hasNext());
+        assertEquals(later, queue.iterator().next());
     }
 }

@@ -276,9 +276,125 @@ class BedrockCandidateWakeupTest {
         }
     }
 
+    @Test void ordinaryAdmissionUsesStableRankEvenWhenTheBacklogWasInsertedInReverse() throws Exception {
+        try (var f = new Fixture()) {
+            Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.setIntegerValue(1);
+            Configs.Core.WORK_RANGE.setIntegerValue(6);
+            BlockPos later = TARGET.south();
+            f.world.blocks.clear();
+            f.world.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
+            f.world.blocks.put(later, Blocks.BEDROCK.defaultBlockState());
+            f.world.blocks.put(TARGET.below(), Blocks.STONE.defaultBlockState());
+            f.world.blocks.put(later.below(), Blocks.STONE.defaultBlockState());
+            f.handler.playerInteractionBox.set(new PrinterBox(TARGET, later));
+            f.scan.beginTick(f.world, null, 0);
+            var firstPlan = BedrockCandidatePlan.build(f.world, TARGET, f.scan::dirtyVersion);
+            var laterPlan = BedrockCandidatePlan.build(f.world, later, f.scan::dirtyVersion);
+            assertNotNull(firstPlan.layout());
+            assertNotNull(laterPlan.layout());
+            assertEquals(firstPlan.priority(), laterPlan.priority());
+            assertEquals(firstPlan.neighborTargetCount(), laterPlan.neighborTargetCount());
+            @SuppressWarnings("unchecked")
+            var backlog = (BedrockCandidateBacklog<BedrockCandidatePlan>) get(
+                    f.planner, BedrockCandidatePlanner.class, "candidateBacklog");
+            assertTrue(backlog.offer(later, laterPlan));
+            assertTrue(backlog.offer(TARGET, firstPlan));
+            f.beginFence();
+
+            f.step(0);
+
+            assertTrue(f.targets.containsOwner(TARGET), "The first construction rank wins equal ready plans");
+            assertFalse(f.targets.containsOwner(later));
+        }
+    }
+
+    @Test void pausedBedrockDiscoveryReportsFullAndEventuallyReachesTheTarget() throws Exception {
+        int previousWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new Fixture()) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            Configs.Core.WORK_RANGE.setIntegerValue(32);
+            f.move(0.5D, 64.0D, 0.5D);
+            // The selection is a Y=64 plane. This deliberately includes empty lower layers
+            // to distinguish discovery's PAUSED state from a genuinely completed empty source.
+            f.handler.playerInteractionBox.set(new PrinterBox(-16, 60, -16, 16, 64, 16));
+            f.step(0);
+            boolean pendingAfterFirstTick = f.planner.hasPendingScanSource();
+            ScanState firstState = f.handler.getScanState();
+            int initiallyAdmitted = f.engine.getHudSnapshot().totalTargets();
+            for (int tick = 1; tick <= 64 && f.engine.getHudSnapshot().totalTargets() == 0; tick++) f.step(tick);
+            assertEquals(1, f.engine.getHudSnapshot().totalTargets(),
+                    "The cursor must keep advancing toward the valid target without movement or block updates");
+            assertTrue(pendingAfterFirstTick, "This fixture must really exhaust a discovery slice");
+            assertEquals(0, initiallyAdmitted, "Even the clipped selected plane has a prefix longer than this slice");
+            assertEquals(ScanState.FULL, firstState,
+                    "A planner must preserve PAUSED instead of reporting sleeping while its discovery cursor advances");
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
+        }
+    }
+
+    @Test void aHugeInteractionWindowScansOnlyItsSmallSelectedIntersectionBeforeAdmission() throws Exception {
+        this.assertSelectedIntersectionAdmission(false);
+    }
+
+    @Test void workRange64WithExtendedPhysicalReachAndDistanceCheckStillAdmitsTheSelectedTarget() throws Exception {
+        this.assertSelectedIntersectionAdmission(true);
+    }
+
+    private void assertSelectedIntersectionAdmission(boolean extendedPhysicalReach) throws Exception {
+        int previousWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new Fixture()) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(8192);
+            Configs.Core.WORK_RANGE.setIntegerValue(64);
+            if (extendedPhysicalReach) {
+                f.extendInteractionReach();
+                Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(true);
+                assertEquals(80.0D, f.client.player.blockInteractionRange());
+            }
+            f.move(0.5D, 64.0D, 0.5D);
+            f.handler.playerInteractionBox.set(extendedPhysicalReach
+                    ? new PrinterBox(-64, 1, -64, 65, 130, 65)
+                    : new PrinterBox(-32, 32, -32, 32, 96, 32));
+            assertTrue(new LitematicaAdapter().isWithinSelectionRange(TARGET));
+            assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET.below()));
+            assertTrue(BedrockEnvironment.canInteract(TARGET));
+            assertNotNull(BedrockMachineLayout.find(f.world, TARGET));
+
+            f.step(0);
+
+            assertEquals(1, f.engine.getHudSnapshot().totalTargets(),
+                    "A small selected plane must not wait behind unrelated volume in the larger interaction window");
+            assertTrue(f.targets.containsOwner(TARGET), "Discovery must reach actual controller admission");
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
+        }
+    }
+
+
+
+
+
     private static final class BoundedHandler extends BedrockHandler {
         BoundedHandler(PrinterRuntime runtime) { super(runtime); }
         @Override protected int getScanGuardLimit() { return 1; }
+    }
+
+    private static final class ExtendedReachPlayer extends BedrockPlacementRegressionTest.TestPlayer {
+        @Override public double blockInteractionRange() { return 80.0D; }
+        @Override public Abilities getAbilities() { return new Abilities(); }
+        @Override public boolean onGround() { return true; }
+        @Override public boolean hasEffect(net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effect) { return false; }
+        @Override public boolean isEyeInFluid(net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> tag) { return false; }
+        @Override public double getAttributeValue(net.minecraft.core.Holder<net.minecraft.world.entity.ai.attributes.Attribute> attribute) {
+            if (attribute.equals(net.minecraft.world.entity.ai.attributes.Attributes.MINING_EFFICIENCY)) return 0.0D;
+            return attribute.equals(net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_BREAK_SPEED) ? 100.0D : 1.0D;
+        }
+        @Override public net.minecraft.world.entity.ai.attributes.AttributeInstance getAttribute(
+                net.minecraft.core.Holder<net.minecraft.world.entity.ai.attributes.Attribute> attribute) {
+            var value = new net.minecraft.world.entity.ai.attributes.AttributeInstance(attribute, ignored -> { });
+            value.setBaseValue(this.getAttributeValue(attribute));
+            return value;
+        }
     }
 
     private static final class ProbeLevel extends BedrockCandidateReachRegressionTest.ScanLevel {
@@ -291,7 +407,6 @@ class BedrockCandidateWakeupTest {
     }
 
     private static final class Fixture extends BedrockAdmissionPipelineTest.Fixture {
-        final int oldLazyThreshold = Configs.Core.LAZY_ENTER_TICKS.getIntegerValue();
         final ProbeLevel world;
         final ScanEngine scan;
         final BedrockHandler handler;
@@ -316,8 +431,11 @@ class BedrockCandidateWakeupTest {
             set(client.player, net.minecraft.client.player.AbstractClientPlayer.class, "playerInfo", info);
             Configs.Core.WORK_RANGE.setIntegerValue(3);
             Configs.Core.ITERATOR_SHAPE.setOptionListValue(RadiusShapeType.SPHERE);
-            Configs.Core.LAZY_ENTER_TICKS.setIntegerValue(1);
-            scan = new ScanEngine(runtime::epoch, () -> client.level, new ScanCache());
+            var cache = new ScanCache();
+            var budget = get(cache, ScanCache.class, "budget");
+            // Cooperative slicing is controlled by BoundedHandler's guard, not JVM warm-up time.
+            set(budget, budget.getClass(), "nanoClock", (java.util.function.LongSupplier) () -> 0L);
+            scan = new ScanEngine(runtime::epoch, () -> client.level, cache);
             set(runtime, PrinterRuntime.class, "timing", RuntimeTiming.disabled());
             set(runtime, PrinterRuntime.class, "scanEngine", scan);
             set(runtime, PrinterRuntime.class, "litematica", new LitematicaAdapter());
@@ -328,8 +446,30 @@ class BedrockCandidateWakeupTest {
             planner = (BedrockCandidatePlanner) get(handler, BedrockHandler.class, "candidatePlanner");
         }
 
+
+
+
+
         void move(double x, double y, double z) throws Exception {
             set(client.player, Entity.class, "position", new Vec3(x, y, z));
+        }
+
+        void extendInteractionReach() throws Exception {
+            var previous = client.player;
+            var extended = allocate(ExtendedReachPlayer.class);
+            extended.inventory = ((BedrockPlacementRegressionTest.TestPlayer) previous).inventory;
+            set(extended, Player.class, "inventory", extended.inventory);
+            set(extended, Player.class, "inventoryMenu", previous.inventoryMenu);
+            extended.containerMenu = previous.containerMenu;
+            set(extended, Entity.class, "level", world);
+            set(extended, Entity.class, "position", previous.position());
+            set(extended, Entity.class, "blockPosition", new BlockPos(0, 64, 0));
+            set(extended, Entity.class, "eyeHeight", 1.5F);
+            set(extended, net.minecraft.client.player.LocalPlayer.class, "connection", connection);
+            set(extended, net.minecraft.client.player.AbstractClientPlayer.class, "playerInfo",
+                    get(previous, net.minecraft.client.player.AbstractClientPlayer.class, "playerInfo"));
+            client.player = extended;
+            set(handler, FeatureModuleBase.class, "player", extended);
         }
 
         BedrockTarget target(BedrockCandidatePlan plan) throws Exception {
@@ -366,7 +506,6 @@ class BedrockCandidateWakeupTest {
         }
 
         @Override public void close() throws Exception {
-            Configs.Core.LAZY_ENTER_TICKS.setIntegerValue(oldLazyThreshold);
             super.close();
         }
     }

@@ -2,7 +2,9 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import fi.dy.masa.litematica.world.ChunkSchematicState;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
@@ -18,15 +20,24 @@ import static org.junit.jupiter.api.Assertions.*;
 class UnresolvedPrintLifecycleTest {
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
 
-    @Test void delayedServerCorrectionWakesExcludedTargetAfterManyEmptyPasses() throws Exception {
+    @Test void delayedServerCorrectionWakesSleepingWorkBetweenBoundedRepairProbes() throws Exception {
         try (var f = new ScanIntegrationFixture(1024)) {
             complete(f, 1024);
             f.tick(1);
             assertTrue(f.print("print").isEmpty());
             for (long tick = 2; tick <= 100; tick++) {
                 f.tick(tick);
+                int reads = worldReads(f);
                 assertTrue(f.print("print").isEmpty());
-                assertEquals(0, f.cache.metricsFor("print").scannedBlocks());
+                int scanned = f.cache.metricsFor("print").scannedBlocks();
+                if ((tick - 1) % 20 == 0) {
+                    assertTrue(scanned > 0 && scanned <= 4096, "A repair probe visits at most one section");
+                    assertTrue(f.cache.metricsFor("print").scannedSections() <= 1);
+                    assertTrue(worldReads(f) - reads <= 4096);
+                } else {
+                    assertEquals(0, scanned, "A non-probe idle tick must not restart scanning");
+                    assertEquals(reads, worldReads(f), "Idle cached facts require no world reads");
+                }
             }
             // Model a late authoritative rollback after the predicted placement looked complete.
             var rejected = new BlockPos(15, 3, 15);
@@ -34,6 +45,7 @@ class UnresolvedPrintLifecycleTest {
             f.cache.invalidate(rejected);
             assertEquals(List.of(rejected), f.print("print"), "Wake in the packet's tick, not the next pass");
             f.tick(101);
+            f.cache.resetOwner("print"); // Reoffer after eligibility changes; shared facts remain valid.
             assertEquals(List.of(rejected), f.print("print"));
         }
     }
@@ -48,11 +60,14 @@ class UnresolvedPrintLifecycleTest {
             f.tick(1);
             assertEquals(List.of(near, far), f.print("print"));
             f.tick(2);
+            f.cache.resetOwner("print"); // Wake another offer pass, rather than waiting for a repair probe.
             var old = f.scan("print", f.boxes, 0, ScanIntent.PRINT).iterator();
             assertEquals(near, old.next());
+            assertTrue(old.hasNext(), "The old iterator must already have prefetched its next target");
             f.level.world.clear();
             f.cache.invalidateChunk(0, 0, -64, 319);
             assertFalse(old.hasNext());
+            assertThrows(NoSuchElementException.class, old::next);
             assertEquals(ordered(f, 1024), f.print("print"));
         }
     }
@@ -67,10 +82,13 @@ class UnresolvedPrintLifecycleTest {
             f.tick(1);
             assertEquals(List.of(near, far), f.print("print"));
             f.tick(2);
+            f.cache.resetOwner("print"); // Explicit eligibility/reoffer wake-up preserves world facts.
             var old = f.scan("print", f.boxes, 0, ScanIntent.PRINT).iterator();
             assertEquals(near, old.next());
+            assertTrue(old.hasNext());
             f.cache.resetOwner("print");
             assertFalse(old.hasNext());
+            assertThrows(NoSuchElementException.class, old::next);
             // Block packets continue invalidating observations while the feature is disabled.
             var changed = new BlockPos(0, 0, 0);
             f.level.world.put(changed, Blocks.AIR.defaultBlockState());
@@ -78,12 +96,14 @@ class UnresolvedPrintLifecycleTest {
             f.tick(50);
             assertEquals(ordered(f, 1024), f.print("print"));
             f.tick(51);
+            f.cache.resetOwner("print");
             var oldWorld = f.scan("print", f.boxes, 0, ScanIntent.PRINT).iterator();
-            assertEquals(near, oldWorld.next());
+            assertTrue(oldWorld.hasNext(), "Prefetch before changing the world and rolling its clock back");
             f.level = ScanIntegrationFixture.newLevel();
             f.epoch = new RuntimeEpoch(20);
             f.tick(1);
             assertFalse(oldWorld.hasNext());
+            assertThrows(NoSuchElementException.class, oldWorld::next);
             assertEquals(ordered(f, 1024), f.print("print"));
         }
     }
@@ -150,7 +170,8 @@ class UnresolvedPrintLifecycleTest {
                     f.cache.invalidate(p);
                 }
                 if (step % 9 == 0) f.cache.invalidateChunk(0, 0, -64, 319);
-                else f.cache.resetOwner("print");
+                // Each comparison asks for a full reoffer, including unresolved targets offered earlier.
+                f.cache.resetOwner("print");
                 f.tick(step + 1);
                 var source = f.scan("print", f.boxes, 0, ScanIntent.PRINT);
                 assertEquals(ordered(f, 1024), ScanIntegrationFixture.drain(source), "step=" + step);
@@ -160,13 +181,29 @@ class UnresolvedPrintLifecycleTest {
     }
 
     private static List<BlockPos> ordered(ScanIntegrationFixture f, int count) {
-        var candidates = ScanIntegrationFixture.positions(count).stream().filter(p ->
-                !f.schematic.getBlockState(p).equals(f.level.world.getOrDefault(p, Blocks.AIR.defaultBlockState()))).toList();
-        return IndexedPositionQueryParityTest.reference(candidates, f.boxes, ScanRegion.from(f.boxes.get(0), null));
+        // Enumerate complete Y layers and world Z rows directly, independently of the
+        // production cursor and comparator. Odd Z rows reverse X across the whole selection.
+        var result = new ArrayList<BlockPos>();
+        for (int y = 0; y <= 3; y++) {
+            for (int z = 0; z < 16; z++) for (int step = 0; step < 16; step++) {
+                int x = (z & 1) == 0 ? step : 15 - step;
+                var pos = new BlockPos(x, y, z);
+                int sourceIndex = y * 256 + z * 16 + x;
+                if (sourceIndex < count
+                        && !f.schematic.getBlockState(pos).equals(f.level.world.getOrDefault(pos, Blocks.AIR.defaultBlockState()))) {
+                    result.add(pos);
+                }
+            }
+        }
+        return result;
     }
 
     private static void complete(ScanIntegrationFixture f, int count) {
         for (BlockPos p : ScanIntegrationFixture.positions(count)) f.level.world.put(p, f.schematic.getBlockState(p));
+    }
+
+    private static int worldReads(ScanIntegrationFixture f) {
+        return f.level.reads.values().stream().mapToInt(Integer::intValue).sum();
     }
 }
 //#endif

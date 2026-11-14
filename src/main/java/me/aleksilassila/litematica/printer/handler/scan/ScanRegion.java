@@ -4,8 +4,8 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
-import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 
 /** Immutable geometry and distance limits for one player-centered scan request. */
 record ScanRegion(
@@ -21,19 +21,25 @@ record ScanRegion(
         int maxDistanceBand
 ) {
     static ScanRegion from(PrinterBox box, LocalPlayer player) {
-        int centerX = player == null ? (box.minX + box.maxX) >> 1 : (int) Math.floor(player.getX());
-        int centerY = player == null ? (box.minY + box.maxY) >> 1 : (int) Math.floor(player.getEyeY());
-        int centerZ = player == null ? (box.minZ + box.maxZ) >> 1 : (int) Math.floor(player.getZ());
+        Object shape = Configs.Core.ITERATOR_SHAPE.getOptionListValue();
+        BlockPos blockCenter = player != null && (shape == RadiusShapeType.CUBE || shape == RadiusShapeType.OCTAHEDRON)
+                ? player.blockPosition() : null;
+        int centerX = player == null ? (box.minX + box.maxX) >> 1
+                : blockCenter == null ? (int) Math.floor(player.getX()) : blockCenter.getX();
+        int centerY = player == null ? (box.minY + box.maxY) >> 1
+                : blockCenter == null ? (int) Math.floor(player.getEyeY()) : blockCenter.getY();
+        int centerZ = player == null ? (box.minZ + box.maxZ) >> 1
+                : blockCenter == null ? (int) Math.floor(player.getZ()) : blockCenter.getZ();
         int maxDistanceBand = farthestDistanceBand(box, centerX, centerY, centerZ);
         if (player != null) {
-            Object shape = Configs.Core.ITERATOR_SHAPE.getOptionListValue();
             if (shape == RadiusShapeType.SPHERE || shape == RadiusShapeType.OCTAHEDRON) {
                 maxDistanceBand = Math.min(maxDistanceBand, ConfigUtils.getWorkRange() + 2);
             }
             if (Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()) {
-                int interactionBand = (int) Math.ceil(
-                        PlayerUtils.getPlayerBlockInteractionRange(5.0D) + 3.0D
-                );
+                double dx = player.getX() - centerX, dy = player.getEyeY() - centerY, dz = player.getZ() - centerZ;
+                // Keep this envelope safe for direct sources as well as tracker-clipped boxes.
+                int interactionBand = (int) Math.ceil(player.blockInteractionRange() + 3.0D
+                        + Math.sqrt(dx * dx + dy * dy + dz * dz));
                 maxDistanceBand = Math.min(maxDistanceBand, interactionBand);
             }
         }

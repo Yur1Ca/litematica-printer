@@ -30,6 +30,8 @@ final class StripLogPrintTask implements PrintTask {
     private long stageSinceTick;
     private long retryAtTick;
     private long actionGeneration;
+    private boolean started;
+    private long queuedActionToken = -1L;
 
     private StripLogPrintTask(
             BlockPos pos,
@@ -72,6 +74,12 @@ final class StripLogPrintTask implements PrintTask {
     }
 
     @Override public BlockPos pos() { return this.pos; }
+    @Override public boolean hasStarted() { return this.started || this.queuedActionToken >= 0L; }
+
+    @Override public boolean hasInFlightOwnership() {
+        return this.queuedActionToken >= 0L || this.stage == StripLogTaskStage.WAIT_LOG_CONFIRM
+                || this.stage == StripLogTaskStage.WAIT_STRIP_CONFIRM;
+    }
 
     @Override
     public boolean shouldKeep(ClientLevel level, WorldSchematic schematic) {
@@ -135,16 +143,25 @@ final class StripLogPrintTask implements PrintTask {
                 return context.requiredState;
             }
 
-            @Override public void onQueued(SchematicBlockContext context, Action action) { submitted(); }
-            @Override public void onSuccess(SchematicBlockContext context, Action action) { submitted(); }
+            @Override public void onQueued(SchematicBlockContext context, Action action) { submitted(false); }
+            @Override public void onSuccess(SchematicBlockContext context, Action action) { submitted(true); }
             @Override public void onFailure(SchematicBlockContext context, Action action) { failed(); }
             @Override public void onCancelled(SchematicBlockContext context, Action action) { failed(); }
 
-            private void submitted() {
-                if (token == actionGeneration && (stage == expected || stage == success)) transition(success);
+            private void submitted(boolean sent) {
+                if (sent) {
+                    started = true;
+                    if (queuedActionToken == token) queuedActionToken = -1L;
+                } else {
+                    queuedActionToken = token;
+                }
+                if (token == actionGeneration && (stage == expected || stage == success)) {
+                    transition(success);
+                }
             }
 
             private void failed() {
+                if (queuedActionToken == token) queuedActionToken = -1L;
                 if (token != actionGeneration) return;
                 retryAtTick = tickClock.getAsLong() + 1L;
                 transition(StripLogTaskStage.RETRY_WAIT);

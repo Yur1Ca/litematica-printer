@@ -35,6 +35,12 @@ final class SnapshotWorldObservation implements WorldObservationPort {
     }
 
     @Override
+    public boolean hasCandidatesInSection(ScanIntent intent, int sectionX, int sectionY,
+                                          int sectionZ, boolean breakExtraBlocks) {
+        return this.source.hasCandidatesInSection(intent, sectionX, sectionY, sectionZ, breakExtraBlocks);
+    }
+
+    @Override
     public @Nullable BlockState schematicState(BlockPos pos) {
         return this.source.schematicState(pos);
     }

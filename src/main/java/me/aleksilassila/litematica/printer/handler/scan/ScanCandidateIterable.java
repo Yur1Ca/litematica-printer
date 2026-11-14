@@ -19,6 +19,11 @@ import java.util.NoSuchElementException;
 public interface ScanCandidateIterable extends Iterable<BlockPos> {
     ScanAvailability availability();
 
+    /** False after the owner, source, chunk or runtime generation has been closed. */
+    default boolean isValid() {
+        return true;
+    }
+
     /** True when the iterable is an already-built action queue, not a live world scan. */
     default boolean isBuffered() {
         return false;
@@ -33,7 +38,12 @@ public interface ScanCandidateIterable extends Iterable<BlockPos> {
             private boolean preparedTail;
             private boolean exhausted;
 
+            @Override public boolean isValid() {
+                return !(tail instanceof ScanCandidateIterable source) || source.isValid();
+            }
+
             @Override public ScanAvailability availability() {
+                if (!this.isValid()) return ScanAvailability.COMPLETE;
                 if (this.remaining > 0 || this.preparedTail) return ScanAvailability.READY;
                 return tail instanceof ScanCandidateIterable source ? source.availability()
                         : this.exhausted ? ScanAvailability.COMPLETE : ScanAvailability.READY;
@@ -54,6 +64,12 @@ public interface ScanCandidateIterable extends Iterable<BlockPos> {
                     private BlockPos next;
 
                     @Override public boolean hasNext() {
+                        if (!isValid()) {
+                            this.next = null;
+                            remaining = 0;
+                            exhausted = true;
+                            return false;
+                        }
                         if (this.ready.hasNext() || this.next != null) return true;
                         if (this.source == null) this.source = tail.iterator();
                         while (this.source.hasNext()) {
@@ -69,6 +85,7 @@ public interface ScanCandidateIterable extends Iterable<BlockPos> {
                     }
 
                     @Override public BlockPos next() {
+                        if (!isValid()) throw new NoSuchElementException("candidate source was invalidated");
                         if (this.ready.hasNext()) {
                             BlockPos pos = this.ready.next();
                             this.emitted.add(pos.asLong());

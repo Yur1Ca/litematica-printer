@@ -110,12 +110,17 @@ public final class HudStatsManager implements RuntimeComponent {
         }
         long now = this.tickClock.getAsLong();
         this.pendingMineTargets.put(pos.immutable(), now + DEFAULT_CONFIRM_TIMEOUT_TICKS);
+        me.aleksilassila.litematica.printer.render.OperationHighlights.emit(pos,
+                me.aleksilassila.litematica.printer.enums.HighlightType.BREAK);
     }
 
     public void trackExpectedBlockChange(Mode mode, BlockPos pos, BlockState originalState) {
         if (pos == null || originalState == null) {
             return;
         }
+        me.aleksilassila.litematica.printer.render.OperationHighlights.emit(pos,
+                mode == Mode.FLUID ? me.aleksilassila.litematica.printer.enums.HighlightType.ADJUST
+                        : me.aleksilassila.litematica.printer.enums.HighlightType.PLACE);
         long now = this.tickClock.getAsLong();
         PendingStateChange pending = new PendingStateChange(
                 originalState,

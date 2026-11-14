@@ -14,6 +14,46 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PrintTargetSchedulerTest {
+    @Test
+    void previewFindsColdRefillWithoutOpeningOrConsumingAnotherRound() {
+        var engine = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                () -> null, () -> null, new me.aleksilassila.litematica.printer.handler.scan.ScanCache());
+        var fresh = new SortedSchematicTargetQueue(engine);
+        var targets = new PrintTargetScheduler(fresh, () -> {});
+        targets.readyOrdinaryTargets(10L);
+        var pos = new BlockPos(3, 4, 5);
+        fresh.requeue(pos);
+        for (int i = 0; i < 100; i++) assertEquals(pos, targets.peekReadyTarget(10L));
+        assertEquals(1, fresh.pendingTargetCount());
+        assertEquals(pos, targets.readyOrdinaryTargets(11L).iterator().next());
+        assertFalse(targets.readyOrdinaryTargets(11L).iterator().hasNext());
+        var later = pos.above();
+        fresh.requeue(later);
+        assertEquals(later, targets.peekReadyTarget(11L));
+        assertEquals(later, targets.readyOrdinaryTargets(12L).iterator().next());
+    }
+
+    @Test
+    void previewMergesNewDueRetriesOnlyAfterTheCurrentRoundIsExhausted() {
+        var engine = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
+                () -> null, () -> null, new me.aleksilassila.litematica.printer.handler.scan.ScanCache());
+        var fresh = new SortedSchematicTargetQueue(engine);
+        var targets = new PrintTargetScheduler(fresh, () -> {});
+        BlockPos first = BlockPos.ZERO, second = first.above(), future = first.above(2);
+        fresh.requeue(first);
+        fresh.requeue(second);
+        var round = targets.readyOrdinaryTargets(10L).iterator();
+        assertEquals(first, round.next());
+        targets.deferUntil(first, 10L);
+        targets.deferUntil(future, 30L);
+        assertEquals(second, targets.peekReadyTarget(10L));
+        assertEquals(second, round.next());
+        assertEquals(first, targets.peekReadyTarget(10L));
+        targets.removeRetry(first);
+        assertEquals(null, targets.peekReadyTarget(29L));
+        assertEquals(future, targets.peekReadyTarget(30L));
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void ordinaryRetrySurvivesACompletedScanUntilSuccess(boolean sorted) {

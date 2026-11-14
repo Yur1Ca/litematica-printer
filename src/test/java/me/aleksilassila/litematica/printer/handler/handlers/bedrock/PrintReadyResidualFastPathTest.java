@@ -70,6 +70,43 @@ class PrintReadyResidualFastPathTest {
 
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
+    @Test void nextPreviewReadsOnlyQueueMetadataAndClearsWhenMovingOrSwitchingModes() throws Exception {
+        boolean oldHighlights = Configs.Highlight.ENABLED.getBooleanValue();
+        boolean oldWork = Configs.Core.WORK_SWITCH.getBooleanValue();
+        var oldMode = Configs.Core.WORK_MODE_TYPE.getOptionListValue();
+        var oldWorkingMode = Configs.Core.WORK_MODE.getOptionListValue();
+        try (var f = new FastPathFixture(4096, new PrinterBox(0, 0, 0, 15, 15, 15))) {
+            Configs.Highlight.ENABLED.setBooleanValue(true);
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            Configs.Core.WORK_MODE.setOptionListValue(me.aleksilassila.litematica.printer.enums.WorkingModeType.SINGLE);
+            Configs.Core.WORK_MODE_TYPE.setOptionListValue(me.aleksilassila.litematica.printer.enums.PrintModeType.PRINTER);
+            var trace = new me.aleksilassila.litematica.printer.render.OperationHighlights();
+            set(f.runtime, PrinterRuntime.class, "operationHighlights", trace);
+            f.handler.playerInteractionBox.set(f.scope);
+            f.dispatchFirstResidual();
+            assertEquals(me.aleksilassila.litematica.printer.enums.HighlightType.PLACE, trace.snapshot(5000).getFirst().type());
+            var preview = f.handler.nextIterationPreview();
+            assertNotNull(preview);
+            assertTrue(preview.knownTarget());
+            assertEquals(RESIDUALS.get(1), preview.pos(), "Preview must match the next ready round, not a cold refill duplicate");
+            int reads = f.reads.values().stream().mapToInt(Integer::intValue).sum();
+            int pending = f.targets.pendingTargetCount();
+            for (int repeat = 0; repeat < 1000; repeat++) assertEquals(preview, f.handler.nextIterationPreview());
+            assertEquals(reads, f.reads.values().stream().mapToInt(Integer::intValue).sum());
+            assertEquals(pending, f.targets.pendingTargetCount());
+            set(f.client.player, Entity.class, "position", new Vec3(1.5, 0, 0.5));
+            assertNull(f.handler.nextIterationPreview());
+            set(f.client.player, Entity.class, "position", new Vec3(0.5, 0, 0.5));
+            Configs.Core.WORK_MODE_TYPE.setOptionListValue(me.aleksilassila.litematica.printer.enums.PrintModeType.MINE);
+            assertNull(f.handler.nextIterationPreview());
+        } finally {
+            Configs.Highlight.ENABLED.setBooleanValue(oldHighlights);
+            Configs.Core.WORK_SWITCH.setBooleanValue(oldWork);
+            Configs.Core.WORK_MODE_TYPE.setOptionListValue(oldMode);
+            Configs.Core.WORK_MODE.setOptionListValue(oldWorkingMode);
+        }
+    }
+
     @Test void threeReadyResidualsDispatchBeforeColdRangeReadsRegardlessOfScopeSize() throws Exception {
         int smallReads;
         try (var f = new FastPathFixture(7, new PrinterBox(0, 0, 0, 6, 0, 0))) {

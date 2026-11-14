@@ -12,6 +12,9 @@ interface PositionCursor extends AutoCloseable {
 
     long peekDistanceSqr();
 
+    /** Read-only metadata; never expands a column or consumes a position. */
+    default BlockPos peekPosition() { return null; }
+
     boolean isComplete();
 
     @Override

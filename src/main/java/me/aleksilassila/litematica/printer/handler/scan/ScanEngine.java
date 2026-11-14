@@ -95,6 +95,9 @@ public final class ScanEngine implements RuntimeComponent {
         this.cache.reoffer(ownerKey, pos);
     }
 
+    /** Snapshot of the next scan coordinate; does not advance or classify a block. */
+    public BlockPos peekPosition(String ownerKey) { return this.cache.peekPosition(ownerKey); }
+
     /** The same fixed construction order used by this owner's scan source. */
     public Comparator<BlockPos> targetComparator(String ownerKey) {
         return this.cache.targetComparator(ownerKey);

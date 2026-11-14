@@ -175,6 +175,8 @@ public final class ScanCache {
         this.sessions.reoffer(ownerKey, pos);
     }
 
+    public BlockPos peekPosition(String ownerKey) { return this.sessions.peekPosition(ownerKey); }
+
     public Comparator<BlockPos> targetComparator(String ownerKey) {
         var order = this.sessions.orderFor(ownerKey);
         return (first, second) -> order.compare(first.asLong(), second.asLong());

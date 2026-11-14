@@ -225,6 +225,18 @@ public final class BedrockCandidatePlanner {
         return this.candidateBacklog.size();
     }
 
+    /** Candidate metadata only: the next real planner pass refreshes geometry and admission. */
+    public BlockPos peekCandidate() {
+        BlockPos next = null;
+        var order = this.scanEngine.targetComparator("bedrock");
+        for (BedrockCandidatePlan candidate : this.candidateBacklog.snapshot()) {
+            BlockPos pos = candidate.pos();
+            if (this.retryUntil.getOrDefault(pos, Long.MIN_VALUE) <= this.plannerTick + 1L
+                    && (next == null || order.compare(pos, next) < 0)) next = pos;
+        }
+        return next;
+    }
+
     public void reset() {
         this.deliveryGeneration++;
         this.candidateBacklog.clear();

@@ -169,6 +169,25 @@ public class MineHandler extends FeatureModuleBase {
         );
     }
 
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        if (this.activeMinePos != null) return this.activeMinePos;
+        if (this.hasTrenchFillWork()) {
+            BlockPos trench = this.trenchFill.peekPriorityTarget(this.level.getGameTime(), this::canReachTrenchTarget);
+            if (trench != null) return trench;
+        }
+        BlockPos next = null;
+        var order = this.scanEngine.targetComparator(NAME);
+        for (var target : this.candidates.snapshot()) {
+            if (next == null || order.compare(target.pos(), next) < 0) next = target.pos();
+        }
+        return next;
+    }
+
+    @Override protected boolean isPreviewPositionAllowed(BlockPos pos) {
+        return super.isPreviewPositionAllowed(pos) || this.hasTrenchFillWork()
+                && this.trenchFill.retains(pos) && this.isWithinTrenchScope(pos) && this.canReachTrenchTarget(pos);
+    }
+
     @Override
     protected void preprocess() {
         int eligibilityConfigHash = this.getEligibilityConfigHash();

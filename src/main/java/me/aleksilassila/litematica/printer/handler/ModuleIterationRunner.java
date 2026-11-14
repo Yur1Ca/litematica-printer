@@ -38,6 +38,7 @@ final class ModuleIterationRunner {
 
             int completedPassesBefore = module.scanEngine.metricsFor(module.getId()).completedPasses();
             Iterable<BlockPos> positions = module.getIterationPositions(interactionBox);
+            module.rememberIterationPreviewScope(interactionBox);
             Iterator<BlockPos> iterator = positions.iterator();
             while (true) {
                 if (++budgetChecks % BUDGET_CHECK_INTERVAL == 0

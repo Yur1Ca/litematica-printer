@@ -144,6 +144,10 @@ public class BedrockHandler extends FeatureModuleBase {
         return BedrockController.canAccept(pos);
     }
 
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        return this.candidatePlanner.peekCandidate();
+    }
+
     @Override
     protected boolean canReachIterationPosition(BlockPos pos) {
         return BedrockEnvironment.canInteract(pos);
@@ -162,6 +166,8 @@ public class BedrockHandler extends FeatureModuleBase {
             return;
         }
         boolean submitted = BedrockController.submit(blockPos);
+        if (submitted) me.aleksilassila.litematica.printer.render.OperationHighlights.emit(blockPos,
+                me.aleksilassila.litematica.printer.enums.HighlightType.BREAK);
         this.candidatePlanner.recordSubmissionResult(blockPos, submitted);
         setIterationConsumedEffectiveExecution(submitted);
         if (submitted) {

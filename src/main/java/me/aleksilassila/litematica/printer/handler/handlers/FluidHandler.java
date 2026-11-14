@@ -207,6 +207,12 @@ public class FluidHandler extends FeatureModuleBase {
         return this.isTargetFluid(blockPos);
     }
 
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
+    }
+
+    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
+
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (this.inFlightTargets.contains(blockPos)) {

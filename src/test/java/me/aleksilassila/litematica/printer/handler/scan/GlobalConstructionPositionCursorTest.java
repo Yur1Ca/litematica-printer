@@ -15,6 +15,28 @@ import static me.aleksilassila.litematica.printer.handler.scan.RawPrinterBoxFixt
 import static org.junit.jupiter.api.Assertions.*;
 
 class GlobalConstructionPositionCursorTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void repeatedPreviewsNeverExpandOrConsumeTheXzyCursor(boolean descending) {
+        var boxes = List.of(rawBox(-17, -1, -1, 18, 1, 2), rawBox(-5, 0, 0, 9, 1, 1));
+        var previewed = new ConstructionPositionCursor(boxes, region(0, 0, 0, 100),
+                new ConstructionOrder(0, 0, descending));
+        var reference = new ConstructionPositionCursor(boxes, region(0, 0, 0, 100),
+                new ConstructionOrder(0, 0, descending));
+        var expected = drain(reference);
+        var actual = new ArrayList<BlockPos>();
+        var target = new BlockPos.MutableBlockPos();
+        while (!previewed.isComplete()) {
+            BlockPos next = previewed.peekPosition();
+            for (int repeat = 0; repeat < 20; repeat++) assertEquals(next, previewed.peekPosition());
+            assertEquals(PositionCursor.PollResult.AVAILABLE, previewed.poll(target));
+            assertEquals(next, target);
+            actual.add(target.immutable());
+        }
+        assertNull(previewed.peekPosition());
+        assertEquals(expected, actual);
+    }
+
     @Test void finishesTheWholeRowAndLayerAcrossEightAndSixteenBlockBoundaries() {
         var cursor = new ConstructionPositionCursor(List.of(rawBox(0, 0, 0, 17, 1, 1)),
                 region(0, 0, 0, 100), new ConstructionOrder(0, 0, false));

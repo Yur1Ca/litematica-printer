@@ -58,6 +58,8 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     private final ConfigOptionList selectionType;
     private boolean iterationConsumedEffectiveExecution = true;
     private long additionalIterationActionNanos;
+    private net.minecraft.world.phys.Vec3 previewPlayerPosition;
+    private List<PrinterBox> previewSources = List.of();
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -180,8 +182,57 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     void resetScanRuntime() {
+        this.previewPlayerPosition = null;
+        this.previewSources = List.of();
         this.scanEngine.resetOwner(this.id);
         this.scanCoordinator.reset();
+    }
+
+    void rememberIterationPreviewScope(PrinterBox box) {
+        if (!Configs.Highlight.ENABLED.getBooleanValue()) {
+            this.previewPlayerPosition = null;
+            this.previewSources = List.of();
+            return;
+        }
+        this.previewPlayerPosition = this.player == null ? null : this.player.position();
+        this.previewSources = List.copyOf(this.getScanSourceBoxes(box));
+    }
+
+    public final me.aleksilassila.litematica.printer.render.OperationHighlights.Preview nextIterationPreview() {
+        if (this.player == null || this.level == null || this.mc == null || this.mc.level != this.level
+                || this.previewPlayerPosition == null || !this.previewPlayerPosition.equals(this.player.position())
+                || !this.isConfigAllowExecute() || this.playerInteractionBox == null
+                || this.playerInteractionBox.get() == null
+                || !this.previewSources.equals(this.getScanSourceBoxes(this.playerInteractionBox.get()))) return null;
+        BlockPos known = this.peekQueuedIterationTarget();
+        BlockPos next = known == null ? this.scanEngine.peekPosition(this.getPreviewScanOwner()) : known;
+        if (known != null && this.mergeQueuedPreviewWithScan()) {
+            BlockPos scanned = this.scanEngine.peekPosition(this.getPreviewScanOwner());
+            if (scanned != null && this.scanEngine.targetComparator(this.getPreviewScanOwner()).compare(scanned, known) < 0) {
+                next = scanned;
+                known = null;
+            }
+        }
+        if (next == null || !this.isPreviewPositionAllowed(next)) return null;
+        return new me.aleksilassila.litematica.printer.render.OperationHighlights.Preview(next.immutable(), known != null);
+    }
+
+    protected String getPreviewScanOwner() { return this.id; }
+    protected BlockPos peekQueuedIterationTarget() { return null; }
+    protected boolean mergeQueuedPreviewWithScan() { return false; }
+    protected boolean isPreviewPositionAllowed(BlockPos pos) {
+        return this.canReachIterationPosition(pos) && this.isInSelectionRange(pos);
+    }
+
+    /** Reads bounded retained metadata only; eligibility is checked by the real runner. */
+    protected final BlockPos peekRetainedIterationTarget(Iterable<BlockPos> retained, Predicate<BlockPos> eligible) {
+        BlockPos next = null;
+        var order = this.scanEngine.targetComparator(this.getPreviewScanOwner());
+        for (BlockPos pos : retained) {
+            if (eligible.test(pos) && this.isPreviewPositionAllowed(pos)
+                    && (next == null || order.compare(pos, next) < 0)) next = pos;
+        }
+        return next;
     }
 
     public final IterationOutcome runIteration(PrinterBox playerInteractionBox) {

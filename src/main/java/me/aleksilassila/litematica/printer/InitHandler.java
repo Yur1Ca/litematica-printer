@@ -18,6 +18,8 @@ public class InitHandler implements IInitializationHandler {
         Configs.init();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
+        fi.dy.masa.malilib.event.RenderEventHandler.getInstance().registerWorldLastRenderer(
+                new me.aleksilassila.litematica.printer.render.BlockHighlightRenderer());
     }
 
     private void initConfigCallback() {

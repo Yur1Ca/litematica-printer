@@ -216,6 +216,17 @@ public class PrintHandler extends FeatureModuleBase {
         return ScanCandidateIterable.prepend(priority, normalPositions);
     }
 
+    @Override protected String getPreviewScanOwner() {
+        return Configs.Print.PRINT_SORT_TARGETS.getBooleanValue() ? "print_sorted" : NAME;
+    }
+
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        BlockPos active = this.activeWaterMiningPos();
+        if (active != null) return active;
+        List<BlockPos> ready = this.printTasks.readyTargetPositions();
+        return ready.isEmpty() ? this.targets.peekReadyTarget(this.level.getGameTime()) : ready.getFirst();
+    }
+
     @Override
     protected void stopIteration(boolean interrupt) {
         PrinterBox box = this.iterationBox;
@@ -360,6 +371,10 @@ public class PrintHandler extends FeatureModuleBase {
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         PrintTaskAction taskAction = this.printTaskAction;
         PrintPlacementResult result = this.placementExecutor.execute(this.ctx, this.action, taskAction);
+        if (result.taskEvent() == PrintPlacementResult.TaskEvent.FAILURE) {
+            me.aleksilassila.litematica.printer.render.OperationHighlights.emit(blockPos,
+                    me.aleksilassila.litematica.printer.enums.HighlightType.FAILED);
+        }
         this.targets.onResult(blockPos, result, taskAction != null);
         if (taskAction == null) {
             if (result.taskEvent() == PrintPlacementResult.TaskEvent.MATERIAL_UNAVAILABLE) {

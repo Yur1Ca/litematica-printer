@@ -248,6 +248,12 @@ public class FillHandler extends FeatureModuleBase {
                 pos -> this.retryTargets.add(pos.immutable()));
     }
 
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
+    }
+
+    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
+
     private Iterable<BlockPos> createSourceIterator(
             List<PrinterBox> scanSourceBoxes,
             Predicate<BlockPos> reachPredicate,

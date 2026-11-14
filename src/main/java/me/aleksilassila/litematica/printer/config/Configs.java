@@ -54,6 +54,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         optionSet.addAll(Cover.OPTIONS);          // 铺盖
         optionSet.addAll(Fluid.OPTIONS);          // 排流体
         optionSet.addAll(Bedrock.OPTIONS);        // 破基岩
+        optionSet.addAll(Highlight.OPTIONS);
         OPTIONS = ImmutableList.copyOf(optionSet);
 
         List<IHotkey> hotkeys = new ArrayList<>();
@@ -63,6 +64,22 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             }
         }
         HOTKEYS = ImmutableList.copyOf(hotkeys);
+    }
+
+    /** Operation colors/styles adapted from BiliXWhite/litematica-printer@6cef6d31. */
+    public static class Highlight {
+        public static final ConfigBoolean ENABLED = bool("highlightEnabled").defaultValue(false).build();
+        public static final ConfigBoolean NEXT_ENABLED = bool("highlightNextEnabled").defaultValue(true).build();
+        public static final ConfigColor PLACE = color("highlightColorPlace").defaultValue("#80FFFFFF").build();
+        public static final ConfigColor ADJUST = color("highlightColorAdjust").defaultValue("#8000FF00").build();
+        public static final ConfigColor BREAK = color("highlightColorBreak").defaultValue("#80FF0000").build();
+        public static final ConfigColor FAILED = color("highlightColorFailed").defaultValue("#80808080").build();
+        public static final ConfigColor NEXT = color("highlightColorNext").defaultValue("#FF00FFFF").build();
+        public static final ConfigOptionList STYLE = optionList("highlightStyle").defaultValue(HighlightStyleType.OUTLINE).build();
+        public static final ConfigInteger FADE_DURATION = integer("highlightFadeDuration").defaultValue(5).range(1, 100).useSlider(true).build();
+        public static final ConfigBoolean THROUGH_WALLS = bool("highlightThroughWalls").defaultValue(false).build();
+        public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(ENABLED, NEXT_ENABLED, PLACE, ADJUST,
+                BREAK, FAILED, NEXT, STYLE, FADE_DURATION, THROUGH_WALLS);
     }
 
     public static class Core {

@@ -84,6 +84,30 @@ public final class PrintTargetScheduler {
         this.sortedTargets.clear();
     }
 
+    public BlockPos peekReadyTarget(long now) {
+        boolean warmValid = this.warmRound == null || this.warmRound.isValid();
+        BlockPos next = warmValid ? this.nextWarmTarget : null;
+        if (warmValid && next == null && this.warmRoundIterator instanceof me.aleksilassila.litematica.printer.handler.scan.BufferedPositionIterator buffered) {
+            next = buffered.peek(pos -> !this.readyRoundKeys.contains(pos.asLong()) && !this.retryTargets.contains(pos));
+        }
+        var order = this.sortedTargets.targetComparator();
+        for (int i = this.readyRoundIndex; i < this.readyRound.size(); i++) {
+            BlockPos pos = this.readyRound.get(i);
+            if (this.retryTargets.contains(pos) && !this.materialWaiting.contains(pos)
+                    && this.retryAfter.getOrDefault(pos, Long.MIN_VALUE) <= now
+                    && (next == null || order.compare(pos, next) < 0)) next = pos;
+        }
+        if (next != null) return next;
+        // The current snapshot may predate stopIteration's refill. Only an exhausted
+        // round may look into that refill; it must not jump ahead of its remaining tail.
+        next = this.sortedTargets.peekPosition(pos -> !this.retryTargets.contains(pos));
+        for (BlockPos pos : this.retryTargets) {
+            if (!this.materialWaiting.contains(pos) && this.retryAfter.getOrDefault(pos, Long.MIN_VALUE) <= now
+                    && (next == null || order.compare(pos, next) < 0)) next = pos;
+        }
+        return next;
+    }
+
     public boolean hasPendingWork() {
         return this.nextWarmTarget != null || this.sortedTargets.hasPendingWork();
     }

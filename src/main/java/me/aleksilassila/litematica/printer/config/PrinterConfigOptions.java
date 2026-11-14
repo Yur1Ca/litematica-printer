@@ -30,6 +30,13 @@ public final class PrinterConfigOptions {
         @Override public String getComment() { return comment(this, super.getComment()); }
     }
 
+    public static final class ColorOption extends fi.dy.masa.malilib.config.options.ConfigColor {
+        public ColorOption(String name, String value, String comment) { super(name, value, comment); }
+        @Override public String getPrettyName() { return name(this, super.getPrettyName()); }
+        @Override public String getConfigGuiDisplayName() { return getPrettyName(); }
+        @Override public String getComment() { return comment(this, super.getComment()); }
+    }
+
     public static final class IntegerOption extends ConfigInteger {
         public IntegerOption(String name, int value, int min, int max, boolean slider, String comment) {
             super(name, value, min, max, slider, comment);

@@ -144,6 +144,18 @@ final class ScanSessionStore implements AutoCloseable {
         }
     }
 
+    BlockPos peekPosition(String ownerKey) {
+        String prefix = ownerKey + ":";
+        ConstructionOrder order = this.orderFor(ownerKey);
+        BlockPos next = null;
+        for (Map.Entry<String, SectionScanSession> entry : this.sessions.entrySet()) {
+            if (!entry.getKey().startsWith(prefix)) continue;
+            BlockPos candidate = entry.getValue().peekPosition();
+            if (candidate != null && (next == null || order.compare(candidate.asLong(), next.asLong()) < 0)) next = candidate;
+        }
+        return next;
+    }
+
     void resetIntent(ScanIntent intent) {
         Iterator<SectionScanSession> iterator = this.sessions.values().iterator();
         while (iterator.hasNext()) {

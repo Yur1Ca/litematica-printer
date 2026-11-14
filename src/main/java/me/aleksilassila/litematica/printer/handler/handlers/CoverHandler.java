@@ -195,6 +195,12 @@ public final class CoverHandler extends FeatureModuleBase {
         return this.coverItems.length > 0 && this.isCoverTarget(pos);
     }
 
+    @Override protected BlockPos peekQueuedIterationTarget() {
+        return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
+    }
+
+    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
+
     @Override
     protected void executeIteration(BlockPos pos, AtomicReference<Boolean> skipIteration) {
         if (this.inFlightTargets.contains(pos)) {

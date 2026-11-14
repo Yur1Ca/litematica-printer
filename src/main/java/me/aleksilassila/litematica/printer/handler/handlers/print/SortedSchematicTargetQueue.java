@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanAvailability;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCandidateIterable;
+import me.aleksilassila.litematica.printer.handler.scan.BufferedPositionIterator;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -84,7 +85,10 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
             @Override public boolean isBuffered() { return true; }
             @Override public Iterator<BlockPos> iterator() {
                 Iterator<BlockPos> iterator = SortedSchematicTargetQueue.this.iterator();
-                return new Iterator<>() {
+                return new BufferedPositionIterator() {
+                    @Override public BlockPos peek(Predicate<BlockPos> eligible) {
+                        return isValid() && iterator instanceof BufferedPositionIterator buffered ? buffered.peek(eligible) : null;
+                    }
                     @Override public boolean hasNext() { return isValid() && iterator.hasNext(); }
                     @Override public BlockPos next() {
                         if (!this.hasNext()) throw new java.util.NoSuchElementException("sorted source was replaced");
@@ -273,6 +277,23 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
         return dirtyChanged || queueSize < lowWater;
     }
 
+    /** Read-only queue metadata; never refills or removes a target. */
+    public BlockPos peekPosition() {
+        return this.peekPosition(pos -> true);
+    }
+
+    public BlockPos peekPosition(Predicate<BlockPos> eligible) {
+        if (this.sourceGuard != null && !this.sourceGuard.isValid()) return null;
+        BlockPos next = null;
+        Comparator<BlockPos> order = this.targetComparator();
+        for (BlockPos pos : this.queue.values()) {
+            if (!eligible.test(pos)) continue;
+            if (this.insertionOrdered) return pos;
+            if (next == null || order.compare(pos, next) < 0) next = pos;
+        }
+        return next;
+    }
+
     @Override
     public Iterator<BlockPos> iterator() {
         List<BlockPos> snapshot = new ArrayList<>(this.queue.values());
@@ -290,8 +311,17 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
             }
             finally { this.scanEngine.timing().finish("print", Stage.PRINT_SORT, sortStart); }
         }
-        return new Iterator<>() {
+        return new BufferedPositionIterator() {
             private int index;
+
+            @Override public BlockPos peek(Predicate<BlockPos> eligible) {
+                if (snapshotGeneration != generation || guard != null && !guard.isValid()) return null;
+                for (int i = this.index; i < snapshot.size(); i++) {
+                    BlockPos pos = snapshot.get(i);
+                    if (queue.containsKey(ScanEngine.key(pos)) && eligible.test(pos)) return pos;
+                }
+                return null;
+            }
 
             @Override
             public boolean hasNext() {

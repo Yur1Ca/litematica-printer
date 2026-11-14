@@ -185,6 +185,16 @@ final class TrenchFillState {
         return ready;
     }
 
+    BlockPos peekPriorityTarget(long now, Predicate<BlockPos> reachable) {
+        for (BlockPos pos : this.waterloggedTargets) {
+            if (reachable.test(pos)) return pos;
+        }
+        for (BlockPos pos : this.fillTargets) {
+            if (this.canAttempt(pos, now) && reachable.test(pos)) return pos;
+        }
+        return null;
+    }
+
     List<BlockPos> readyFillTargets(long now, Predicate<BlockPos> isFluid,
                                     Predicate<BlockPos> reachable) {
         List<BlockPos> ready = new ArrayList<>();

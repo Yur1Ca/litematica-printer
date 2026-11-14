@@ -64,6 +64,10 @@ final class ConstructionPositionCursor implements PositionCursor {
     @Override
     public boolean isComplete() { return this.heads.isEmpty(); }
 
+    @Override public BlockPos peekPosition() {
+        return this.heads.isEmpty() ? null : BlockPos.of(this.heads.peek().cursor.packed());
+    }
+
     /** Skip the last returned storage section, retaining the other columns on the same layer. */
     void skipSection() {
         if (!this.hasPolled) return;

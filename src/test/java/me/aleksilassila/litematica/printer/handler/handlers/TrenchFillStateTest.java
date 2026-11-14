@@ -12,6 +12,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TrenchFillStateTest {
+    @Test void previewKeepsWaterloggedPriorityAndDoesNotConsumeRetainedWork() {
+        var state = new TrenchFillState();
+        var fill = BlockPos.ZERO;
+        var waterlogged = fill.above();
+        state.retainBatch(Set.of(fill), Set.of(waterlogged));
+        for (int i = 0; i < 100; i++) assertEquals(waterlogged, state.peekPriorityTarget(10L, pos -> true));
+        assertEquals(2, state.targetCount());
+        assertEquals(fill, state.peekPriorityTarget(10L, pos -> !pos.equals(waterlogged)));
+        state.removeWaterloggedTarget(waterlogged);
+        state.defer(fill, 20L);
+        assertEquals(null, state.peekPriorityTarget(19L, pos -> true));
+        assertEquals(fill, state.peekPriorityTarget(20L, pos -> true));
+        state.markInFlight(fill, 20L, true);
+        assertEquals(null, state.peekPriorityTarget(21L, pos -> true));
+    }
+
     @Test void partialDiscoveryKeepsKnownTargetsAndBackpressuresBeforeRetainingTheWholeSelection() {
         TrenchFillState state = new TrenchFillState();
         var scope = List.of(new PrinterBox(0, 0, 0, 2047, 0, 0));

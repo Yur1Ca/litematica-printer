@@ -68,6 +68,7 @@ public final class PrinterRuntime {
     private final InteractionUtils interactionUtils;
     private final MissingMaterialTracker missingMaterials;
     private final HudStatsManager hudStats;
+    private final me.aleksilassila.litematica.printer.render.OperationHighlights operationHighlights;
     private final QuickShulkerAdapter quickShulkerAdapter;
     private final ChestTrackerAdapter chestTrackerAdapter;
     private final InventorySwitchGuard inventorySwitchGuard;
@@ -82,6 +83,8 @@ public final class PrinterRuntime {
 
     public PrinterRuntime() {
         Minecraft client = Minecraft.getInstance();
+        this.operationHighlights = new me.aleksilassila.litematica.printer.render.OperationHighlights();
+        this.scope.register(this.operationHighlights);
         this.scope.register(this.diagnostics);
         this.cooldownUtils = new CooldownUtils();
         this.scope.register(this.cooldownUtils);
@@ -184,6 +187,10 @@ public final class PrinterRuntime {
 
     public HudStatsManager hudStats() {
         return this.hudStats;
+    }
+
+    public me.aleksilassila.litematica.printer.render.OperationHighlights operationHighlights() {
+        return this.operationHighlights;
     }
 
     public QuickShulkerAdapter quickShulkerAdapter() {
@@ -303,6 +310,18 @@ public final class PrinterRuntime {
                 this.timing.finish("runtime", Stage.MINING_TICK, miningStart);
             }
             this.modules.tick();
+            if (Configs.Highlight.ENABLED.getBooleanValue()) {
+                var previews = new java.util.ArrayList<me.aleksilassila.litematica.printer.render.OperationHighlights.Preview>();
+                if (Configs.Highlight.NEXT_ENABLED.getBooleanValue()) {
+                    for (var module : this.modules.values()) {
+                        var preview = module.nextIterationPreview();
+                        if (preview != null) previews.add(preview);
+                    }
+                }
+                this.operationHighlights.setPreviews(previews);
+            } else {
+                this.operationHighlights.clear();
+            }
             // 放在最后：这一 tick 的取料/放置都已结算，看到的是背包的最终状态。
             this.warehouseReturn.tick();
         } finally {

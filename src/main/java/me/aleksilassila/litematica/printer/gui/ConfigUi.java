@@ -89,7 +89,8 @@ public class ConfigUi extends GuiConfigsBase {
         FILL(I18n.of("category.fill")),
         COVER(I18n.of("category.cover")),
         FLUID(I18n.of("category.fluid")),
-        BEDROCK(I18n.of("category.bedrock"));
+        BEDROCK(I18n.of("category.bedrock")),
+        HIGHLIGHT(I18n.of("category.highlight"));
 
         private final I18n i18n;
 
@@ -112,6 +113,7 @@ public class ConfigUi extends GuiConfigsBase {
                 case PLACEMENT -> Configs.Placement.OPTIONS;
                 case BREAK -> Configs.Break.OPTIONS;
                 case BEDROCK -> Configs.Bedrock.OPTIONS;
+                case HIGHLIGHT -> Configs.Highlight.OPTIONS;
                 case PRINT -> Configs.Print.OPTIONS;
                 case EXCAVATE -> Configs.Mine.OPTIONS;
                 case FILL -> Configs.Fill.OPTIONS;

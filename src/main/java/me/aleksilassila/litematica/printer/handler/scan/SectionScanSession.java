@@ -436,6 +436,17 @@ final class SectionScanSession {
         return this.nextByPlayerDistance(observation, tickTime, shouldPause, preFilter, unbounded, tryAdvance);
     }
 
+    BlockPos peekPosition() {
+        if (this.closed || !this.pendingReoffers.isEmpty()) return null;
+        BlockPos next = this.cursorPrepared ? this.cursorPosition.immutable() : this.distanceCursor.peekPosition();
+        ScanDirtyPosition dirty = this.dirtyPositions.peek();
+        if (dirty != null && (next == null
+                || this.constructionOrder.compare(dirty.pos().asLong(), next.asLong()) <= 0)) {
+            next = dirty.pos();
+        }
+        return next != null && this.contains(next) ? next.immutable() : null;
+    }
+
     private Candidate nextByPlayerDistance(
             WorldObservationPort observation,
             long tickTime,

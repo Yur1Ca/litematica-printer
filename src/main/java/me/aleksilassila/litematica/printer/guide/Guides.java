@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class Guides {
     private final List<GuideRegistration> registrations = new ArrayList<>();
@@ -231,6 +233,12 @@ public class Guides {
     }
 
     public final Optional<Action> buildAction(SchematicBlockContext context) {
+        return this.buildAction(context, ignored -> false);
+    }
+
+    /** Cross-position repairs require the caller's live reach and selection checks. */
+    public final Optional<Action> buildAction(SchematicBlockContext context, Predicate<BlockPos> repairAllowed) {
+        DoublePlantRepair.queueLowerResetIfNeeded(context, repairAllowed);
         BlockMatchResult blockMatchResult = BlockMatchResult.compare(context);
         Block requiredBlock = context.requiredState.getBlock();
         List<GuideRegistration> matching = this.registrationsByBlockClass.computeIfAbsent(

@@ -12,6 +12,7 @@ public class Implementation {
             CraftingTableBlock.class,       // 工作台
             ChestBlock.class,               // 箱子
             LeverBlock.class,               // 拉杆
+            ButtonBlock.class,              // 按钮
             DoorBlock.class,                // 门
             TrapDoorBlock.class,            // 活板门
             BedBlock.class,                 // 床

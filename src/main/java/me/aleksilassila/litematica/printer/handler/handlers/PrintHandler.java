@@ -296,7 +296,9 @@ public class PrintHandler extends FeatureModuleBase {
             return true;
         }
 //        Action action = guide.getAction(ctx);
-        Optional<Action> action = this.guides.buildAction(ctx);
+        Optional<Action> action = this.guides.buildAction(ctx,
+                pos -> ConfigUtils.isEnable() && ConfigUtils.isPrintMode()
+                        && this.canReachIterationPosition(pos) && this.isInSelectionRange(pos) && this.isSchematicBlock(pos));
         if (action.isEmpty()) {
             if (!this.ctx.currentState.equals(this.ctx.requiredState)) {
                 this.targets.deferUntil(blockPos, this.level.getGameTime() + 4L);

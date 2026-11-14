@@ -50,6 +50,8 @@ public interface ActionPort {
 
     void useProtocolHitModifier(@NotNull Vec3 hitModifier);
 
+    default boolean setWaterSurfacePlacement() { return false; }
+
     boolean setQueueCompletionListener(@Nullable Consumer<SendResult> completionListener);
 
     /** Rechecks feature-owned work immediately before a deferred interaction is sent. */

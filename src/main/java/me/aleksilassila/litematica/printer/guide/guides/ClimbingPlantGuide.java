@@ -38,6 +38,13 @@ public class ClimbingPlantGuide extends Guide {
 
     @Override
     protected Result onBuildActionWrongState(BlockMatchResult state) {
+        if ((requiredBlock instanceof net.minecraft.world.level.block.WeepingVinesBlock
+                || requiredBlock instanceof net.minecraft.world.level.block.TwistingVinesBlock
+                || requiredBlock instanceof net.minecraft.world.level.block.CaveVinesBlock)
+                && requiredState.getValue(net.minecraft.world.level.block.GrowingPlantHeadBlock.AGE) == 25
+                && currentState.getValue(net.minecraft.world.level.block.GrowingPlantHeadBlock.AGE) < 25) {
+            return Result.success(new me.aleksilassila.litematica.printer.printer.action.ClickAction().setItem(Items.SHEARS));
+        }
         return Result.SKIP;
     }
 }

@@ -31,8 +31,7 @@ public class Guides {
         // ============================================================
         register(SkipGuide::new,
                 LiquidBlock.class,
-                BubbleColumnBlock.class,
-                LilyPadBlock.class
+                BubbleColumnBlock.class
         );
 
         // 火把
@@ -45,6 +44,12 @@ public class Guides {
 
         // 花
         register(FlowerGuide::new, FlowerBlock.class);
+        register(LilyPadGuide::new, LilyPadBlock.class);
+
+        register(TallGrassGuide::new, DoublePlantBlock.class);
+        register(AquaticPlantGuide::new, SeagrassBlock.class, TallSeagrassBlock.class, KelpBlock.class, KelpPlantBlock.class);
+        register(SmallDripleafGuide::new, SmallDripleafBlock.class);
+        register(LeafLitterGuide::new, LeafLitterBlock.class);
 
         // 台阶
         register(SlabGuide::new, SlabBlock.class);

@@ -241,7 +241,12 @@ public final class PrintPlacementExecutor {
         if (hitModifier != null) {
             this.actionBroker.useProtocolHitModifier(hitModifier);
         }
-        this.actionBroker.setLook(adjustHorizontalLook(action.getPlayerLook(), context));
+        if (action.requiresExactLook()) {
+            this.actionBroker.setWaitForHorizontalLook(false);
+            this.actionBroker.setLook(action.getPlayerLook());
+        } else {
+            this.actionBroker.setLook(adjustHorizontalLook(action.getPlayerLook(), context));
+        }
         this.actionBroker.setNeedWaitModifyLookFromAction(action.isNeedWaitModifyLook());
         boolean consumedEffectiveExecution = action.isConsumeEffectiveExecution();
         int cooldownTicks = action.getCooldownTicksOverride() >= 0

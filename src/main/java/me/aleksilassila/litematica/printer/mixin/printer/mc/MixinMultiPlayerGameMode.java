@@ -41,6 +41,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Shadow protected abstract boolean sameDestroyTarget(BlockPos pos);
     @Shadow protected abstract void ensureHasSentCarriedItem();
     @Shadow public abstract InteractionResult useItemOn(LocalPlayer player, InteractionHand hand, BlockHitResult hit);
+    @Shadow public abstract InteractionResult useItem(net.minecraft.world.entity.player.Player player, InteractionHand hand);
 
     @Unique
     private MiningInteractionController litematica_printer$controller() {
@@ -92,6 +93,22 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         if (!this.minecraft.level.getWorldBorder().isWithinBounds(hit.getBlockPos())) return InteractionResult.FAIL;
         NetworkUtils.sendPacket(sequence -> new ServerboundUseItemOnPacket(hand, hit, sequence));
         return InteractionResult.PASS;
+    }
+
+    @Override public InteractionResult litematica_printer$useItem(InteractionHand hand,
+            me.aleksilassila.litematica.printer.printer.PlayerLook look) {
+        LocalPlayer player = this.minecraft.player;
+        if (player == null || look == null) return InteractionResult.FAIL;
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        try {
+            player.setYRot(look.yaw);
+            player.setXRot(look.pitch);
+            return this.useItem(player, hand);
+        } finally {
+            player.setYRot(yaw);
+            player.setXRot(pitch);
+        }
     }
 
     @Override public Minecraft client() { return this.minecraft; }

@@ -89,6 +89,9 @@ public class Action {
         return this.setNeedWaitModifyLook(true);
     }
 
+    /** Ray-based item uses need their complete aim rather than a cardinal placement direction. */
+    public boolean requiresExactLook() { return false; }
+
     public @Nullable Item[] getRequiredItems(Block backup) {
         return clickItems == null ? new Item[]{backup.asItem()} : clickItems;
     }

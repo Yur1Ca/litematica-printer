@@ -21,6 +21,7 @@ final class QueuedClick {
     final Vec3 physicalHitModifier;
     final boolean useShift;
     boolean useProtocol;
+    boolean waterSurfacePlacement;
     final int repeatCount;
     final PlacementPolicy policy;
     @Nullable

@@ -147,6 +147,12 @@ public class ActionManager {
         return true;
     }
 
+    public boolean setWaterSurfacePlacement() {
+        if (this.queuedClick == null) return false;
+        this.queuedClick.waterSurfacePlacement = true;
+        return true;
+    }
+
     public boolean setExpectedStackPredicate(@Nullable Predicate<ItemStack> expectedStackPredicate) {
         if (this.queuedClick == null) {
             return false;
@@ -267,7 +273,15 @@ public class ActionManager {
                         player, click.target, click.side, click.expectedItems);
                 boolean interactionAccepted;
                 boolean interactionDispatched;
-                try (var send = NetworkUtils.trackUseItemOn(
+                if (click.waterSurfacePlacement) {
+                    if (!me.aleksilassila.litematica.printer.utils.minecraft.WaterSurfacePlacement.canPlace(
+                            player, Reference.MINECRAFT.level, click.target, this.look)) break;
+                    try (var send = NetworkUtils.trackUseItem(player.connection.getConnection(), InteractionHand.MAIN_HAND)) {
+                        interactionAccepted = gameModeExtension.litematica_printer$useItem(InteractionHand.MAIN_HAND, this.look)
+                                != net.minecraft.world.InteractionResult.FAIL;
+                        interactionDispatched = interactionAccepted || send.wasSent();
+                    }
+                } else try (var send = NetworkUtils.trackUseItemOn(
                         player.connection.getConnection(), InteractionHand.MAIN_HAND, blockHitResult)) {
                     interactionAccepted = gameModeExtension.litematica_printer$useItemOn(
                             true, InteractionHand.MAIN_HAND, blockHitResult) != net.minecraft.world.InteractionResult.FAIL;

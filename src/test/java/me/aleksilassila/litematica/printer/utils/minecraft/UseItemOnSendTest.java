@@ -22,6 +22,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UseItemOnSendTest {
+    @Test void itemUseReceiptsAreSeparateFromBlockUseAndRequireTheSameHandAndConnection() {
+        Object connection = new Object();
+        var packet = new net.minecraft.network.protocol.game.ServerboundUseItemPacket(InteractionHand.MAIN_HAND, 91, 0f, 90f);
+        try (var send = NetworkUtils.trackUseItem(connection, InteractionHand.MAIN_HAND)) {
+            NetworkUtils.observeUseItemOn(connection, use(InteractionHand.MAIN_HAND, hit()));
+            assertFalse(send.wasSent());
+            NetworkUtils.observeUseItemOn(new Object(), packet);
+            assertFalse(send.wasSent());
+            NetworkUtils.observeUseItemOn(connection, new net.minecraft.network.protocol.game.ServerboundUseItemPacket(
+                    InteractionHand.OFF_HAND, 90, 0f, 90f));
+            assertFalse(send.wasSent());
+            NetworkUtils.observeUseItemOn(connection, packet);
+            assertTrue(send.wasSent());
+            assertEquals(91, send.sequence());
+        }
+    }
+
     private static final BlockPos POS = new BlockPos(1, 64, 0);
     private static final Vec3 POINT = new Vec3(1.25, 65.0, 0.75);
 

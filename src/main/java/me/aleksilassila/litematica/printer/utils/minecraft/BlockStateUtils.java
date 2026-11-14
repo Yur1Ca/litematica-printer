@@ -137,6 +137,7 @@ public class BlockStateUtils extends BlockUtils {
      */
     public static boolean requiresWaterToPlace(Block block) {
         return block instanceof SeagrassBlock
+                || block instanceof TallSeagrassBlock
                 || block instanceof KelpBlock
                 || block instanceof KelpPlantBlock;
     }

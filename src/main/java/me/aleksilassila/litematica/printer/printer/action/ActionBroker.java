@@ -112,6 +112,10 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         this.delegate.useProtocolHitModifier(hitModifier);
     }
 
+    @Override public boolean setWaterSurfacePlacement() {
+        return this.activeTicket != null && this.delegate.setWaterSurfacePlacement();
+    }
+
     public boolean setQueueCompletionListener(@Nullable Consumer<SendResult> completionListener) {
         return this.delegate.setQueueCompletionListener(
                 completionListener == null ? null : result -> completionListener.accept(from(result))

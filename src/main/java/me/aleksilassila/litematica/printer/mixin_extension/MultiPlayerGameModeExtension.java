@@ -10,6 +10,9 @@ import net.minecraft.world.phys.BlockHitResult;
 public interface MultiPlayerGameModeExtension {
     InteractionResult litematica_printer$useItemOn(boolean localPrediction, InteractionHand hand, BlockHitResult blockHit);
 
+    default InteractionResult litematica_printer$useItem(InteractionHand hand,
+            me.aleksilassila.litematica.printer.printer.PlayerLook look) { return InteractionResult.FAIL; }
+
     default BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction) {
         return this.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction, false);
     }

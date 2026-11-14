@@ -116,6 +116,13 @@ final class VoidWarehousePlacementState<K> {
         return target != null && now >= retryUntil.getOrDefault(target, 0L);
     }
 
+    boolean canUseInventoryFallback(K target, long now) {
+        tick(now);
+        return enabled && target != null && !targets.containsKey(target)
+                && now >= throttledUntil && now >= rejectedUntil.getOrDefault(target, 0L)
+                && now >= retryUntil.getOrDefault(target, 0L);
+    }
+
     void receiveResult(int nonce, int status, long now) {
         tick(now);
         Pending<K> request = remove(nonce);

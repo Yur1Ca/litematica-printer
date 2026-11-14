@@ -271,6 +271,11 @@ public final class VoidWarehousePlacementNetwork {
         return ensureSession() && STATE.isPending(target);
     }
 
+    /** A local stock fallback must not overtake an outstanding request or server backoff. */
+    public static boolean canUseInventoryFallback(BlockPos target) {
+        return isAvailable() && STATE.canUseInventoryFallback(target, tick);
+    }
+
     static List<String> candidateIds(Item[] candidates) {
         if (candidates == null) return List.of();
         var ids = new LinkedHashSet<String>();

@@ -18,6 +18,7 @@ import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
+import me.aleksilassila.litematica.printer.utils.VoidWarehouseTriggerItem;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
@@ -108,6 +109,15 @@ public final class PrintPlacementExecutor {
                 warehouseSupported && VoidWarehousePlacementNetwork.isMaterialAvailable(requiredItems),
                 warehouseTargetAvailable,
                 warehouseSupported && VoidWarehousePlacementNetwork.canRequest(requiredItems, blockPos));
+        if (warehouseRoute == VoidWarehousePlacementPolicy.Route.MATERIAL_UNAVAILABLE) {
+            if (!VoidWarehousePlacementNetwork.canUseInventoryFallback(blockPos)) {
+                warehouseRoute = VoidWarehousePlacementPolicy.Route.WAIT;
+            } else if (hasLocalMaterial(context, requiredItems, requiredStackPredicate)) {
+                // An EMPTY reply only rules out warehouse stock. Existing player materials
+                // still use the ordinary inventory path, with its switch and reserve guards.
+                warehouseRoute = VoidWarehousePlacementPolicy.Route.INVENTORY;
+            }
+        }
         if (warehouseRoute == VoidWarehousePlacementPolicy.Route.MATERIAL_UNAVAILABLE) {
             this.hudStats.recordDeferred(HudStatsManager.Mode.PRINT, HudStatus.MISSING_MATERIAL);
             this.missingMaterials.recordMissing(requiredItems, requiredStackPredicate,
@@ -306,6 +316,30 @@ public final class PrintPlacementExecutor {
                 PrintPlacementResult.TaskEvent.SUCCESS,
                 cooldownTicks
         );
+    }
+
+    /** Pure availability check: a failed warehouse request must not start a legacy withdrawal. */
+    private static boolean hasLocalMaterial(SchematicBlockContext context, Item[] requiredItems,
+                                            @Nullable Predicate<ItemStack> requiredStackPredicate) {
+        var player = context.client.player;
+        if (player == null) return false;
+        int reserveCount = Configs.Print.PRINT_RESERVE_ITEMS.getBooleanValue()
+                ? Configs.Print.PRINT_RESERVE_ITEM_COUNT.getIntegerValue() : -1;
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (!VoidWarehouseTriggerItem.isUsableAsMaterial(stack)) continue;
+            boolean accepted = requiredStackPredicate != null && requiredStackPredicate.test(stack);
+            if (requiredStackPredicate == null) {
+                for (Item item : requiredItems) {
+                    if (stack.is(item)) { accepted = true; break; }
+                }
+            }
+            if (accepted && InventoryUtils.getConsumableSurplus(player, stack, requiredStackPredicate, reserveCount) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void recordPlacementSent(

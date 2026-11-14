@@ -370,9 +370,62 @@ class BedrockCandidateWakeupTest {
         }
     }
 
+    @Test void aHorizontalTargetPassesItsBoundedExposureWaitThroughTheRealHandler() throws Exception {
+        boolean oldWorkSwitch = Configs.Core.WORK_SWITCH.getBooleanValue();
+        try (var f = new Fixture()) {
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            f.horizontalWorld();
+            Configs.Bedrock.BEDROCK_ALLOW_SIDE.setBooleanValue(true);
+            var layout = BedrockMachineLayout.find(f.world, TARGET);
+            assertNotNull(layout);
+            assertTrue(layout.isHorizontal(), "Only the side machine has free piston and head space");
+            assertTrue(BedrockMachineLayout.shouldDeferUntilExposed(f.world, TARGET),
+                    "The selected target must really exercise the exposure gate, not a vertical control");
 
+            f.stepWithCooldown(0);
+            long dirty = f.scan.dirtyVersion();
+            assertEquals(0, f.engine.getHudSnapshot().totalTargets());
+            assertEquals("await_target_exposure", f.engine.getHudSnapshot().lastReason());
+            assertEquals(4, f.runtime.cooldownUtils().getRemainingCooldown(f.world, "bedrock_retry", TARGET));
+            for (int tick = 1; tick <= 3; tick++) {
+                f.stepWithCooldown(tick);
+                assertEquals(0, f.engine.getHudSnapshot().totalTargets(), "The real four-tick exposure delay must remain intact");
+                assertEquals(4 - tick, f.runtime.cooldownUtils().getRemainingCooldown(f.world, "bedrock_retry", TARGET));
+            }
+            for (int tick = 4; tick <= 20 && f.engine.getHudSnapshot().sideTargets() == 0; tick++) f.stepWithCooldown(tick);
 
+            assertEquals(1, f.engine.getHudSnapshot().sideTargets(),
+                    "Planner, handler eligibility and submit must share the bounded exposure approval: "
+                            + f.engine.getHudSnapshot().lastReason());
+            assertTrue(f.targets.containsOwner(TARGET));
+            assertEquals(dirty, f.scan.dirtyVersion(), "Admission must recover without a fabricated block update");
+            assertTrue(f.mode.hits.isEmpty(), "This fixture stops at admission while its inventory fence remains pending");
+        } finally {
+            Configs.Core.WORK_SWITCH.setBooleanValue(oldWorkSwitch);
+        }
+    }
 
+    @Test void theSameHorizontalGeometryRemainsUnadmittedWhenSideIsDisabled() throws Exception {
+        boolean oldWorkSwitch = Configs.Core.WORK_SWITCH.getBooleanValue();
+        try (var f = new Fixture()) {
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            f.horizontalWorld();
+            Configs.Bedrock.BEDROCK_ALLOW_SIDE.setBooleanValue(false);
+            var layout = BedrockMachineLayout.find(f.world, TARGET);
+            assertNotNull(layout);
+            assertTrue(layout.isHorizontal());
+            assertTrue(BedrockMachineLayout.shouldDeferUntilExposed(f.world, TARGET));
+
+            for (int tick = 0; tick <= 20; tick++) f.stepWithCooldown(tick);
+
+            assertEquals(0, f.engine.getHudSnapshot().sideTargets());
+            assertEquals(0, f.engine.getHudSnapshot().totalTargets());
+            assertFalse(f.targets.containsOwner(TARGET));
+            assertTrue(f.mode.hits.isEmpty());
+        } finally {
+            Configs.Core.WORK_SWITCH.setBooleanValue(oldWorkSwitch);
+        }
+    }
 
     private static final class BoundedHandler extends BedrockHandler {
         BoundedHandler(PrinterRuntime runtime) { super(runtime); }
@@ -446,9 +499,32 @@ class BedrockCandidateWakeupTest {
             planner = (BedrockCandidatePlanner) get(handler, BedrockHandler.class, "candidatePlanner");
         }
 
+        void horizontalWorld() throws Exception {
+            // The parent engine owns a separate clock in this read-only fixture. Match the real
+            // runtime wiring for these lifecycle cases without changing existing fixture users.
+            var admission = get(engine, BedrockEngine.class, "admission");
+            var cooldowns = (CooldownUtils) get(admission, BedrockAdmissionController.class, "cooldownUtils");
+            set(runtime, PrinterRuntime.class, "cooldownUtils", cooldowns);
+            var area = (fi.dy.masa.litematica.selection.AreaSelectionSimple)
+                    get(data, fi.dy.masa.litematica.data.DataManager.class, "areaSimple");
+            var selected = area.getAllSubRegionBoxes().getFirst();
+            selected.setPos1(TARGET);
+            selected.setPos2(TARGET);
+            world.blocks.clear();
+            world.blocks.put(TARGET, Blocks.BEDROCK.defaultBlockState());
+            world.blocks.put(TARGET.above(), Blocks.BEDROCK.defaultBlockState());
+            world.blocks.put(TARGET.below(), Blocks.BEDROCK.defaultBlockState());
+            world.blocks.put(TARGET.north().east(), Blocks.STONE.defaultBlockState());
+            assertTrue(new LitematicaAdapter().isWithinSelectionRange(TARGET));
+            assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET.above()));
+            assertFalse(new LitematicaAdapter().isWithinSelectionRange(TARGET.below()));
+        }
 
-
-
+        void stepWithCooldown(int tick) throws Exception {
+            assertTrue(Configs.Core.WORK_SWITCH.getBooleanValue(), "Cooldowns must count down, not clear while disabled");
+            runtime.cooldownUtils().tick();
+            step(tick);
+        }
 
         void move(double x, double y, double z) throws Exception {
             set(client.player, Entity.class, "position", new Vec3(x, y, z));

@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 
 import java.util.LinkedHashSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.LongSupplier;
@@ -38,6 +39,7 @@ final class BedrockAdmissionController {
     private final LitematicaAdapter litematica;
     private final BedrockExposureGate<BlockPos> exposureGate =
             new BedrockExposureGate<>(MAX_VERTICAL_EXPOSURE_DEFERS);
+    private final Set<BlockPos> exposureApprovedThisTick = new HashSet<>();
     private final BedrockScanActivityPolicy scanActivity = new BedrockScanActivityPolicy();
     private final BedrockSubmissionPlanCache submissionPlans = new BedrockSubmissionPlanCache();
     private final BedrockSchedulingProbe schedulingProbe;
@@ -74,6 +76,7 @@ final class BedrockAdmissionController {
 
     void reset() {
         this.exposureGate.clear();
+        this.exposureApprovedThisTick.clear();
         this.scanActivity.reset();
         this.submissionPlans.clear();
         this.nextAcceptTick = 0L;
@@ -84,6 +87,7 @@ final class BedrockAdmissionController {
     }
 
     void beginTick(ClientLevel level) {
+        this.exposureApprovedThisTick.clear();
         this.cleanupDependencies.keySet().removeIf(pos -> !this.isPositionOnRetryCooldown(pos));
         this.blockedCleanupDemand = 0;
         this.cleanupPressure = this.cleanup.samplePressure(level, this.targets::isReserved);
@@ -366,11 +370,13 @@ final class BedrockAdmissionController {
         if (horizontal && !this.isSideEnabled()) return AcceptProbe.reject("side_disabled");
         if (this.targets.isReserved(pos)) return AcceptProbe.reject("reserved_by_active_target");
         if (!BedrockEnvironment.canInteract(pos)) return AcceptProbe.reject("out_of_range_bedrock");
-        boolean shouldDefer = this.client.level != null
-                && BedrockMachineLayout.shouldDeferUntilExposed(this.client.level, pos);
-        if (this.exposureGate.evaluate(pos, shouldDefer, mutateExposureState)
-                == BedrockExposureGate.Decision.DEFER) {
-            return AcceptProbe.reject("await_target_exposure");
+        if (!this.exposureApprovedThisTick.contains(pos)) {
+            boolean shouldDefer = BedrockMachineLayout.shouldDeferUntilExposed(this.client.level, pos);
+            if (this.exposureGate.evaluate(pos, shouldDefer, mutateExposureState) == BedrockExposureGate.Decision.DEFER) {
+                return AcceptProbe.reject("await_target_exposure");
+            }
+            // Share exposure approval across planning, iteration and submit; keep the other guards live.
+            if (shouldDefer && mutateExposureState) this.exposureApprovedThisTick.add(pos);
         }
         String conflict = this.targets.activePositionConflict(pos);
         return conflict == null ? AcceptProbe.accept() : AcceptProbe.reject(conflict);

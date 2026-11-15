@@ -50,16 +50,17 @@ public final class BlockHighlightRenderer implements IRenderer {
         List<HighlightEntry> entries = new ArrayList<>();
         var previews = trace.previews();
         var previewPositions = new HashSet<BlockPos>();
+        float previewFill = 0.13f + 0.04f * (float) Math.sin(now % 1800L * (Math.PI * 2.0 / 1800.0));
         for (var preview : previews) {
             if (previewPositions.add(preview.pos())) entries.add(entry(preview.pos(), Configs.Highlight.NEXT.getIntegerValue(), 1f,
-                    HighlightStyleType.OUTLINE, camera.pos));
+                    HighlightStyleType.BOTH, true, camera.pos));
         }
         for (var operation : trace.snapshot(duration)) {
             if (previewPositions.contains(operation.pos())) continue;
             float fade = 1f - Math.clamp((float)(now - operation.time()) / duration, 0f, 1f);
-            entries.add(entry(operation.pos(), color(operation.type()), fade, style, camera.pos));
+            entries.add(entry(operation.pos(), color(operation.type()), fade, style, false, camera.pos));
         }
-        if (!entries.isEmpty()) this.draw(entries, camera.pos);
+        if (!entries.isEmpty()) this.draw(entries, camera.pos, previewFill);
     }
 
     private static int color(HighlightType type) {
@@ -71,12 +72,12 @@ public final class BlockHighlightRenderer implements IRenderer {
         };
     }
 
-    private static HighlightEntry entry(BlockPos pos, int argb, float fade, HighlightStyleType style, Vec3 camera) {
+    private static HighlightEntry entry(BlockPos pos, int argb, float fade, HighlightStyleType style, boolean preview, Vec3 camera) {
         return new HighlightEntry(pos, ((argb >>> 24) & 255) / 255f * fade,
-                Vec3.atCenterOf(pos).distanceToSqr(camera), (argb >>> 16) & 255, (argb >>> 8) & 255, argb & 255, style);
+                Vec3.atCenterOf(pos).distanceToSqr(camera), (argb >>> 16) & 255, (argb >>> 8) & 255, argb & 255, style, preview);
     }
 
-    private void draw(List<HighlightEntry> entries, Vec3 cameraPos) {
+    private void draw(List<HighlightEntry> entries, Vec3 cameraPos, float previewFill) {
         boolean through = Configs.Highlight.THROUGH_WALLS.getBooleanValue();
         var linePipeline = through ? MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL
                 : MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH;
@@ -93,7 +94,7 @@ public final class BlockHighlightRenderer implements IRenderer {
             if (outline) {
                 BufferBuilder buf = ctx.getBuilder();
                 for (var e : entries) if (e.style != HighlightStyleType.FILLED)
-                    addOutlineBoxLines(buf, e.pos, e.r, e.g, e.b, (int)(e.alpha * 255), cameraPos);
+                    addOutlineBoxLines(buf, e.pos, e.r, e.g, e.b, (int)(e.alpha * 255 * (e.preview ? 0.9f : 1f)), cameraPos);
                 try (MeshData mesh = buf.build()) { if (mesh != null) ctx.draw(mesh, false, true); }
                 ctx.reset();
             }
@@ -104,7 +105,7 @@ public final class BlockHighlightRenderer implements IRenderer {
                 BufferBuilder buf = ctx.start(() -> "operations_filled", filledPipeline);
                 //#endif
                 for (var e : entries) if (e.style != HighlightStyleType.OUTLINE)
-                    addFilledBoxModern(buf, e.pos, e.r, e.g, e.b, (int)(e.alpha * 255), cameraPos);
+                    addFilledBoxModern(buf, e.pos, e.r, e.g, e.b, (int)(e.alpha * 255 * (e.preview ? previewFill : 1f)), cameraPos);
                 try (MeshData mesh = buf.build()) { if (mesh != null) ctx.draw(mesh, false, false); }
             }
         } catch (Exception error) {
@@ -169,5 +170,5 @@ public final class BlockHighlightRenderer implements IRenderer {
         buf.addVertex(x1, y1, z1).setColor(r, g, b, a).setLineWidth(1.0f);
         buf.addVertex(x2, y2, z2).setColor(r, g, b, a).setLineWidth(1.0f);
     }
-    private record HighlightEntry(BlockPos pos, float alpha, double distSq, int r, int g, int b, HighlightStyleType style) { }
+    private record HighlightEntry(BlockPos pos, float alpha, double distSq, int r, int g, int b, HighlightStyleType style, boolean preview) { }
 }

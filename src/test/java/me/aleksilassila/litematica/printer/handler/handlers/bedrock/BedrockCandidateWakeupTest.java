@@ -314,8 +314,15 @@ class BedrockCandidateWakeupTest {
             Configs.Core.WORK_PER_TICK.setIntegerValue(256);
             Configs.Core.WORK_RANGE.setIntegerValue(32);
             f.move(0.5D, 64.0D, 0.5D);
-            // The selection is a Y=64 plane. This deliberately includes empty lower layers
-            // to distinguish discovery's PAUSED state from a genuinely completed empty source.
+            BlockPos delayed = TARGET.north();
+            Map<BlockPos, BlockState> shifted = new java.util.HashMap<>();
+            f.world.blocks.forEach((pos, state) -> shifted.put(pos.north(), state));
+            f.world.blocks.clear();
+            f.world.blocks.putAll(shifted);
+            assertTrue(BedrockEnvironment.canInteract(delayed));
+            assertNotNull(BedrockMachineLayout.find(f.world, delayed));
+            // The selected Y=64 plane starts near the player. The reachable target is on
+            // its wrapped prefix, so discovery must genuinely pause before reaching it.
             f.handler.playerInteractionBox.set(new PrinterBox(-16, 60, -16, 16, 64, 16));
             f.step(0);
             boolean pendingAfterFirstTick = f.planner.hasPendingScanSource();
@@ -324,8 +331,9 @@ class BedrockCandidateWakeupTest {
             for (int tick = 1; tick <= 64 && f.engine.getHudSnapshot().totalTargets() == 0; tick++) f.step(tick);
             assertEquals(1, f.engine.getHudSnapshot().totalTargets(),
                     "The cursor must keep advancing toward the valid target without movement or block updates");
+            assertTrue(f.targets.containsOwner(delayed));
             assertTrue(pendingAfterFirstTick, "This fixture must really exhaust a discovery slice");
-            assertEquals(0, initiallyAdmitted, "Even the clipped selected plane has a prefix longer than this slice");
+            assertEquals(0, initiallyAdmitted, "The wrapped target must remain beyond the first discovery slice");
             assertEquals(ScanState.FULL, firstState,
                     "A planner must preserve PAUSED instead of reporting sleeping while its discovery cursor advances");
         } finally {

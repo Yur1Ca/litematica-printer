@@ -30,8 +30,72 @@ final class ConstructionPositionCursor implements PositionCursor {
                 first.cursor.packed(), second.cursor.packed()));
         for (PrinterBox box : boxes) {
             SourceBounds bounds = SourceBounds.clip(box, region);
-            if (bounds != null) this.offer(bounds, new ColumnRectangle(
-                    bounds.minX >> 4, bounds.maxX >> 4, bounds.minZ >> 4, bounds.maxZ >> 4));
+            if (bounds == null) continue;
+            if (order.hasStartPosition()) this.offerRotatedBounds(bounds);
+            else this.offerBounds(bounds);
+        }
+    }
+
+    /** Select one geometric start in O(boxes), without reading or expanding selected blocks. */
+    static ConstructionOrder nearestOrder(List<PrinterBox> boxes, ScanRegion region, boolean descendingY) {
+        ConstructionOrder base = new ConstructionOrder(region.centerX(), region.centerZ(), descendingY);
+        BlockPos nearest = null;
+        long nearestDistance = Long.MAX_VALUE;
+        long maxDistance = (long) region.maxDistanceBand() * region.maxDistanceBand();
+        for (PrinterBox box : boxes) {
+            SourceBounds bounds = SourceBounds.clip(box, region);
+            if (bounds == null) continue;
+            int x = Math.max(bounds.minX, Math.min(bounds.maxX, region.centerX()));
+            int y = Math.max(bounds.minY, Math.min(bounds.maxY, region.centerY()));
+            int z = Math.max(bounds.minZ, Math.min(bounds.maxZ, region.centerZ()));
+            long dx = x - (long) region.centerX(), dy = y - (long) region.centerY();
+            long dz = z - (long) region.centerZ();
+            long distance = dx * dx + dy * dy + dz * dz;
+            if (distance > maxDistance) continue;
+            if (distance < nearestDistance || distance == nearestDistance && nearest != null
+                    && base.compare(BlockPos.asLong(x, y, z), nearest.asLong()) < 0) {
+                nearest = new BlockPos(x, y, z);
+                nearestDistance = distance;
+            }
+        }
+        return nearest == null ? base
+                : new ConstructionOrder(nearest.getX(), nearest.getY(), nearest.getZ(), descendingY);
+    }
+
+    private void offerBounds(SourceBounds bounds) {
+        this.offer(bounds, new ColumnRectangle(bounds.minX >> 4, bounds.maxX >> 4,
+                bounds.minZ >> 4, bounds.maxZ >> 4));
+    }
+
+    /** Each piece is monotone in both the original and rotated orders; columns remain lazy. */
+    private void offerRotatedBounds(SourceBounds bounds) {
+        int x = BlockPos.getX(this.order.startPosition()), y = BlockPos.getY(this.order.startPosition());
+        int z = BlockPos.getZ(this.order.startPosition());
+        int sectionMinY = (y >> 4) << 4, sectionMaxY = sectionMinY + SECTION_SIZE - 1;
+        // Only the starting Y section can occur on both sides of the rotation. Isolate it so
+        // skipSection also removes its unopened wrapped prefix without retaining skip history.
+        this.offerClipped(bounds, MIN_PACKED_XZ, MIN_PACKED_Y, MIN_PACKED_XZ,
+                MAX_PACKED_XZ, sectionMinY - 1, MAX_PACKED_XZ);
+        this.offerClipped(bounds, MIN_PACKED_XZ, sectionMaxY + 1, MIN_PACKED_XZ,
+                MAX_PACKED_XZ, MAX_PACKED_Y, MAX_PACKED_XZ);
+        this.offerClipped(bounds, MIN_PACKED_XZ, sectionMinY, MIN_PACKED_XZ,
+                MAX_PACKED_XZ, y - 1, MAX_PACKED_XZ);
+        this.offerClipped(bounds, MIN_PACKED_XZ, y + 1, MIN_PACKED_XZ,
+                MAX_PACKED_XZ, sectionMaxY, MAX_PACKED_XZ);
+        this.offerClipped(bounds, MIN_PACKED_XZ, y, MIN_PACKED_XZ, MAX_PACKED_XZ, y, z - 1);
+        this.offerClipped(bounds, MIN_PACKED_XZ, y, z + 1, MAX_PACKED_XZ, y, MAX_PACKED_XZ);
+        int splitX = (z & 1) == 0 ? x : x + 1;
+        this.offerClipped(bounds, MIN_PACKED_XZ, y, z, splitX - 1, y, z);
+        this.offerClipped(bounds, splitX, y, z, MAX_PACKED_XZ, y, z);
+    }
+
+    private void offerClipped(SourceBounds bounds, int minX, int minY, int minZ,
+                              int maxX, int maxY, int maxZ) {
+        SourceBounds clipped = new SourceBounds(Math.max(bounds.minX, minX), Math.max(bounds.minY, minY),
+                Math.max(bounds.minZ, minZ), Math.min(bounds.maxX, maxX), Math.min(bounds.maxY, maxY),
+                Math.min(bounds.maxZ, maxZ));
+        if (clipped.minX <= clipped.maxX && clipped.minY <= clipped.maxY && clipped.minZ <= clipped.maxZ) {
+            this.offerBounds(clipped);
         }
     }
 

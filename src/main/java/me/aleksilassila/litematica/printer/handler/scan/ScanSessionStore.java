@@ -191,8 +191,29 @@ final class ScanSessionStore implements AutoCloseable {
             LongSupplier generationSequence
     ) {
         ScanRegion region = ScanRegion.from(sourceBounds, player);
-        ConstructionOrder order = this.orders.computeIfAbsent(ScanCache.normalizeMetricsOwnerKey(ownerKey),
-                ignored -> new ConstructionOrder(region.centerX(), region.centerZ(), intent == ScanIntent.MINE));
+        String orderKey = ScanCache.normalizeMetricsOwnerKey(ownerKey);
+        ConstructionOrder order = this.orders.get(orderKey);
+        if (order == null || !order.hasStartPosition() && player != null) {
+            ConstructionOrder proposed = player == null
+                    ? new ConstructionOrder(region.centerX(), region.centerZ(), intent == ScanIntent.MINE)
+                    : ConstructionPositionCursor.nearestOrder(sourceBoxes, region, intent == ScanIntent.MINE);
+            if (order == null || proposed.hasStartPosition()) {
+                if (order != null) {
+                    // A missing player or empty sphere has no start yet. Once one becomes
+                    // available, cancel every old stream sharing this owner's comparator.
+                    Iterator<Map.Entry<String, SectionScanSession>> iterator = this.sessions.entrySet().iterator();
+                    while (iterator.hasNext()) {
+                        Map.Entry<String, SectionScanSession> entry = iterator.next();
+                        if (!ScanCache.normalizeMetricsOwnerKey(entry.getKey()).equals(orderKey)) continue;
+                        entry.getValue().recordReason(Reason.SOURCE_CHANGED);
+                        entry.getValue().close();
+                        iterator.remove();
+                    }
+                }
+                order = proposed;
+                this.orders.put(orderKey, order);
+            }
+        }
         String key = ownerKey + ":" + intent.name();
         SectionScanSession session = this.sessions.get(key);
         if (session == null || !session.canReuse(region)) {

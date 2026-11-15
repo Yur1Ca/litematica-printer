@@ -67,8 +67,52 @@ class GlobalCursorReferenceFuzzTest {
         }
     }
 
+    @Test void rotatedOverlappingBoxesAndSectionSkipsMatchAnExhaustiveNearestStart() {
+        Random random = new Random(SEED + 1);
+        for (int caseIndex = 0; caseIndex < CASES; caseIndex++) {
+            int y = (random.nextInt(4) - 2) * 16;
+            PrinterBox first = rawBox(-19, y - 4, -18, 18, y + 4, 17);
+            List<PrinterBox> boxes = List.of(first, shift(first, 5, 2, -3), first);
+            int centerX = random.nextInt(61) - 30, centerY = y + random.nextInt(17) - 8;
+            int centerZ = random.nextInt(61) - 30, band = 5 + random.nextInt(21);
+            ScanRegion region = new ScanRegion(centerX, centerY, centerZ, -128, -128, -128,
+                    127, 127, 127, band);
+            Set<BlockPos> eligible = enumerate(boxes, centerX, centerY, centerZ, band);
+            for (boolean descending : List.of(false, true)) {
+                List<BlockPos> reference = new ArrayList<>(eligible);
+                reference.sort(java.util.Comparator.comparingInt((BlockPos pos) -> descending ? -pos.getY() : pos.getY())
+                        .thenComparingInt(BlockPos::getZ)
+                        .thenComparingInt(pos -> Math.floorMod(pos.getZ(), 2) == 0 ? pos.getX() : -pos.getX()));
+                int nearestIndex = 0;
+                long nearestDistance = Long.MAX_VALUE;
+                for (int index = 0; index < reference.size(); index++) {
+                    BlockPos pos = reference.get(index);
+                    long dx = pos.getX() - (long) centerX, dy = pos.getY() - (long) centerY;
+                    long dz = pos.getZ() - (long) centerZ;
+                    long distance = dx * dx + dy * dy + dz * dz;
+                    if (distance < nearestDistance) {
+                        nearestIndex = index;
+                        nearestDistance = distance;
+                    }
+                }
+                List<BlockPos> rotated = new ArrayList<>(reference.subList(nearestIndex, reference.size()));
+                rotated.addAll(reference.subList(0, nearestIndex));
+                ConstructionOrder order = ConstructionPositionCursor.nearestOrder(boxes, region, descending);
+                for (boolean skipSections : List.of(false, true)) {
+                    check(boxes, region, rotated, descending, skipSections, caseIndex, order);
+                }
+            }
+        }
+    }
+
     private static void check(List<PrinterBox> boxes, ScanRegion region, List<BlockPos> reference,
                               boolean descending, boolean skipSections, int caseIndex) {
+        check(boxes, region, reference, descending, skipSections, caseIndex,
+                new ConstructionOrder(caseIndex - 20, 31 - caseIndex, descending));
+    }
+
+    private static void check(List<PrinterBox> boxes, ScanRegion region, List<BlockPos> reference,
+                              boolean descending, boolean skipSections, int caseIndex, ConstructionOrder order) {
         String label = "seed=" + SEED + ", case=" + caseIndex + ", descending=" + descending
                 + ", skips=" + skipSections + ", center=" + region.centerX() + "/" + region.centerY()
                 + "/" + region.centerZ() + ", band=" + region.maxDistanceBand();
@@ -77,8 +121,7 @@ class GlobalCursorReferenceFuzzTest {
         Set<BlockPos> emitted = new HashSet<>();
         Set<Section> encountered = new HashSet<>();
         Random skips = new Random(SEED + caseIndex * 37L + (descending ? 1L : 0L));
-        var cursor = new ConstructionPositionCursor(boxes, region,
-                new ConstructionOrder(caseIndex - 20, 31 - caseIndex, descending));
+        var cursor = new ConstructionPositionCursor(boxes, region, order);
         var target = new BlockPos.MutableBlockPos();
         try {
             // A broken duplicate/infinite traversal fails after at most the reference size + 1 polls.

@@ -375,6 +375,9 @@ final class SectionScanSession {
         for (Iterator<BlockPos> iterator = this.pendingReoffers.iterator(); remaining > 0 && iterator.hasNext(); remaining--) {
             BlockPos pos = iterator.next();
             iterator.remove();
+            // An explicit ownership release starts a new delivery lifetime. Unlike a repeated
+            // world notification, it must not wait for the unscanned tail of this pass.
+            this.offeredDirtyPositions.remove(ScanCache.key(pos));
             this.addDirtyPosition(pos);
         }
         return ++this.deliveryGeneration;

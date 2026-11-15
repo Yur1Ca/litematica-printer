@@ -558,7 +558,7 @@ public class MineHandler extends FeatureModuleBase {
             Set<BlockPos> discovered = new LinkedHashSet<>();
             Set<BlockPos> waterlogged = new LinkedHashSet<>();
             Iterable<BlockPos> source = this.scanEngine.iterable("trench", trenchSourceBoxes(sourceBoxes),
-                    this.level, null, this.player, 0, ScanIntent.CUSTOM, pos -> {
+                    this.level, null, this.player, 0, ScanIntent.FLUID, pos -> {
                         BlockState state = this.level.getBlockState(pos);
                         if (this.isFluid(state)) discovered.add(pos.immutable());
                         else if (this.isWaterlogged(state)) waterlogged.add(pos.immutable());

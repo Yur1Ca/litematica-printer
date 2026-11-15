@@ -11,6 +11,41 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConstructionOrderTest {
+    @Test void fixedThreeDimensionalStartRotatesTheWholeSequenceExactlyOnce() {
+        for (boolean descending : List.of(false, true)) {
+            List<BlockPos> expected = List.of(new BlockPos(1, 0, 0), new BlockPos(2, 0, 0),
+                    new BlockPos(2, 0, 1), new BlockPos(0, 0, 1),
+                    new BlockPos(0, descending ? -1 : 1, 0), new BlockPos(2, descending ? -1 : 1, 0),
+                    new BlockPos(0, descending ? 1 : -1, 0), new BlockPos(2, descending ? 1 : -1, 0),
+                    new BlockPos(0, 0, 0));
+            ConstructionOrder order = new ConstructionOrder(1, 0, 0, descending);
+            assertOrdered(expected, order);
+            for (int first = 0; first < expected.size(); first++) {
+                for (int second = first; second < expected.size(); second++) {
+                    assertTrue(order.compare(expected.get(first).asLong(), expected.get(second).asLong()) <= 0);
+                    assertEquals(-Integer.signum(order.compare(expected.get(second).asLong(), expected.get(first).asLong())),
+                            Integer.signum(order.compare(expected.get(first).asLong(), expected.get(second).asLong())));
+                }
+            }
+        }
+    }
+
+    @Test void anOddNegativeStartingRowStillRunsTowardsDecreasingX() {
+        assertOrdered(List.of(new BlockPos(-2, -1, -1), new BlockPos(-3, -1, -1),
+                        new BlockPos(-3, -1, 0), new BlockPos(-1, -1, 0),
+                        new BlockPos(-1, -1, -1)),
+                new ConstructionOrder(-2, -1, -1, false));
+    }
+
+    @Test void rotatedPackedCoordinateEdgesKeepTheirSignedCoordinatesAndDistinctRanks() {
+        BlockPos start = new BlockPos(33_554_431, 0, -33_554_432);
+        assertOrdered(List.of(start, new BlockPos(-33_554_432, 0, 33_554_431),
+                        new BlockPos(33_554_431, 2047, 33_554_431),
+                        new BlockPos(33_554_431, -2048, 33_554_431),
+                        new BlockPos(-33_554_432, 0, -33_554_432)),
+                new ConstructionOrder(start.getX(), start.getY(), start.getZ(), false));
+    }
+
     @Test void finishesLayersAndAlternatesWholeHorizontalRows() {
         List<BlockPos> expected = List.of(
                 new BlockPos(0, -1, 0), new BlockPos(1, -1, 0),

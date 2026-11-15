@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.jetbrains.annotations.Nullable;
 
 /** Adapts live Minecraft and schematic worlds to the scan observation contract. */
@@ -50,6 +51,17 @@ final class LiveWorldObservation implements WorldObservationPort {
     @Override
     public boolean hasCandidatesInSection(ScanIntent intent, int sectionX, int sectionY,
                                           int sectionZ, boolean breakExtraBlocks) {
+        if (intent == ScanIntent.FLUID) {
+            var source = this.level.getChunkSource();
+            // Headless or incomplete observations are unknown, never proof of an empty section.
+            if (source == null) return true;
+            var chunk = source.getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
+            if (chunk == null) return false;
+            var sections = chunk.getSections();
+            int index = this.level.getSectionIndexFromSectionY(sectionY);
+            // The maintained fluid count includes both liquid blocks and waterlogged solids.
+            return index >= 0 && index < sections.length && sections[index] != null && sections[index].hasFluid();
+        }
         if (intent != ScanIntent.PRINT || breakExtraBlocks || this.schematic == null) return true;
         var chunk = this.schematic.getChunk(sectionX, sectionZ);
         var sections = chunk.getSections();

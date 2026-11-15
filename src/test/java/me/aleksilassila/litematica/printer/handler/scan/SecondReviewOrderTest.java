@@ -122,7 +122,7 @@ class SecondReviewOrderTest {
         }
     }
 
-    @Test void globalPrintOrderSurvivesNonOriginMovementOwnerResetsPrefetchAndEpochChanges() throws Exception {
+    @Test void nearestPrintStartSurvivesMovementResetsAndPrefetchUntilAnEpochRecapturesIt() throws Exception {
         int previousWorkRange = Configs.Core.WORK_RANGE.getIntegerValue();
         boolean previousPrefetch = Configs.Print.PRINT_SORT_TARGETS.getBooleanValue();
         try (var fixture = new ScanIntegrationFixture(0)) {
@@ -136,11 +136,11 @@ class SecondReviewOrderTest {
                 fixture.cache.resetOwner("print");
                 fixture.cache.resetOwner("print_sorted");
             });
-            List<BlockPos> originalOrder = List.of(new BlockPos(144, 0, 0),
-                    new BlockPos(160, 0, 0), new BlockPos(168, 0, 0));
+            List<BlockPos> originalOrder = List.of(new BlockPos(168, 0, 0),
+                    new BlockPos(144, 0, 0), new BlockPos(160, 0, 0));
             fixture.tick(1);
             assertEquals(originalOrder, printTargets(fixture, targets, scope, true),
-                    "The first prefetched batch follows global rows even when the player starts elsewhere");
+                    "The first prefetched batch starts nearest the player and wraps the original row once");
 
             movePlayer(fixture, 152.25, 0, 0);
             Configs.Core.WORK_RANGE.setIntegerValue(64);
@@ -148,7 +148,7 @@ class SecondReviewOrderTest {
             targets.invalidateCandidates();
             fixture.tick(2);
             assertEquals(originalOrder, printTargets(fixture, targets, scope, true),
-                    "Movement, range changes and an inventory-style owner reset retain the same global order");
+                    "Movement, range changes and an inventory-style owner reset retain the fixed start");
 
             fixture.tick(3);
             assertEquals(originalOrder, printTargets(fixture, targets, scope, false),
@@ -161,14 +161,14 @@ class SecondReviewOrderTest {
             fixture.cache.resetOwner("print_sorted");
             fixture.tick(5);
             assertEquals(originalOrder, printTargets(fixture, targets, scope, true),
-                    "A feature's candidate/source reset retains the same global order");
+                    "A feature's candidate/source reset retains the same fixed start");
 
             targets.clear();
             fixture.epoch = fixture.epoch.next();
             fixture.tick(6);
-            assertEquals(List.of(new BlockPos(144, 0, 0), new BlockPos(160, 0, 0), new BlockPos(168, 0, 0)),
+            assertEquals(List.of(new BlockPos(160, 0, 0), new BlockPos(168, 0, 0), new BlockPos(144, 0, 0)),
                     printTargets(fixture, targets, scope, true),
-                    "A new epoch also preserves the rank of the same world coordinates");
+                    "A new epoch starts at the player's new geometric coordinate, then wraps the remaining row");
         } finally {
             Configs.Core.WORK_RANGE.setIntegerValue(previousWorkRange);
             Configs.Print.PRINT_SORT_TARGETS.setBooleanValue(previousPrefetch);

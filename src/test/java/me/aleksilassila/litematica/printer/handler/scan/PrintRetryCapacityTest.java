@@ -19,6 +19,38 @@ class PrintRetryCapacityTest {
         net.minecraft.server.Bootstrap.bootStrap();
     }
 
+    @Test void aRepeatedExplicitReofferDoesNotWaitForTheUnscannedSelectionTail() throws Exception {
+        int previousWork = me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.getIntegerValue();
+        me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+        try {
+            for (String owner : List.of("mine", "print")) {
+                try (var f = new ScanIntegrationFixture(1)) {
+                    ScanIntent intent = owner.equals("mine") ? ScanIntent.MINE : ScanIntent.PRINT;
+                    BlockPos target = owner.equals("mine") ? new BlockPos(0, 15, 0) : BlockPos.ZERO;
+                    if (owner.equals("mine")) f.level.world.put(target, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                    var scope = List.of(new PrinterBox(0, 0, 0, 15, 15, 15));
+                    f.tick(1);
+                    var original = f.scan(owner, scope, 1, intent).iterator();
+                    assertEquals(target, original.next());
+                    for (int tick = 2; tick <= 4; tick++) {
+                        f.engine().reoffer(owner, target);
+                        long dirty = f.engine().dirtyVersion();
+                        int reads = f.level.readsAt(target);
+                        f.tick(tick);
+                        var retry = f.scan(owner, scope, 1, intent).iterator();
+                        assertEquals(List.of(target), drain(retry),
+                                "An explicit ownership release must return at its rank without walking the large unscanned tail");
+                        assertFalse(original.hasNext(), "A new delivery must still invalidate the old iterator");
+                        assertEquals(dirty, f.engine().dirtyVersion());
+                        assertEquals(reads, f.level.readsAt(target), "Retry must retain shared positive facts");
+                    }
+                }
+            }
+        } finally {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
+        }
+    }
+
     @Test void aNewDeliveryIteratorReceivesReoffersWithoutLettingTheOldIteratorConsumeThem() throws Exception {
         try (var f = new ScanIntegrationFixture(2)) {
             f.tick(1);

@@ -53,6 +53,54 @@ class MineSelectionRefreshTest {
 
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 
+    @Test void aDryTrenchLeavesDiscoveryAllowanceForMiningInTheSameTick() throws Exception {
+        int previousWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new Fixture(true); var schematic = new HeadlessSchematicBinding()) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            Configs.Core.WORK_RANGE.setIntegerValue(64);
+            Configs.Core.ITERATOR_SHAPE.setOptionListValue(me.aleksilassila.litematica.printer.enums.RadiusShapeType.CUBE);
+            Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(false);
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, new BlockPos(63, 15, 15));
+            PrinterBox bounds = new PrinterBox(FIRST, new BlockPos(63, 15, 15));
+            set(f.mining.mineHandler, FeatureModuleBase.class, "playerInteractionBox", new AtomicReference<>(bounds));
+            f.candidates.state(FIRST, Blocks.STONE.defaultBlockState());
+            f.installLoadedSectionMetadata();
+            var scan = f.installScan();
+            f.candidates.level.tick = 1;
+            scan.beginTick(f.candidates.level, null, 1);
+
+            f.refreshTrench();
+            assertEquals(0, scan.metricsFor("trench").scannedBlocks(), "Section metadata avoids per-block fluid reads");
+            @SuppressWarnings("unchecked")
+            var mine = (Iterable<BlockPos>) invoke(MineHandler.class, f.mining.mineHandler, "getMineScanPositions",
+                    new Class<?>[]{PrinterBox.class}, bounds);
+
+            assertTrue(mine.iterator().hasNext(),
+                    "A dry trench must skip fluid-free sections instead of exhausting the mining discovery allowance");
+            assertTrue(f.readyFillTargets().isEmpty());
+            assertTrue(f.readyWaterloggedTargets().isEmpty());
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void loadedFluidMetadataStillDiscoversLiquidsAndWaterloggedBlocks(boolean waterlogged) throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            BlockPos target = FIRST.below();
+            f.candidates.state(target, waterlogged
+                    ? Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.WATERLOGGED, true)
+                    : Blocks.WATER.defaultBlockState());
+            f.installLoadedSectionMetadata();
+            f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
+            f.refreshTrench();
+            assertEquals(List.of(target), waterlogged ? f.readyWaterloggedTargets() : f.readyFillTargets());
+        }
+    }
+
     @Test void aHugeTrenchSelectionUsesBoundedWorldReadsAndResumesInsteadOfWalkingTheWholeVolume() throws Exception {
         int previousWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
         try (var f = new Fixture(true)) {
@@ -71,21 +119,32 @@ class MineSelectionRefreshTest {
                     late, Blocks.WATER.defaultBlockState());
             f.candidates.level.trenchReadLimit = 10_000;
             boolean recovered = false;
-            for (int tick = 1; tick <= 100; tick++) {
+            // The union contains the selection, two X sides, two Z sides and one floor.
+            // Starting at the player's Y=0 coordinate reaches the floor after wrapping.
+            int geometricCells = 257 * 256 + 2 * 256 + 2 * 257 * 256 + 257;
+            int maximumTicks = Math.ceilDiv(geometricCells, 256) + 2;
+            long totalScanned = 0;
+            for (int tick = 1; tick <= maximumTicks; tick++) {
                 f.candidates.level.tick = tick;
                 scan.beginTick(f.candidates.level, null, tick);
                 f.candidates.level.trenchReads = 0;
                 assertDoesNotThrow(f::refreshTrench,
                         "A large trench cannot perform a full-volume preprocessing pass in one tick");
+                int scanned = scan.metricsFor("trench").scannedBlocks();
+                assertTrue(scanned > 0 && scanned <= 256, "Every active slice makes progress within its block budget");
+                totalScanned += scanned;
+                assertTrue(totalScanned <= geometricCells, "A finite pass must not replay its prefix while finding the floor");
                 if (tick == 1) {
-                    assertTrue(f.readyFillTargets().contains(early), "The global first floor coordinate belongs to the first slice");
-                    assertFalse(f.readyFillTargets().contains(late), "X256 is after the 256-point global floor prefix");
+                    assertEquals(256, scanned);
+                    assertEquals(new BlockPos(256, 0, 0), scan.peekPosition("trench"),
+                            "The first slice follows the nearest geometric row even though its positions are air");
+                    assertTrue(f.readyFillTargets().isEmpty(), "The floor belongs to the wrapped part of this traversal");
                 }
                 if (f.readyFillTargets().contains(late)) { recovered = true; break; }
             }
-            assertTrue(recovered, "Resumable discovery must eventually reach later tiles without another world event");
+            assertTrue(recovered, "One budgeted geometric pass must reach the wrapped floor without another world event");
             assertEquals(java.util.Set.of(early, late), new java.util.HashSet<>(f.readyFillTargets()),
-                    "The first slice's retained floor target and the later global coordinate both remain available");
+                    "Both floor endpoints remain available after the finite wrap");
         } finally {
             Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
         }
@@ -790,6 +849,16 @@ class MineSelectionRefreshTest {
 
         void bounds(BlockPos first, BlockPos second) { box.setPos1(first); box.setPos2(second); }
 
+        void installLoadedSectionMetadata() throws Exception {
+            var chunk = alloc(net.minecraft.world.level.chunk.LevelChunk.class);
+            var sections = new net.minecraft.world.level.chunk.LevelChunkSection[24];
+            java.util.Arrays.fill(sections, this.candidates.level.section);
+            set(chunk, net.minecraft.world.level.chunk.ChunkAccess.class, "sections", sections);
+            var source = alloc(LoadedTrenchChunks.class);
+            source.chunk = chunk;
+            set(this.candidates.level, net.minecraft.client.multiplayer.ClientLevel.class, "chunkSource", source);
+        }
+
         me.aleksilassila.litematica.printer.handler.scan.ScanEngine installScan() throws Exception {
             set(mining.player, net.minecraft.world.entity.Entity.class, "blockPosition", FIRST);
             var cache = new me.aleksilassila.litematica.printer.handler.scan.ScanCache();
@@ -870,6 +939,16 @@ class MineSelectionRefreshTest {
             Configs.Break.BREAK_COOLDOWN.setIntegerValue(oldCooldown);
             Configs.Break.BREAK_BLOCKS_PER_TICK.setIntegerValue(oldBudget);
             candidates.close();
+        }
+    }
+
+    static class LoadedTrenchChunks extends net.minecraft.client.multiplayer.ClientChunkCache {
+        net.minecraft.world.level.chunk.LevelChunk chunk;
+        private LoadedTrenchChunks() { super(null, 0); }
+        @Override public net.minecraft.world.level.chunk.LevelChunk getChunk(int x, int z,
+                net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load) {
+            assertFalse(load, "Scan metadata must never request chunk loading");
+            return this.chunk;
         }
     }
 

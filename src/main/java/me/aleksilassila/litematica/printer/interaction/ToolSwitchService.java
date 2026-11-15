@@ -211,10 +211,11 @@ public final class ToolSwitchService {
                     || this.tweakeroo.isCurrentToolUsable(this.client.player.getMainHandItem()));
     }
 
-    /** A native paid hold survives ordinary wear receipts, but never a different tool or component set. */
+    /** An existing hold survives wear receipts, with native or optional tool protection still enforced. */
     public boolean canContinueReservedBreak(BlockPos pos, BlockState state, ItemStack startedTool) {
-        if (!this.durabilityGuard.enabled() || this.client.player == null) return false;
+        if (this.client.player == null) return false;
         ItemStack held = this.client.player.getMainHandItem();
+        if (held.isDamageableItem() && held.getDamageValue() < startedTool.getDamageValue()) return false;
         ItemStack compared = startedTool.copy();
         if (compared.isDamageableItem()) compared.setDamageValue(held.getDamageValue());
         return ItemStack.matches(compared, held) && this.canContinueReservedBreak(pos, state);

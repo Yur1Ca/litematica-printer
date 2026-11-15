@@ -93,8 +93,10 @@ public class PrintHandler extends FeatureModuleBase {
                 && this.mc.getConnection() == this.connection && this.mc.gameMode == this.gameMode
                 && this.gameMode instanceof MiningInteractionPort port
                 && port.isDestroying()
-                && (port.matchesDestroyTarget(port.destroyPos())
-                    && InteractionUtils.getRuntime().isActiveDestroyTarget(port.destroyPos())
+                && (InteractionUtils.getRuntime().isActiveDestroyTarget(port.destroyPos())
+                    && (port.matchesDestroyTarget(port.destroyPos())
+                        || RuntimeAccess.get().toolSwitchService().canContinueReservedBreak(
+                                port.destroyPos(), this.level.getBlockState(port.destroyPos()), port.destroyingItem()))
                     || this.activeWaterMiningPos() != null);
     }
 

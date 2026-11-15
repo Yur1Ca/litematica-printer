@@ -31,6 +31,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 import me.aleksilassila.litematica.printer.mixin_extension.*;
 import me.aleksilassila.litematica.printer.runtime.*;
@@ -620,6 +621,90 @@ class MiningInteractionRegressionTest {
 
     private record MiningRun(int finishTick, List<ServerboundPlayerActionPacket.Action> actions,
                              List<Float> progress) { }
+
+    @ParameterizedTest @CsvSource({"false, false, 0", "true, false, 0", "false, true, 0", "true, true, 0",
+            "false, false, 20", "true, false, 20", "false, true, 20", "true, true, 20"})
+    void authoritativeToolWearDoesNotLetIdleInputRestartAutomaticMining(boolean delayed, boolean printing, int reserve) throws Exception {
+        MiningRun closed = runMiningWithWearReceipt(delayed, false, printing, reserve);
+        MiningRun open = runMiningWithWearReceipt(delayed, true, printing, reserve);
+        assertEquals(open, closed, "A wear-only inventory receipt must not make a closed screen restart mining");
+        assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), closed.actions());
+    }
+
+    private static MiningRun runMiningWithWearReceipt(boolean delayed, boolean screenOpen, boolean printing, int reserve) throws Exception {
+        int previousReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        try (var f = new Fixture(0.2f, delayed)) {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(reserve);
+            if (printing) Configs.Core.WORK_MODE_TYPE.setOptionListValue(PrintModeType.PRINTER);
+            f.player.held = new ItemStack(net.minecraft.world.item.Items.DIAMOND_PICKAXE);
+            f.player.inventory.setItem(0, f.player.held);
+            List<Float> progress = new ArrayList<>();
+            for (int tick = 0; tick < 20; tick++) {
+                f.level.tick = tick;
+                if (tick == 1) {
+                    // A server slot update replaces the stack after an earlier break's wear.
+                    ItemStack receipt = f.player.held.copy();
+                    receipt.setDamageValue(receipt.getDamageValue() + 1);
+                    f.player.inventory.setItem(0, receipt);
+                    f.player.held = receipt;
+                    assertFalse(f.port.matchesDestroyTarget(TARGET),
+                            "Vanilla's exact component comparison rejects a wear-only receipt");
+                }
+                f.controller.tick();
+                if (!screenOpen) f.idleInput(false);
+                if (printing) f.interactions.continueDestroyBlock(TARGET);
+                else {
+                    f.mine();
+                    f.activeTarget(f.port.destroying ? TARGET : null);
+                }
+                progress.add(f.port.progress);
+                if (actions(f).contains(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK)) {
+                    return new MiningRun(tick, actions(f), List.copyOf(progress));
+                }
+            }
+            throw new AssertionError("Mining did not finish after a wear receipt");
+        } finally {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previousReserve);
+        }
+    }
+
+    @ParameterizedTest @CsvSource({"item, false", "components, false", "reserve, false", "repair, false",
+            "item, true", "components, true", "reserve, true", "repair, true"})
+    void wearReceiptProtectionStillRejectsChangedOrUnsafeTools(String change, boolean printing) throws Exception {
+        int previousReserve = Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue();
+        try (var f = new Fixture(0.2f, true)) {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(20);
+            if (printing) Configs.Core.WORK_MODE_TYPE.setOptionListValue(PrintModeType.PRINTER);
+            f.player.held = new ItemStack(net.minecraft.world.item.Items.DIAMOND_PICKAXE);
+            f.player.held.setDamageValue(f.player.held.getMaxDamage() - 25);
+            f.player.inventory.setItem(0, f.player.held);
+            if (printing) assertEquals(BlockBreakResult.IN_PROGRESS, f.interactions.continueDestroyBlock(TARGET));
+            else {
+                assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+                f.activeTarget(TARGET);
+            }
+            ItemStack receipt = f.player.held.copy();
+            receipt.setDamageValue(receipt.getDamageValue() + 1);
+            switch (change) {
+                case "item" -> receipt = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+                case "components" -> receipt.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                        net.minecraft.network.chat.Component.literal("Different tool"));
+                case "reserve" -> receipt.setDamageValue(receipt.getMaxDamage() - 20);
+                case "repair" -> receipt.setDamageValue(f.player.held.getDamageValue() - 1);
+            }
+            f.player.inventory.setItem(0, receipt);
+            f.player.held = receipt;
+            assertFalse(printing ? f.printHandler.shouldKeepMiningOnIdleInput()
+                    : f.mineHandler.shouldKeepMiningOnIdleInput());
+            f.idleInput(false);
+            assertFalse(f.port.destroying);
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK), actions(f));
+        } finally {
+            Configs.Break.BREAK_TOOL_RESERVE.setIntegerValue(previousReserve);
+        }
+    }
 
     @Test void printRemovalAlsoSurvivesIdleInputAndFinishesSlowMining() throws Exception {
         try (var f = new Fixture(0.2f, true)) {

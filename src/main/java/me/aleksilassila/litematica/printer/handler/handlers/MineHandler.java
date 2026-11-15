@@ -26,6 +26,7 @@ import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooAdapte
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
@@ -94,7 +95,12 @@ public class MineHandler extends FeatureModuleBase {
                 && this.mc.level == this.level && this.mc.player == this.player
                 && this.mc.getConnection() == this.connection && this.mc.gameMode == this.gameMode
                 && this.gameMode instanceof MiningInteractionPort port
-                && port.isDestroying() && port.matchesDestroyTarget(this.activeMinePos);
+                && port.isDestroying() && this.activeMinePos.equals(port.destroyPos())
+                // Server wear can replace the held stack while this active hold is still valid.
+                // Use the same guarded continuation policy as the mining controller.
+                && (port.matchesDestroyTarget(this.activeMinePos)
+                    || RuntimeAccess.get().toolSwitchService().canContinueReservedBreak(
+                            this.activeMinePos, this.level.getBlockState(this.activeMinePos), port.destroyingItem()));
     }
 
     private boolean mineRestriction(BlockState blockState) {

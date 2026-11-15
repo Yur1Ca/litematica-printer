@@ -378,7 +378,7 @@ final class SectionScanSession {
             // An explicit ownership release starts a new delivery lifetime. Unlike a repeated
             // world notification, it must not wait for the unscanned tail of this pass.
             this.offeredDirtyPositions.remove(ScanCache.key(pos));
-            this.addDirtyPosition(pos);
+            this.addDirtyPosition(pos, true);
         }
         return ++this.deliveryGeneration;
     }
@@ -386,12 +386,16 @@ final class SectionScanSession {
     boolean acceptsDeliveryIterator(long generation) { return this.deliveryGeneration == generation; }
 
     private void addDirtyPosition(BlockPos pos) {
+        this.addDirtyPosition(pos, false);
+    }
+
+    private void addDirtyPosition(BlockPos pos, boolean releasedDelivery) {
         if (pos == null || !ScanGeometry.containsAny(this.sourceBoxes, pos)) {
             return;
         }
         this.exhaustedUntilTick = Long.MIN_VALUE;
         long key = ScanCache.key(pos);
-        if (this.snapshots != null && (this.offeredDirtyPositions.contains(key)
+        if (!releasedDelivery && this.snapshots != null && (this.offeredDirtyPositions.contains(key)
                 || this.offeredDirtyPositions.size() >= MAX_DIRTY_POSITIONS)) {
             // Repeated notifications invalidate shared facts immediately, but may only
             // offer this position again after the finite current pass advances to its end.

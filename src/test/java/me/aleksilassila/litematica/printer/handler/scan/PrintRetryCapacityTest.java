@@ -51,6 +51,48 @@ class PrintRetryCapacityTest {
         }
     }
 
+    @Test void anExplicitMineReofferKeepsItsRankWhenWorldNotificationHistoryIsFull() throws Exception {
+        int previousWork = me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new ScanIntegrationFixture(0)) {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(131072);
+            f.level.defaultState = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+            var scope = List.of(new PrinterBox(0, 0, 0, 15, 127, 15));
+            f.tick(1);
+            f.scan("mine", scope, 0, ScanIntent.MINE); // Register the source before real world notifications.
+            for (int y = 127; y >= 64; y--) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) f.cache.invalidate(new BlockPos(x, y, z));
+                }
+            }
+            var original = f.scan("mine", scope, 0, ScanIntent.MINE).iterator();
+            for (int i = 0; i < 16384; i++) {
+                assertTrue(original.hasNext());
+                original.next();
+            }
+            BlockPos retryTarget = new BlockPos(0, 63, 0);
+            assertEquals(retryTarget, original.next(), "This delivery comes from the cursor after the notification history fills");
+            int reads = f.level.readsAt(retryTarget);
+            long dirty = f.engine().dirtyVersion();
+
+            f.engine().reoffer("mine", retryTarget);
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            f.tick(2);
+            var retry = f.scan("mine", scope, 1, ScanIntent.MINE).iterator();
+            assertEquals(retryTarget, retry.next(),
+                    "An explicit released delivery must keep its rank even when unrelated notification history is full");
+            assertFalse(original.hasNext(), "A new delivery still invalidates the old iterator");
+            assertEquals(reads, f.level.readsAt(retryTarget), "History pressure cannot force a fresh world read for this retry");
+            assertEquals(dirty, f.engine().dirtyVersion());
+
+            f.cache.invalidate(retryTarget);
+            f.tick(3);
+            assertEquals(retryTarget.east(), f.scan("mine", scope, 1, ScanIntent.MINE).iterator().next(),
+                    "An ordinary notification still yields to the finite cursor when notification history is full");
+        } finally {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
+        }
+    }
+
     @Test void aNewDeliveryIteratorReceivesReoffersWithoutLettingTheOldIteratorConsumeThem() throws Exception {
         try (var f = new ScanIntegrationFixture(2)) {
             f.tick(1);

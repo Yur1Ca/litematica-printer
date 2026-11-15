@@ -255,7 +255,8 @@ public final class PrintWorkflowScheduler {
     private void updateReady(PrintTask task, ClientLevel level, WorldSchematic schematic) {
         long key = task.pos().asLong();
         if (this.materialBlockedKeys.contains(key)
-                || task.isWaitingForWorldUpdate(level, schematic)) this.readyKeys.remove(key);
+                || task.isWaitingForWorldUpdate(level, schematic)
+                || !task.shouldKeep(level, schematic)) this.readyKeys.remove(key);
         else this.readyKeys.add(key);
     }
 

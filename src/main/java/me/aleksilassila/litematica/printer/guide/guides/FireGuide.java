@@ -24,7 +24,7 @@ public class FireGuide extends Guide {
     protected Result onBuildActionMissingBlock(BlockMatchResult state) {
         return Result.success(new Action()
                 .setSides(findFireDirection())
-                .setItems(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)
+                .setItems(Items.FIRE_CHARGE, Items.FLINT_AND_STEEL)
                 .setRequiresSupport());
     }
 

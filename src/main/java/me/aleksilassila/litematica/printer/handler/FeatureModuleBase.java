@@ -204,22 +204,15 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
                 || !this.isConfigAllowExecute() || this.playerInteractionBox == null
                 || this.playerInteractionBox.get() == null
                 || !this.previewSources.equals(this.getScanSourceBoxes(this.playerInteractionBox.get()))) return null;
-        BlockPos known = this.peekQueuedIterationTarget();
-        BlockPos next = known == null ? this.scanEngine.peekPosition(this.getPreviewScanOwner()) : known;
-        if (known != null && this.mergeQueuedPreviewWithScan()) {
-            BlockPos scanned = this.scanEngine.peekPosition(this.getPreviewScanOwner());
-            if (scanned != null && this.scanEngine.targetComparator(this.getPreviewScanOwner()).compare(scanned, known) < 0) {
-                next = scanned;
-                known = null;
-            }
-        }
+        // The scan cursor may still point at air or an unclassified position. Only retained
+        // operation targets are previews; rendering must not classify or advance the source.
+        BlockPos next = this.peekQueuedIterationTarget();
         if (next == null || !this.isPreviewPositionAllowed(next)) return null;
-        return new me.aleksilassila.litematica.printer.render.OperationHighlights.Preview(next.immutable(), known != null);
+        return new me.aleksilassila.litematica.printer.render.OperationHighlights.Preview(next.immutable(), true);
     }
 
     protected String getPreviewScanOwner() { return this.id; }
     protected BlockPos peekQueuedIterationTarget() { return null; }
-    protected boolean mergeQueuedPreviewWithScan() { return false; }
     protected boolean isPreviewPositionAllowed(BlockPos pos) {
         return this.canReachIterationPosition(pos) && this.isInSelectionRange(pos);
     }

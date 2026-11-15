@@ -26,7 +26,7 @@ public class NetherPortalGuide extends Guide {
         boolean canCreatePortal = PortalShape.findEmptyPortalShape(level, blockPos, requiredAxis).isPresent();
         if (canCreatePortal) {
             return Result.success(new Action()
-                    .setItems(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)
+                    .setItems(Items.FIRE_CHARGE, Items.FLINT_AND_STEEL)
                     .setRequiresSupport());
         }
         return Result.SKIP;

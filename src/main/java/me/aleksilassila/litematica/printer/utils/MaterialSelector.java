@@ -33,8 +33,11 @@ public final class MaterialSelector {
         }
         Inventory inventory = player.getInventory();
         ItemStack mainHandStack = player.getMainHandItem();
+        boolean preferFireCharge = items.length == 2
+                && items[0] == Items.FIRE_CHARGE && items[1] == Items.FLINT_AND_STEEL;
         for (Item item : items) {
             if (mainHandStack.getItem().equals(item)
+                    && (!preferFireCharge || item == Items.FIRE_CHARGE)
                     // 「虚空仓库」触发物不能当建材：右键它会被服务端接管成「开界面」，
                     // 方块永远放不下，于是每 tick 重试一次（按 Esc 也退不出这个循环）。
                     && !VoidWarehouseTriggerItem.isTrigger(mainHandStack)
@@ -47,6 +50,8 @@ public final class MaterialSelector {
             return execution.setPickedItemToHand(new ItemStack(items[0]), client);
         }
         for (Item item : items) {
+            // Reuse the held fallback only after the preferred ignition material was unavailable.
+            if (preferFireCharge && item == Items.FLINT_AND_STEEL && mainHandStack.is(item)) return true;
             int surplus = -1;
             for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
                 ItemStack itemStack = inventory.getItem(slot);

@@ -85,7 +85,9 @@ final class StripLogPrintTask implements PrintTask {
     public boolean shouldKeep(ClientLevel level, WorldSchematic schematic) {
         if (!Configs.Print.STRIP_LOGS.getBooleanValue()) return false;
         BlockState required = schematic.getBlockState(this.pos);
-        if (required.getBlock() != this.requiredBlock) return false;
+        if (required.getBlock() != this.requiredBlock
+                || !required.hasProperty(BlockStateProperties.AXIS)
+                || required.getValue(BlockStateProperties.AXIS) != this.axis) return false;
         this.reconcile(level.getBlockState(this.pos));
         return this.stage != StripLogTaskStage.COMPLETE;
     }

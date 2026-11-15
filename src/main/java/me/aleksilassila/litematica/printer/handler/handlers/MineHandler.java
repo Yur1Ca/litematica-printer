@@ -14,6 +14,7 @@ import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanWorkSlice;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
+import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.PrinterUtils;
@@ -104,9 +105,6 @@ public class MineHandler extends FeatureModuleBase {
     }
 
     private boolean mineRestriction(BlockState blockState) {
-        if (!InteractionUtils.breakRestriction(blockState)) {
-            return false;
-        }
         if (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             return this.tweakeroo.allowsBreak(blockState);
         }
@@ -132,7 +130,8 @@ public class MineHandler extends FeatureModuleBase {
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         if (this.hasTrenchFillWork()) {
             if (this.trenchFill.hasWaterloggedTargets()) {
-                List<BlockPos> waterlogged = this.trenchFill.readyWaterloggedTargets(this::canReachTrenchTarget);
+                List<BlockPos> waterlogged = this.trenchFill.readyWaterloggedTargets(
+                        pos -> this.canReachTrenchTarget(pos) && this.canBreakTrenchWaterloggedTarget(pos));
                 if (!waterlogged.isEmpty()) return waterlogged;
             }
             List<BlockPos> fillPositions = this.trenchFill.readyFillTargets(
@@ -178,7 +177,9 @@ public class MineHandler extends FeatureModuleBase {
     @Override protected BlockPos peekQueuedIterationTarget() {
         if (this.activeMinePos != null) return this.activeMinePos;
         if (this.hasTrenchFillWork()) {
-            BlockPos trench = this.trenchFill.peekPriorityTarget(this.level.getGameTime(), this::canReachTrenchTarget);
+            BlockPos trench = this.trenchFill.peekPriorityTarget(this.level.getGameTime(),
+                    pos -> this.canReachTrenchTarget(pos) && (!this.trenchFill.hasWaterloggedTarget(pos)
+                            || this.canBreakTrenchWaterloggedTarget(pos)));
             if (trench != null) return trench;
         }
         BlockPos next = null;
@@ -221,17 +222,12 @@ public class MineHandler extends FeatureModuleBase {
         result = 31 * result + Configs.Mine.EXCAVATE_LIMIT.getOptionListValue().hashCode();
         result = 31 * result + Configs.Mine.EXCAVATE_BLACKLIST.getStrings().hashCode();
         result = 31 * result + Configs.Mine.EXCAVATE_WHITELIST.getStrings().hashCode();
-        result = 31 * result + Configs.Break.BREAK_LIMITER.getOptionListValue().hashCode();
-        result = 31 * result + Configs.Break.BREAK_LIMIT.getOptionListValue().hashCode();
-        result = 31 * result + Configs.Break.BREAK_BLACKLIST.getStrings().hashCode();
-        result = 31 * result + Configs.Break.BREAK_WHITELIST.getStrings().hashCode();
         result = 31 * result + Boolean.hashCode(Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue());
         result = 31 * result + Boolean.hashCode(Configs.Break.BREAK_AUTO_TOOL.getBooleanValue());
         result = 31 * result + Boolean.hashCode(this.tweakeroo.isToolSwitchEnabled());
         result = 31 * result + Boolean.hashCode(this.tweakeroo.isDurabilityGuardActive());
         if (this.tweakeroo.isLoaded()
-                && (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue() == ExcavateListMode.TWEAKEROO
-                    || Configs.Break.BREAK_LIMITER.getOptionListValue() == ExcavateListMode.TWEAKEROO)) {
+                && Configs.Mine.EXCAVATE_LIMITER.getOptionListValue() == ExcavateListMode.TWEAKEROO) {
             result = 31 * result + this.tweakeroo.breakRestrictionConfigHash();
         }
         return result;
@@ -646,11 +642,12 @@ public class MineHandler extends FeatureModuleBase {
             this.setIterationConsumedEffectiveExecution(false);
             return;
         }
+        BlockPos supportPos = pos.relative(supportDirection);
         if (!this.actionBroker.queueClick(
-                pos.relative(supportDirection),
+                supportPos,
                 supportDirection.getOpposite(),
                 net.minecraft.world.phys.Vec3.ZERO,
-                false,
+                Implementation.isInteractive(this.level.getBlockState(supportPos).getBlock()),
                 1,
                 this.trenchFillItems,
                 ActionPort.ActionSource.MINE)) {
@@ -689,6 +686,11 @@ public class MineHandler extends FeatureModuleBase {
         this.trenchFill.defer(pos, retryAt);
     }
 
+    private boolean canBreakTrenchWaterloggedTarget(BlockPos pos) {
+        return this.level != null && this.isWaterlogged(this.level.getBlockState(pos))
+                && InteractionUtils.canBreakBlock(pos) && this.mineRestriction(this.level.getBlockState(pos));
+    }
+
     private void executeTrenchWaterloggedBreak(BlockPos pos, AtomicReference<Boolean> skipIteration) {
         if (this.level == null || !this.isWithinTrenchScope(pos)
                 || !this.isWaterlogged(this.level.getBlockState(pos))) {
@@ -697,6 +699,10 @@ public class MineHandler extends FeatureModuleBase {
         }
         if (!this.canReachTrenchTarget(pos)) {
             skipIteration.set(true);
+            return;
+        }
+        if (!this.canBreakTrenchWaterloggedTarget(pos)) {
+            this.setIterationConsumedEffectiveExecution(false);
             return;
         }
         if (this.activeMinePos != null && !this.activeMinePos.equals(pos)) {

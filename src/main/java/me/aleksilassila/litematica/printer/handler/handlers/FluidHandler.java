@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.config.ConfiguredPlacementSettings;
 import me.aleksilassila.litematica.printer.feature.SharedPlacementSettings;
@@ -120,6 +121,11 @@ public class FluidHandler extends FeatureModuleBase {
 
     @Override
     protected void onRuntimeReset() {
+        this.fillBlocks = new ArrayList<>();
+        this.fillItems = new ArrayList<>();
+        this.fillItemArray = new Item[0];
+        this.fluidBlocks = new ArrayList<>();
+        this.fluids = Set.of();
         this.observedScanConfigHash = Integer.MIN_VALUE;
         this.retryTargets.clear();
         this.inFlightTargets.clear();
@@ -211,8 +217,6 @@ public class FluidHandler extends FeatureModuleBase {
         return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
     }
 
-    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
-
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (this.inFlightTargets.contains(blockPos)) {
@@ -258,7 +262,7 @@ public class FluidHandler extends FeatureModuleBase {
                 clickTarget,
                 clickSide,
                 Vec3.ZERO,
-                false,
+                Implementation.isInteractive(this.level.getBlockState(clickTarget).getBlock()),
                 1,
                 fillItemArray,
                 ActionPort.ActionSource.FLUID

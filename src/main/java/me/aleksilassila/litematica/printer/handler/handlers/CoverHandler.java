@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
@@ -199,8 +200,6 @@ public final class CoverHandler extends FeatureModuleBase {
         return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
     }
 
-    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
-
     @Override
     protected void executeIteration(BlockPos pos, AtomicReference<Boolean> skipIteration) {
         if (this.inFlightTargets.contains(pos)) {
@@ -267,7 +266,7 @@ public final class CoverHandler extends FeatureModuleBase {
                 support,
                 Direction.UP,
                 Vec3.ZERO,
-                false,
+                Implementation.isInteractive(this.level.getBlockState(support).getBlock()),
                 1,
                 expectedItems,
                 ActionPort.ActionSource.COVER

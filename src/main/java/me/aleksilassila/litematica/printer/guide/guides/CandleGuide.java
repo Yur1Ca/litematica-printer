@@ -30,7 +30,7 @@ public class CandleGuide extends Guide {
         }
         // 点燃
         if (!currentLit && requiredLit) {
-            return Result.success(new ClickAction().setItems(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE));
+            return Result.success(new ClickAction().setItems(Items.FIRE_CHARGE, Items.FLINT_AND_STEEL));
         }
         // 熄灭
         if (currentLit && !requiredLit) {

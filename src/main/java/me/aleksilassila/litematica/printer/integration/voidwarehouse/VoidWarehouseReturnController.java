@@ -234,9 +234,9 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
      */
     private boolean restorePending = true;
 
-    /** 上一次落盘的时刻（tick）与当时的账本指纹，用来避免每 30 秒都白写一次。 */
+    /** 上一次落盘的时刻（tick）与账本内容，用来避免每 30 秒都白写一次。 */
     private long lastSnapshotTick = Long.MIN_VALUE;
-    private long lastSnapshotSignature = 0L;
+    private Map<Item, Integer> lastSnapshotItems = Map.of();
     private String lastSnapshotWorld;
     private String lastSnapshotDimension;
 
@@ -375,19 +375,8 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
                 this.lastSnapshotDimension,
                 gameTime,
                 new LinkedHashMap<>(this.injected));
-        this.lastSnapshotSignature = signature();
+        this.lastSnapshotItems = Map.copyOf(this.injected);
         this.lastSnapshotTick = gameTime;
-    }
-
-    /**
-     * 账本的廉价指纹（件数合计 + 种类数），只用来判断「值不值得再写一次盘」。
-     */
-    private long signature() {
-        long total = 0L;
-        for (int count : this.injected.values()) {
-            total += count;
-        }
-        return total * 31L + this.injected.size();
     }
 
     /**
@@ -401,7 +390,7 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         if (this.restorePending) {
             return;
         }
-        if (this.injected.isEmpty() && this.lastSnapshotSignature != 0L) {
+        if (this.injected.isEmpty() && !this.lastSnapshotItems.isEmpty()) {
             // Settlement must invalidate the old snapshot before another disconnect or crash.
             saveSnapshot();
             return;
@@ -409,7 +398,7 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         if (this.lastSnapshotTick != Long.MIN_VALUE && now - this.lastSnapshotTick < SNAPSHOT_INTERVAL_TICKS) {
             return;
         }
-        if (signature() == this.lastSnapshotSignature) {
+        if (this.injected.equals(this.lastSnapshotItems)) {
             // 内容没变：只推进计时，省掉一次写盘
             this.lastSnapshotTick = now;
             return;
@@ -485,7 +474,7 @@ public final class VoidWarehouseReturnController implements RuntimeComponent {
         this.lastSnapshotWorld = null;
         this.lastSnapshotDimension = null;
         this.lastSnapshotTick = Long.MIN_VALUE;
-        this.lastSnapshotSignature = 0L;
+        this.lastSnapshotItems = Map.of();
     }
 
     /** An unconfirmed server mutation cannot leave reusable credit for later personal stock. */

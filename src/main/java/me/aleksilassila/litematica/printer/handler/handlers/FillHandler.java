@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.config.ConfiguredPlacementSettings;
@@ -120,7 +121,7 @@ public class FillHandler extends FeatureModuleBase {
                 this.blocklistMaterialsActive = false;
                 if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
                     ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
-                    if (!heldStack.isEmpty() && heldStack.getCount() > 0) {
+                    if (!heldStack.isEmpty() && heldStack.getCount() > 0 && heldStack.getItem() instanceof BlockItem) {
                         fillModeItemList = new Item[]{player.getMainHandItem().getItem()};
                         this.hudStats.recordStatus(HudStatsManager.Mode.FILL, HudStatus.RUNNING);
                     } else {
@@ -145,6 +146,9 @@ public class FillHandler extends FeatureModuleBase {
 
     @Override
     protected void onRuntimeReset() {
+        this.fillCacheBlocklist = new ArrayList<>();
+        this.blocklistMaterialsActive = false;
+        this.fillModeItemList = new Item[0];
         this.clearFillTargets();
         this.retryTargets.clear();
         this.inFlightTargets.clear();
@@ -252,8 +256,6 @@ public class FillHandler extends FeatureModuleBase {
         return this.peekRetainedIterationTarget(this.retryTargets, pos -> !this.inFlightTargets.contains(pos));
     }
 
-    @Override protected boolean mergeQueuedPreviewWithScan() { return true; }
-
     private Iterable<BlockPos> createSourceIterator(
             List<PrinterBox> scanSourceBoxes,
             Predicate<BlockPos> reachPredicate,
@@ -320,7 +322,8 @@ public class FillHandler extends FeatureModuleBase {
     public boolean canIterationBlockPos(BlockPos blockPos) {
         if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
             ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
-            return !heldStack.isEmpty() && heldStack.getCount() > 0 && this.isFillTarget(blockPos);
+            return !heldStack.isEmpty() && heldStack.getCount() > 0
+                    && heldStack.getItem() instanceof BlockItem && this.isFillTarget(blockPos);
         }
         return this.isFillTarget(blockPos);
     }
@@ -332,6 +335,12 @@ public class FillHandler extends FeatureModuleBase {
             return;
         }
         boolean handheld = Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD;
+        ItemStack heldStack = player.getMainHandItem();
+        if (handheld && (heldStack.isEmpty() || heldStack.getCount() <= 0 || !(heldStack.getItem() instanceof BlockItem))) {
+            this.hudStats.recordStatus(HudStatsManager.Mode.FILL, HudStatus.MAIN_HAND_NO_BLOCK);
+            setIterationConsumedEffectiveExecution(false);
+            return;
+        }
         BlockState currentState = level.getBlockState(blockPos);
         if (!this.isFillTarget(currentState)) {
             setIterationConsumedEffectiveExecution(false);
@@ -390,7 +399,7 @@ public class FillHandler extends FeatureModuleBase {
                 clickTarget,
                 clickSide,
                 Vec3.ZERO,
-                false,
+                Implementation.isInteractive(this.level.getBlockState(clickTarget).getBlock()),
                 1,
                 expectedItems,
                     ActionPort.ActionSource.FILL

@@ -123,7 +123,7 @@ public final class BedrockBreaker {
         if (!open && progress < 1.0F
                 && !appendAction(packets, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, direction)) return null;
         var attempt = new CleanupAttempt(pos.immutable(), direction, state, this.level.getGameTime(), open, fallback,
-                normalizedTool(this.client.player.getMainHandItem()));
+                this.client.player.getMainHandItem(), InventoryUtils.getSelectedSlot(this.client.player.getInventory()));
         boolean usesTool = hardness > 0.0F
                 || me.aleksilassila.litematica.printer.config.Configs.Break.BREAK_TOOL_RESERVE.getIntegerValue() > 0
                     && this.client.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.ShearsItem;
@@ -282,9 +282,11 @@ public final class BedrockBreaker {
     private boolean advanceActive() {
         var attempt = this.active;
         if (attempt.stopTick >= 0) return false;
-        if (!sameTool(attempt.tool, normalizedTool(this.client.player.getMainHandItem()))
-                || !toolReady(RuntimeAccess.get().toolSwitchService().prepareForBreak(
-                        attempt.pos, attempt.state, false), this.placer)) {
+        // START already reserved this use; continuing it must not require credit for another START.
+        if (attempt.toolSlot != InventoryUtils.getSelectedSlot(this.client.player.getInventory())
+                || RuntimeAccess.get().inventorySwitchGuard().isWaiting()
+                || !RuntimeAccess.get().toolSwitchService().canContinueReservedBreak(
+                        attempt.pos, attempt.state, attempt.startedTool)) {
             attempt.discardAfterAbort = true;
             if (this.cancelActive()) this.pending.remove(attempt.pos);
             return false;
@@ -356,6 +358,8 @@ public final class BedrockBreaker {
         final BlockState state;
         final long startTick;
         final ItemStack tool;
+        final ItemStack startedTool;
+        final int toolSlot;
         final boolean fallback;
         long stopTick;
         long retryAtTick;
@@ -365,12 +369,14 @@ public final class BedrockBreaker {
         boolean discardAfterAbort;
 
         CleanupAttempt(BlockPos pos, Direction direction, BlockState state, long tick,
-                       boolean open, boolean fallback, ItemStack tool) {
+                       boolean open, boolean fallback, ItemStack tool, int toolSlot) {
             this.pos = pos;
             this.direction = direction;
             this.state = state;
             this.startTick = tick;
-            this.tool = tool;
+            this.tool = normalizedTool(tool);
+            this.startedTool = tool.copy();
+            this.toolSlot = toolSlot;
             this.fallback = fallback;
             this.stopTick = open ? -1 : tick;
         }

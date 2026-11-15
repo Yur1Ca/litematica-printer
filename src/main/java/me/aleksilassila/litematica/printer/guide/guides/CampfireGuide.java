@@ -28,7 +28,7 @@ public class CampfireGuide extends Guide {
             return Result.success(new ClickAction().setItems(Reference.SHOVEL_ITEMS).setSides(Direction.UP));
         }
         if (requiredLit && !currentLit) {
-            return Result.success(new ClickAction().setItems(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE));
+            return Result.success(new ClickAction().setItems(Items.FIRE_CHARGE, Items.FLINT_AND_STEEL));
         }
 
         return Result.SKIP;

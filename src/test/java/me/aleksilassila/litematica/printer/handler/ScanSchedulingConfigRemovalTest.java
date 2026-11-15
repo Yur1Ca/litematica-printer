@@ -58,7 +58,7 @@ class ScanSchedulingConfigRemovalTest {
     }
 
     @Test void onlyOnePerformanceControlIsVisibleWithSafeDefaultsAndRange() {
-        assertIntegerControl("workPerTick", 8192, 256, 131072);
+        assertIntegerControl("workPerTick", 2048, 256, 131072);
         for (String removed : List.of("scanTimeBudgetMs", "iterationTimeBudgetMs", "scanWorkLimitPerTick",
                 "iterationCandidatesPerTick", "scanCacheSizeMiB", "lazyEnterTicks")) {
             assertTrue(Configs.OPTIONS.stream().noneMatch(option -> option.getName().equals(removed)));
@@ -96,7 +96,7 @@ class ScanSchedulingConfigRemovalTest {
             JsonObject root = new JsonObject();
             root.add(Reference.MOD_ID, values);
             assertTrue(Configs.readOptions(root));
-            assertEquals(8192, Configs.Core.WORK_PER_TICK.getIntegerValue());
+            assertEquals(2048, Configs.Core.WORK_PER_TICK.getIntegerValue());
             assertEquals(1, values.size());
         } finally {
             Configs.Core.WORK_PER_TICK.setIntegerValue(old);

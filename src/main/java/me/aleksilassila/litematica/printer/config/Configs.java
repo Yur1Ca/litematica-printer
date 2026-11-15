@@ -75,7 +75,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigColor BREAK = color("highlightColorBreak").defaultValue("#80FF0000").build();
         public static final ConfigColor FAILED = color("highlightColorFailed").defaultValue("#80808080").build();
         public static final ConfigColor NEXT = color("highlightColorNext").defaultValue("#FF00FFFF").build();
-        public static final ConfigOptionList STYLE = optionList("highlightStyle").defaultValue(HighlightStyleType.OUTLINE).build();
+        public static final ConfigOptionList STYLE = optionList("highlightStyle").defaultValue(HighlightStyleType.BOTH).build();
         public static final ConfigInteger FADE_DURATION = integer("highlightFadeDuration").defaultValue(5).range(1, 100).useSlider(true).build();
         public static final ConfigBoolean THROUGH_WALLS = bool("highlightThroughWalls").defaultValue(false).build();
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(ENABLED, NEXT_ENABLED, PLACE, ADJUST,
@@ -167,7 +167,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .build();
 
         public static final ConfigInteger WORK_PER_TICK = integer("workPerTick")
-                .defaultValue(8192).range(256, 131072).build();
+                .defaultValue(2048).range(256, 131072).build();
 
         // 核心 - 显示打印机HUD
         public static final ConfigBoolean RENDER_HUD = bool("renderHud")
@@ -875,7 +875,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                     amount = Math.max(legacyPositiveNumber(values, "scanTimeBudgetMs"),
                             legacyPositiveNumber(values, "iterationTimeBudgetMs")) * 4096L;
                 }
-                values.addProperty("workPerTick", amount == 0 ? 8192L : Math.clamp(amount, 256L, 131072L));
+                values.addProperty("workPerTick", amount == 0 ? Core.WORK_PER_TICK.getDefaultIntegerValue()
+                        : Math.clamp(amount, 256L, 131072L));
             }
             legacyKeys.forEach(values::remove);
         }

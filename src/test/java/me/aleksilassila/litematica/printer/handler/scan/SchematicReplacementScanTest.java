@@ -14,6 +14,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -23,6 +25,18 @@ import static me.aleksilassila.litematica.printer.handler.scan.ScanIntegrationFi
 import static org.junit.jupiter.api.Assertions.*;
 
 class SchematicReplacementScanTest {
+    private int previousWorkload;
+
+    @BeforeEach void allowSameTickReplacementPasses() {
+        this.previousWorkload = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        // These isolation checks deliberately finish several owners' sources in one tick.
+        Configs.Core.WORK_PER_TICK.setIntegerValue(8192);
+    }
+
+    @AfterEach void restoreWorkload() {
+        Configs.Core.WORK_PER_TICK.setIntegerValue(this.previousWorkload);
+    }
+
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();

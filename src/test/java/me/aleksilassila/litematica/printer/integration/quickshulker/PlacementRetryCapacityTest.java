@@ -91,11 +91,16 @@ class PlacementRetryCapacityTest {
     void capacityEvictionReoffersTheEarliestTargetWithoutResetOrInventoryWakeup(String mode) throws Exception {
         try (var f = new Fixture(mode)) {
             ScanCandidateIterable lastSource = null;
-            for (int tick = 1; tick <= 3; tick++) {
-                f.tick(tick);
+            int nextTick = 1;
+            for (; nextTick <= 12; nextTick++) {
+                f.tick(nextTick);
                 var source = f.positions();
                 lastSource = assertInstanceOf(ScanCandidateIterable.class, source);
                 for (BlockPos pos : source) f.execute(pos);
+                if (f.scan.metricsFor(mode).completedPasses() > 0) {
+                    nextTick++;
+                    break;
+                }
             }
             assertTrue(f.scan.metricsFor(mode).completedPasses() > 0,
                     "The original cold offer pass has actually completed");
@@ -108,7 +113,7 @@ class PlacementRetryCapacityTest {
             f.world.selectSlot(0);
             BlockPos recovered = null;
             int laterOffers = 0;
-            for (int tick = 4; tick < 20 && recovered == null; tick++) {
+            for (int tick = nextTick; tick < nextTick + 16 && recovered == null; tick++) {
                 f.tick(tick);
                 for (BlockPos pos : f.positions()) {
                     laterOffers++;

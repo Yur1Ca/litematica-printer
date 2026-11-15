@@ -41,6 +41,9 @@ class PrintRetryCapacityTest {
     }
 
     @Test void aDeliveryReofferWakesOnlyItsOwnerAndKeepsSharedPositiveFacts() throws Exception {
+        int previousWorkload = me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.getIntegerValue();
+        // Three complete sources must fit before testing an owner-specific next-tick reoffer.
+        me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(8192);
         try (var f = new ScanIntegrationFixture(1)) {
             f.tick(1);
             for (String owner : List.of("print", "print_sorted", "print_sorted_other")) {
@@ -59,6 +62,8 @@ class PrintRetryCapacityTest {
             }
             assertEquals(dirty, f.engine().dirtyVersion());
             assertEquals(reads, f.level.readsAt(BlockPos.ZERO));
+        } finally {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.setIntegerValue(previousWorkload);
         }
     }
 

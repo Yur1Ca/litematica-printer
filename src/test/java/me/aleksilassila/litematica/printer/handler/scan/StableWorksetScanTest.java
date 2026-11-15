@@ -269,14 +269,19 @@ class StableWorksetScanTest {
     }
 
     private static long completeEmptyInitialPass(ScanIntegrationFixture fixture, List<PrinterBox> scope) {
-        for (long tick = 1; tick <= 32; tick++) {
+        long cells = scope.stream().mapToLong(box -> (long) (box.maxX - box.minX + 1)
+                * (box.maxY - box.minY + 1) * (box.maxZ - box.minZ + 1)).sum();
+        long quota = me.aleksilassila.litematica.printer.config.Configs.Core.WORK_PER_TICK.getIntegerValue();
+        // Bound completion by configured work slices, allowing for section/cursor setup.
+        long maximumTicks = 4L + 4L * Math.ceilDiv(cells, quota);
+        for (long tick = 1; tick <= maximumTicks; tick++) {
             fixture.tick(tick);
             var source = (ScanCandidateIterable) fixture.scan("mine", scope, 0, ScanIntent.MINE);
             assertTrue(ScanIntegrationFixture.drain(source).isEmpty());
             if (source.availability() == ScanAvailability.COMPLETE) return tick;
             assertEquals(ScanAvailability.PAUSED, source.availability());
         }
-        fail("The initial traversal must finish under the unchanged default work quota");
+        fail("The initial traversal must finish within the configured work slices");
         return -1;
     }
 }

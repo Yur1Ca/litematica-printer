@@ -586,6 +586,41 @@ class MiningInteractionRegressionTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(floats = {0.02f, 0.2f, 0.69f, 0.8f, 1.2f})
+    void openingAScreenDoesNotChangeAutomaticMiningTicksOrPackets(float delta) throws Exception {
+        for (boolean delayed : List.of(false, true)) {
+            var closed = runMiningWithScreen(delta, delayed, false);
+            var open = runMiningWithScreen(delta, delayed, true);
+            assertEquals(closed, open, "Skipping vanilla key handling for an open screen must not accelerate mining");
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), closed.actions());
+        }
+    }
+
+    private static MiningRun runMiningWithScreen(float delta, boolean delayed, boolean screenOpen) throws Exception {
+        try (var f = new Fixture(delta, delayed)) {
+            List<Float> progress = new ArrayList<>();
+            for (int tick = 0; tick < 200; tick++) {
+                f.level.tick = tick;
+                f.controller.tick();
+                // Minecraft.tick skips handleKeybinds while a screen is open. With the
+                // screen closed and attack released, continueAttack calls the idle hook.
+                if (!screenOpen) f.idleInput(false);
+                f.mine();
+                f.activeTarget(f.port.destroying ? TARGET : null);
+                progress.add(f.port.progress);
+                var packets = actions(f);
+                if (packets.contains(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK)) {
+                    return new MiningRun(tick, packets, List.copyOf(progress));
+                }
+            }
+            throw new AssertionError("Automatic mining did not finish: delta=" + delta + ", screen=" + screenOpen);
+        }
+    }
+
+    private record MiningRun(int finishTick, List<ServerboundPlayerActionPacket.Action> actions,
+                             List<Float> progress) { }
+
     @Test void printRemovalAlsoSurvivesIdleInputAndFinishesSlowMining() throws Exception {
         try (var f = new Fixture(0.2f, true)) {
             Configs.Core.WORK_MODE_TYPE.setOptionListValue(PrintModeType.PRINTER);

@@ -114,7 +114,7 @@ final class StripLogPrintTask implements PrintTask {
             case PLACE_LOG -> PrintTaskBuildResult.action(
                     new Action()
                             .setSides(this.axis)
-                            .setItems(this.sourceBlock.asItem(), this.requiredBlock.asItem()),
+                            .setItems(this.requiredBlock.asItem(), this.sourceBlock.asItem()),
                     this.newActionHandle(StripLogTaskStage.PLACE_LOG, StripLogTaskStage.WAIT_LOG_CONFIRM)
             );
             case STRIP_LOG -> PrintTaskBuildResult.action(
@@ -133,6 +133,9 @@ final class StripLogPrintTask implements PrintTask {
     private PrintTaskAction newActionHandle(StripLogTaskStage expected, StripLogTaskStage success) {
         long token = ++this.actionGeneration;
         return new PrintTaskAction() {
+            // Each position retains its own confirmation state; other targets can use the remaining tick budget.
+            @Override public boolean stopIterationAfterAction() { return false; }
+
             @Override
             public BlockState expectedBlockState(SchematicBlockContext context, Action action) {
                 if (expected == StripLogTaskStage.PLACE_LOG) {

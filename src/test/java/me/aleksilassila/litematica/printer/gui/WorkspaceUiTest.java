@@ -8,11 +8,14 @@ import fi.dy.masa.malilib.gui.widgets.WidgetConfigOption;
 import fi.dy.masa.malilib.gui.widgets.WidgetListConfigOptions;
 import fi.dy.masa.malilib.gui.widgets.WidgetBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
+import fi.dy.masa.malilib.gui.button.ConfigButtonKeybind;
 import fi.dy.masa.malilib.gui.button.ConfigButtonOptionList;
 import fi.dy.masa.malilib.gui.wrappers.TextFieldWrapper;
 import fi.dy.masa.malilib.render.GuiContext;
 import me.aleksilassila.litematica.printer.config.ConfigMetadata;
 import me.aleksilassila.litematica.printer.config.Configs;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -48,6 +51,11 @@ class WorkspaceUiTest {
         HeadlessUi() { super(null); }
         @Override protected void buildConfigSwitcher() { }
         @Override protected void onSettingsChanged() { this.saves++; }
+        @Override protected void closeGui(boolean showParent) {
+            // Replace only Minecraft.setScreen's client transition, keeping the real save lifecycle.
+            this.removed();
+            Minecraft.getInstance().screen = showParent ? this.getParent() : null;
+        }
         WidgetListConfigOptions list() { return this.getListWidget(); }
     }
 
@@ -224,6 +232,52 @@ class WorkspaceUiTest {
         } finally {
             Configs.Core.WORK_RANGE.setIntegerValue(old);
         }
+    }
+
+    @ParameterizedTest @CsvSource({"false,''", "true,''", "false,workRange", "true,workRange"})
+    void oneEscapeClosesTheWorkspaceRegardlessOfSearchFocus(boolean focused, String query) throws Exception {
+        withClient(ui -> {
+            Minecraft.getInstance().screen = ui;
+            WorkspaceConfigList list = (WorkspaceConfigList) ui.list();
+            GuiTextFieldGeneric search = (GuiTextFieldGeneric) field(list.getSearchBarWidget(), "searchBox");
+            assertFalse(search.isFocusedWrapper(), "Opening the workspace must not take text input focus");
+            list.setSearchText(query);
+            search.setFocusedWrapper(focused);
+            assertTrue(ui.keyPressed(new KeyEvent(InputConstants.KEY_ESCAPE, 0, 0)));
+            assertNull(Minecraft.getInstance().screen, "The first Escape must leave the workspace");
+        });
+    }
+
+    @Test void escapingTheWorkspaceCommitsPendingNumericEdits() throws Exception {
+        int oldRange = Configs.Core.WORK_RANGE.getIntegerValue();
+        try {
+            withClient(ui -> {
+                Minecraft.getInstance().screen = ui;
+                edit(ui, Configs.Core.WORK_RANGE, "31");
+                assertTrue(ui.keyPressed(new KeyEvent(InputConstants.KEY_ESCAPE, 0, 0)));
+                assertNull(Minecraft.getInstance().screen);
+                assertEquals(31, Configs.Core.WORK_RANGE.getIntegerValue());
+                assertTrue(ui.saves > 0);
+            });
+        } finally {
+            Configs.Core.WORK_RANGE.setIntegerValue(oldRange);
+        }
+    }
+
+    @Test void escapeStillFinishesKeybindRecordingBeforeClosingTheWorkspace() throws Exception {
+        withClient(ui -> {
+            Minecraft.getInstance().screen = ui;
+            var keybind = fi.dy.masa.malilib.hotkeys.KeybindMulti.fromStorageString("F6",
+                    fi.dy.masa.malilib.hotkeys.KeybindSettings.DEFAULT);
+            var button = new ConfigButtonKeybind(0, 0, 100, 20, keybind, ui);
+            ui.setActiveKeybindButton(button);
+            assertTrue(ui.keyPressed(new KeyEvent(InputConstants.KEY_ESCAPE, 0, 0)));
+            assertSame(ui, Minecraft.getInstance().screen, "Keybind recording must keep its native Escape handling");
+            assertFalse(button.isSelected());
+            assertEquals("", keybind.getStringValue());
+            assertTrue(ui.keyPressed(new KeyEvent(InputConstants.KEY_ESCAPE, 0, 0)));
+            assertNull(Minecraft.getInstance().screen);
+        });
     }
 
     @Test void rebuildingVisibleRowsDoesNotAccumulateDetachedHotkeyListeners() throws Exception {
@@ -497,6 +551,9 @@ class WorkspaceUiTest {
         Field textInputField = Minecraft.class.getDeclaredField("textInputManager");
         textInputField.setAccessible(true);
         textInputField.set(client, unsafe.allocateInstance(HeadlessTextInputManager.class));
+        Field keyboardField = Minecraft.class.getDeclaredField("keyboardHandler");
+        keyboardField.setAccessible(true);
+        keyboardField.set(client, unsafe.allocateInstance(net.minecraft.client.KeyboardHandler.class));
         Field font = Minecraft.class.getDeclaredField("font");
         font.setAccessible(true);
         font.set(client, new Font(null) {

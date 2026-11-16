@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import fi.dy.masa.malilib.config.IConfigBase;
 import fi.dy.masa.malilib.config.IConfigOptionList;
 import fi.dy.masa.malilib.gui.GuiConfigsBase.ConfigOptionWrapper;
@@ -20,6 +21,7 @@ import fi.dy.masa.malilib.util.StringUtils;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
+import net.minecraft.client.input.KeyEvent;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -123,6 +125,12 @@ final class WorkspaceConfigList extends WidgetListConfigOptions {
         void setText(String text) {
             this.searchOpen = true;
             this.searchBox.setValueWrapper(text);
+        }
+
+        @Override
+        protected boolean onKeyTypedImpl(KeyEvent event) {
+            // The visible workspace search must not consume Escape before the screen can close.
+            return event.key() != InputConstants.KEY_ESCAPE && super.onKeyTypedImpl(event);
         }
     }
 

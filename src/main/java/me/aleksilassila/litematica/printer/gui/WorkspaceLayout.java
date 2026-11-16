@@ -4,12 +4,29 @@ package me.aleksilassila.litematica.printer.gui;
 record WorkspaceLayout(int sidebarWidth, int listX, int listY, int listWidth,
                        int listHeight, int footerY, int configWidth) {
     static WorkspaceLayout workspace(int width, int height) {
-        int sidebar = width >= 480 && height >= 360 ? Math.min(112, Math.max(88, width / 5)) : 0;
+        // Height changes the navigation spacing, not the navigation style.
+        int sidebar = width >= 400 ? Math.min(112, Math.max(88, width / 5)) : 0;
         int x = sidebar == 0 ? 8 : sidebar + 16;
         int y = sidebar == 0 ? 94 : 78;
         int listWidth = Math.max(100, width - x - 8);
         int footer = height - 28;
         int controlWidth = Math.max(148, Math.min(180, (listWidth - 64) / 2));
         return new WorkspaceLayout(sidebar, x, y, listWidth, Math.max(24, footer - y - 4), footer, controlWidth);
+    }
+
+    private int navigationStep() {
+        return Math.min(21, (this.footerY - 50) / WorkspacePage.values().length);
+    }
+
+    int navigationButtonHeight() {
+        return Math.min(19, this.navigationStep());
+    }
+
+    int navigationY(WorkspacePage page) {
+        int step = this.navigationStep();
+        int groupGap = Math.min(9, (this.footerY - 50 - step * WorkspacePage.values().length) / 2);
+        int groups = (page.ordinal() >= WorkspacePage.PRINT.ordinal() ? 1 : 0)
+                + (page.ordinal() >= WorkspacePage.COMMON.ordinal() ? 1 : 0);
+        return 46 + page.ordinal() * step + groups * groupGap;
     }
 }

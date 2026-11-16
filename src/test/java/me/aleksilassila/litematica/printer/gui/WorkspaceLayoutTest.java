@@ -6,7 +6,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorkspaceLayoutTest {
-    @ParameterizedTest @CsvSource({"320,240", "427,240", "640,360", "960,540", "1920,1080"})
+    @ParameterizedTest @CsvSource({"320,240", "399,240", "400,240", "427,240", "480,270", "550,350", "640,360", "960,540", "1920,1080"})
     void controlsAndListStayInsideTheScaledScreen(int width, int height) {
         WorkspaceLayout layout = WorkspaceLayout.workspace(width, height);
         assertTrue(layout.listX() >= 8);

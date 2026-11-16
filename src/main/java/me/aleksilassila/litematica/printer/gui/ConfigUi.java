@@ -182,17 +182,15 @@ public class ConfigUi extends GuiConfigsBase {
             picker.setSelectedEntry(this.page);
             this.addWidget(picker);
         } else {
-            int y = 46;
             for (WorkspacePage entry : WorkspacePage.values()) {
-                if (entry == WorkspacePage.PRINT || entry == WorkspacePage.COMMON) y += 9;
                 int buttonWidth = this.layout.sidebarWidth() - 8;
-                ButtonGeneric button = new ButtonGeneric(12, y, buttonWidth, 19,
+                ButtonGeneric button = new ButtonGeneric(12, this.layout.navigationY(entry), buttonWidth,
+                        this.layout.navigationButtonHeight(),
                         fitText(entry.title(), buttonWidth - 8, this::getStringWidth), entry.description());
                 button.setRenderDefaultBackground(false);
                 this.addButton(button, (b, mouseButton) -> {
                     if (entry != this.page) this.selectPage(entry);
                 });
-                y += 21;
             }
         }
     }
@@ -248,15 +246,10 @@ public class ConfigUi extends GuiConfigsBase {
         // MaLiLib draws buttons before drawContents; opaque sidebar fills must precede them.
         if (this.layout != null && !this.fullConfigList && this.layout.sidebarWidth() > 0) {
             RenderUtils.drawRect(ctx, 8, 42, this.layout.sidebarWidth(), this.layout.footerY() - 46, 0xFF14191C);
-            int rowY = 46;
-            for (WorkspacePage entry : WorkspacePage.values()) {
-                if (entry == WorkspacePage.PRINT || entry == WorkspacePage.COMMON) rowY += 9;
-                if (entry == this.page) {
-                    RenderUtils.drawRect(ctx, 12, rowY, this.layout.sidebarWidth() - 8, 19, 0xFF304C43);
-                    RenderUtils.drawRect(ctx, 12, rowY, 2, 19, 0xFFACD8CA);
-                }
-                rowY += 21;
-            }
+            int rowY = this.layout.navigationY(this.page);
+            int rowHeight = this.layout.navigationButtonHeight();
+            RenderUtils.drawRect(ctx, 12, rowY, this.layout.sidebarWidth() - 8, rowHeight, 0xFF304C43);
+            RenderUtils.drawRect(ctx, 12, rowY, 2, rowHeight, 0xFFACD8CA);
         }
     }
 

@@ -24,6 +24,8 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.server.Bootstrap;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import sun.misc.Unsafe;
 
 import java.lang.reflect.Field;
@@ -103,12 +105,14 @@ class WorkspaceUiTest {
         }
     }
 
-    @Test void sidebarBackgroundNeverPaintsOverNavigationInTheNativeScreenRenderOrder() throws Exception {
+    @ParameterizedTest @CsvSource({"400,240", "550,350", "1000,800"})
+    void sidebarBackgroundNeverPaintsOverNavigationInTheNativeScreenRenderOrder(int width, int height) throws Exception {
         withClient(unused -> {
             RenderOnlyUi ui = new RenderOnlyUi();
-            ui.width = 1000;
-            ui.height = 800;
+            ui.width = width;
+            ui.height = height;
             ui.initGui();
+            ui.selectPage(WorkspacePage.HOTKEYS);
             @SuppressWarnings("unchecked")
             List<fi.dy.masa.malilib.gui.button.ButtonBase> buttons =
                     (List<fi.dy.masa.malilib.gui.button.ButtonBase>) field(ui, "buttons");
@@ -119,6 +123,10 @@ class WorkspaceUiTest {
             }
             RecordingContext context = RecordingContext.create();
             ui.drawFrame(context);
+            var selected = buttons.get(10);
+            assertTrue(context.paints.stream().anyMatch(paint -> new ScreenRectangle(selected.getX(),
+                    selected.getY(), 2, selected.getHeight()).equals(paint.fill())),
+                    "The selection marker must track the compact button's position and height");
             for (int i = 0; i < WorkspacePage.values().length; i++) {
                 String label = "nav" + i;
                 int textIndex = -1;
@@ -154,6 +162,31 @@ class WorkspaceUiTest {
             assertEquals(new LinkedHashSet<>(Configs.OPTIONS.stream().filter(ConfigMetadata::isVisible).toList()), complete);
             assertSame(mode, Configs.Core.WORK_MODE_TYPE.getOptionListValue());
             assertEquals(running, Configs.Core.WORK_SWITCH.getBooleanValue());
+        });
+    }
+
+    @ParameterizedTest @CsvSource({"550,350", "480,270", "427,240", "400,240"})
+    void shortWindowsKeepEverySidebarPageAboveTheFooter(int width, int height) throws Exception {
+        withClient(ui -> {
+            ui.width = width;
+            ui.height = height;
+            ui.initGui();
+            @SuppressWarnings("unchecked")
+            var buttons = (List<fi.dy.masa.malilib.gui.button.ButtonBase>) field(ui, "buttons");
+            var navigation = buttons.stream().filter(button -> button.getX() == 12).toList();
+            assertEquals(11, navigation.size(), "Shrinking a normal window must retain every sidebar page");
+            int previousBottom = 42;
+            for (var button : navigation) {
+                assertTrue(button.getY() >= previousBottom, "Sidebar hitboxes must not overlap");
+                assertTrue(button.getHeight() >= 14, "Compact navigation must leave room for readable text");
+                assertTrue(button.getY() + button.getHeight() <= height - 32,
+                        "Every page must remain accessible above the footer");
+                assertTrue(button.getX() + button.getWidth() < ui.list().getSearchBarWidget().getX());
+                previousBottom = button.getY() + button.getHeight();
+            }
+            assertFalse(((List<?>) field(ui, "widgets")).stream().anyMatch(
+                    fi.dy.masa.malilib.gui.widgets.WidgetDropDownList.class::isInstance),
+                    "Low height alone must not replace the sidebar with a page dropdown");
         });
     }
 
@@ -296,16 +329,20 @@ class WorkspaceUiTest {
         }
     }
 
-    @Test void spanishResetButtonsStayInsideTheRowAndAwayFromTheScrollbar() throws Exception {
+    @ParameterizedTest @CsvSource({"288", "304"})
+    void spanishResetButtonsStayInsideTheRowAndAwayFromTheScrollbar(int listWidth) throws Exception {
         withResetLabel("REINICIAR", ui -> {
-            ui.selectPage(WorkspacePage.PRINT);
-            WorkspaceConfigList list = new WorkspaceConfigList(8, 94, 304, 114, 148, ui, true);
-            list.initGui();
-            WidgetConfigOption row = row(list, Configs.Print.PRINT_SELECTION_TYPE);
-            for (WidgetBase widget : children(row)) {
-                if (widget instanceof ButtonGeneric) {
-                    assertTrue(widget.getX() + widget.getWidth() <= row.getX() + row.getWidth(),
-                            "A translated native reset button must remain within the row hitbox");
+            for (IConfigBase config : List.of(Configs.Print.PRINT_SELECTION_TYPE, Configs.Core.WORK_SWITCH)) {
+                ui.selectPage(config == Configs.Core.WORK_SWITCH ? WorkspacePage.COMMON : WorkspacePage.PRINT);
+                WorkspaceConfigList list = new WorkspaceConfigList(104, 78, listWidth, 130, 148, ui, true);
+                list.initGui();
+                WidgetConfigOption row = row(list, config);
+                for (WidgetBase widget : children(row)) {
+                    if (widget instanceof fi.dy.masa.malilib.gui.button.ButtonBase) {
+                        assertTrue(widget.getWidth() > 0 && widget.getX() >= row.getX()
+                                        && widget.getX() + widget.getWidth() <= row.getX() + row.getWidth(),
+                                "Native controls and translated reset buttons must remain within the row hitbox");
+                    }
                 }
             }
         });

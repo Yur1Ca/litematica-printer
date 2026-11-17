@@ -32,6 +32,7 @@ final class OrderedStorageController {
     private final List<OrderedStorageEntry> trackedItems = new ArrayList<>();
     private final RestoreSession<OrderedStorageEntry> restoreSession = new RestoreSession<>();
     private final OrderedStorageDrain drain = new OrderedStorageDrain();
+    private long nextRestoreTick = Long.MIN_VALUE;
 
     OrderedStorageController(Minecraft client, Supplier<Set<Item>> neededItems, QuickShulkerContainerSession containerSession) {
         this.client = client;
@@ -63,6 +64,7 @@ final class OrderedStorageController {
                 currentGameTick()
         ));
         markPrinterActivity();
+        yieldToWork();
     }
 
     public void moveTrackedItem(int oldPlayerSlot, int newPlayerSlot) {
@@ -139,6 +141,7 @@ final class OrderedStorageController {
             }
             return true;
         }
+        if (shouldYieldNewRestore()) return false;
 
         OrderedStorageTracking.reconcile(this.trackedItems, player);
         if (this.trackedItems.isEmpty()) {
@@ -175,6 +178,7 @@ final class OrderedStorageController {
                 || !player.containerMenu.equals(player.inventoryMenu)) {
             return false;
         }
+        if (!this.restoreSession.hasPending() && shouldYieldNewRestore()) return false;
         OrderedStorageTracking.reconcile(this.trackedItems, player);
         if (this.trackedItems.isEmpty()) {
             this.restoreSession.clearPressureRecovery();
@@ -299,6 +303,7 @@ final class OrderedStorageController {
         this.automatedContainerId = -1;
         this.trackedItems.clear();
         this.restoreSession.reset();
+        this.nextRestoreTick = Long.MIN_VALUE;
     }
 
     private long currentGameTick() {
@@ -307,6 +312,19 @@ final class OrderedStorageController {
 
     private void markPrinterActivity() {
         this.restoreSession.markActivity(currentGameTick());
+    }
+
+    private void yieldToWork() {
+        // Leave the next normal work tick free before selecting another maintenance transaction.
+        // Already-pending returns and in-flight cursor recovery continue without this delay.
+        if (this.nextRestoreTick == Long.MIN_VALUE) this.nextRestoreTick = currentGameTick() + 2L;
+    }
+
+    private boolean shouldYieldNewRestore() {
+        if (currentGameTick() < this.nextRestoreTick) return true;
+        // Only a maintenance pass can rearm the yield; repeated deliveries cannot extend it.
+        this.nextRestoreTick = Long.MIN_VALUE;
+        return false;
     }
 
     private void updatePressureRecovery(int freeSlots) {
@@ -391,6 +409,7 @@ final class OrderedStorageController {
     private void finishPendingRestore(boolean success) {
         OrderedStorageEntry completed = this.restoreSession.pending();
         clearPendingRestore();
+        yieldToWork();
         if (completed != null) {
             this.trackedItems.remove(completed);
         }

@@ -14,6 +14,24 @@ import static me.aleksilassila.litematica.printer.integration.quickshulker.Quick
 class QuickShulkerQueryTest {
     @BeforeAll static void bootstrap() throws Exception { CancelledSwapLifecycleTest.bootstrap(); }
 
+    @Test void cooldownDoesNotBlockMissingMaterialsButStillDefersOpeningAvailableOnes() throws Exception {
+        var quickShulker = me.aleksilassila.litematica.printer.config.Configs.Placement.QUICK_SHULKER;
+        var orderly = me.aleksilassila.litematica.printer.config.Configs.Placement.STORE_ORDERLY;
+        boolean oldQuickShulker = quickShulker.getBooleanValue();
+        boolean oldOrderly = orderly.getBooleanValue();
+        try (var f = new QuickShulkerQueryFixture(true)) {
+            quickShulker.setBooleanValue(true);
+            orderly.setBooleanValue(false);
+            f.slot(9, box(new ItemStack(Items.STONE)));
+            assertFalse(f.request(List.of(Items.DIRT), 5), "Missing material must not hold the printer during cooldown");
+            assertTrue(f.request(List.of(Items.STONE), 5), "Available material must still respect opening cooldown");
+            assertTrue(f.attempts.isEmpty(), "Neither request may invoke the optional mod during cooldown");
+        } finally {
+            quickShulker.setBooleanValue(oldQuickShulker);
+            orderly.setBooleanValue(oldOrderly);
+        }
+    }
+
     @Test void missingCandidatesDecodeEachCarriedBoxAtMostOncePerQuery() throws Exception {
         try (var f = new QuickShulkerQueryFixture(true)) {
             f.slot(9, box(new ItemStack(Items.STONE)));

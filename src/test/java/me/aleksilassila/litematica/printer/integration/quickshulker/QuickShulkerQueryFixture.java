@@ -64,6 +64,12 @@ public final class QuickShulkerQueryFixture implements AutoCloseable {
 
     public void inventory(int slot, ItemStack stack) { player.inventory.setItem(slot, stack); }
 
+    public boolean request(List<Item> items, int cooldown) throws Exception {
+        set(controller, controller.getClass(), "shulkerCooldown", cooldown);
+        controller.getClass().getMethod("requestItems", java.util.Collection.class).invoke(controller, items);
+        return (boolean) controller.getClass().getMethod("switchItem").invoke(controller);
+    }
+
     public void extract() throws Exception {
         extract(35);
     }

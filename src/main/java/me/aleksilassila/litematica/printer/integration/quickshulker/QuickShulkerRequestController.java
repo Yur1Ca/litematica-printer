@@ -97,9 +97,6 @@ public final class QuickShulkerRequestController {
             }
 
             if (Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
-                if (shulkerCooldown > 0) {
-                    return true;
-                }
                 if (this.openShulker(this.lastNeedItemList)) {
                     return true;
                 }
@@ -345,16 +342,13 @@ public final class QuickShulkerRequestController {
         orderedStorage.newItem(extractedStack, sourceShulker, extractionSlot,
                 shulkerInventoryMenuSlot, targetHotbarSlot);
         me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), targetHotbarSlot);
+        // The swap is authoritative; ordered hotbar selection precedes subsequent interactions.
         me.aleksilassila.litematica.printer.utils.InventoryUtils.syncSelectedHotbarSlot();
-        RuntimeAccess.get().inventorySwitchGuard().markSwitchIfNeeded(extractedStack.getItem());
         closeAutomatedContainer();
         clearSwitchRequest();
     }
 
     private boolean openShulker(HashSet<Item> items) {
-        if (shulkerCooldown > 0) {
-            return false;
-        }
         Map<Integer, List<ItemStack>> decoded = items.size() > 1 ? new HashMap<>() : null;
         for (Item item : items) {
             AbstractContainerMenu sc = Minecraft.getInstance().player.inventoryMenu;
@@ -371,6 +365,8 @@ public final class QuickShulkerRequestController {
                             && (!this.emptyShulkerOnly || me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest.isEmptyShulker(s1)))) {
                         // Recheck live inventory/configuration for every external opening attempt.
                         if (selectTarget(sc, i) == null) continue;
+                        // Cooldown limits opening, not a pure lookup that can release missing materials.
+                        if (shulkerCooldown > 0) return true;
                         try {
                             shulkerInventoryMenuSlot = i;
                             QuickShulkerDiagnostics.log("open-send source=" + i + " wanted=" + item

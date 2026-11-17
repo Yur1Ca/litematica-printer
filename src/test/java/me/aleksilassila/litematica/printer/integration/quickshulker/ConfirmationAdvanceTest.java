@@ -17,8 +17,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
-import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.PlayerEquipment;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.InventoryMenu;
@@ -56,6 +56,7 @@ public class ConfirmationAdvanceTest {
             f.slot(second, second == 0 ? ItemStack.EMPTY : new ItemStack(Items.STONE, 64));
             assertTrue(f.player.closed, "Both authoritative slots should finish without the next client tick");
             assertFalse(f.leased.get());
+            assertFalse(f.switchGuard.isWaiting(), "An acknowledged extraction must not start another prediction wait");
             assertEquals(2, f.player.inventory.getSelectedSlot());
             assertEquals(1, f.connection.packets.stream().filter(ServerboundSetCarriedItemPacket.class::isInstance).count());
             f.slot(second, second == 0 ? ItemStack.EMPTY : new ItemStack(Items.STONE, 64));
@@ -223,6 +224,7 @@ public class ConfirmationAdvanceTest {
         final boolean oldOrderly = Configs.Placement.STORE_ORDERLY.getBooleanValue();
         final String oldSlots;
         final Minecraft client = allocate(Minecraft.class);
+        final InventorySwitchGuard switchGuard = new InventorySwitchGuard(client, () -> 0L);
         final Player player = allocate(Player.class);
         final CapturedConnection connection = allocate(CapturedConnection.class);
         final AtomicBoolean leased = new AtomicBoolean();
@@ -236,7 +238,10 @@ public class ConfirmationAdvanceTest {
         Fixture(boolean clearing, boolean restoring) throws Exception {
             connection.packets = new ArrayList<>(); connection.beforeSend = packet -> { };
             set(player, LocalPlayer.class, "connection", connection);
-            player.inventory = new Inventory(player, new EntityEquipment());
+            var equipment = new PlayerEquipment(player);
+            player.inventory = new Inventory(player, equipment);
+            set(player, net.minecraft.world.entity.player.Player.class, "inventory", player.inventory);
+            set(player, net.minecraft.world.entity.LivingEntity.class, "equipment", equipment);
             set(player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
             menu = new ShulkerBoxMenu(7, player.inventory);
             menu.slots.get(0).set(new ItemStack(Items.STONE, 64));
@@ -263,7 +268,7 @@ public class ConfirmationAdvanceTest {
             Class<?> runtimeType = loader.loadClass(BASE + "runtime.PrinterRuntime");
             Object runtime = allocate(runtimeType);
             set(runtime, runtimeType, "quickShulkerAdapter", adapter);
-            set(runtime, runtimeType, "inventorySwitchGuard", new InventorySwitchGuard(client, () -> 0L));
+            set(runtime, runtimeType, "inventorySwitchGuard", switchGuard);
             loader.loadClass(BASE + "runtime.RuntimeAccess").getMethod("install", runtimeType).invoke(null, runtime);
             set(requests, requests.getClass(), "automatedContainerId", 7);
             set(requests, requests.getClass(), "isOpenHandler", true);

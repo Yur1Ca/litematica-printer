@@ -76,9 +76,12 @@ public final class MiningDurabilityGuard {
     public boolean canUse(int slot, BlockState state, BlockPos pos) {
         if (!this.enabled() || this.client.player.getAbilities().instabuild) return true;
         if (slot < 0 || slot >= SLOTS || !this.initialized || this.dirty || this.pending != null
-                || this.calibratedMutation != this.mutations.get()
-                || !this.observeSlot(slot)) return false;
+                || this.calibratedMutation != this.mutations.get()) return false;
         ItemStack stack = this.stack(slot);
+        // Material counts can change while collecting drops; they carry no durability credit.
+        ItemStack baseline = this.baselines[slot];
+        if (!stack.isDamageableItem() && baseline != null && !baseline.isDamageableItem()) return true;
+        if (!this.observeSlot(slot)) return false;
         int cost = this.cost(stack, state, pos);
         return cost == 0 || (long) this.remaining[slot] >= this.reserveFloor(stack) + cost;
     }

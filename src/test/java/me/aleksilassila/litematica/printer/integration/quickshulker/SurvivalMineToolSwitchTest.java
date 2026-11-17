@@ -78,6 +78,107 @@ class SurvivalMineToolSwitchTest {
 
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 
+    @ParameterizedTest @CsvSource({"1,4", "10,4", "1,5", "10,5"})
+    void orderedMixedToolBatchesPrepareTheNextToolWithoutAnIdleDispatchTick(int axeSlot, int efficiencyLevel) throws Exception {
+        var wood = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.BOOKSHELF);
+        var oldTags = wood.tags().toList();
+        var bindTags = net.minecraft.core.Holder.Reference.class.getDeclaredMethod("bindTags", java.util.Collection.class);
+        bindTags.setAccessible(true);
+        try (var reserve = new ReserveSetting(20);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f)) {
+            bindTags.invoke(wood, List.of(net.minecraft.tags.BlockTags.MINEABLE_WITH_AXE));
+            var pickaxe = prepareProtectedMining(f, tool, 200, true, false);
+            var efficiency = VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.EFFICIENCY);
+            pickaxe.enchant(efficiency, efficiencyLevel);
+            var axe = new ItemStack(Items.DIAMOND_AXE);
+            axe.enchant(efficiency, efficiencyLevel);
+            f.candidates.setSlot(axeSlot, axe);
+            set(tool.player, LivingEntity.class, "activeEffects",
+                    new HashMap<>(Map.of(MobEffects.HASTE, new MobEffectInstance(MobEffects.HASTE, 600, 1))));
+            var order = List.of(TARGET, TARGET.east(), TARGET.east(2), TARGET.east(3), TARGET.east(4));
+            f.bounds(TARGET, order.getLast());
+            f.candidates.state(order.get(2), Blocks.BOOKSHELF.defaultBlockState());
+            f.candidates.state(order.get(3), Blocks.BOOKSHELF.defaultBlockState());
+            advanceMiningTick(f, tool, 0);
+            f.candidates.beginTick();
+            f.callToolSession("beginTick");
+            for (var pos : order) f.iterate(pos);
+            f.dispatch();
+
+            assertEquals(order.subList(0, 2), tool.connection.packets.stream()
+                    .filter(packet -> packet.getAction() == ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK)
+                    .map(ServerboundPlayerActionPacket::getPos).toList());
+            assertTrue(tool.player.getMainHandItem().is(Items.DIAMOND_AXE), "Prepare the next ranked tool in the same dispatch");
+            assertTrue(tool.guard.isWaiting(), "The inventory switch still needs its existing boundary before START");
+
+            advanceMiningTick(f, tool, 1);
+            f.candidates.beginTick();
+            f.callToolSession("beginTick");
+            f.continueActive();
+            f.dispatch();
+            assertEquals(order.subList(0, 4), tool.connection.packets.stream()
+                    .filter(packet -> packet.getAction() == ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK)
+                    .map(ServerboundPlayerActionPacket::getPos).toList(), "No rank can be skipped to retain the current tool");
+            assertTrue(tool.player.getMainHandItem().is(Items.DIAMOND_PICKAXE));
+            assertTrue(tool.guard.isWaiting());
+
+            advanceMiningTick(f, tool, 2);
+            f.candidates.beginTick();
+            f.callToolSession("beginTick");
+            f.continueActive();
+            f.dispatch();
+            assertEquals(order, tool.connection.packets.stream()
+                    .filter(packet -> packet.getAction() == ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK)
+                    .map(ServerboundPlayerActionPacket::getPos).toList());
+        } finally {
+            bindTags.invoke(wood, oldTags);
+        }
+    }
+
+    @Test void anUnrelatedMaterialCountUpdateDoesNotRecalibrateAutomaticToolSelection() throws Exception {
+        try (var reserve = new ReserveSetting(20);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f)) {
+            var transport = tool.enableCalibrationTransport();
+            prepareProtectedMining(f, tool, 100, true, true);
+            f.candidates.setSlot(5, new ItemStack(Items.COBBLESTONE));
+            advanceMiningTick(f, tool, 0);
+            mine(tool, TARGET, true);
+            assertEquals(1, tool.connection.stacksAtStart.size());
+
+            f.candidates.setSlot(5, new ItemStack(Items.COBBLESTONE, 2));
+            advanceMiningTick(f, tool, 1);
+            mine(tool, TARGET.east(), true);
+            advanceMiningTick(f, tool, 2);
+            mine(tool, TARGET.east(2), true);
+            assertTrue(transport.batches.isEmpty(), "A non-damageable material candidate has no tool budget to recalibrate");
+            assertEquals(3, tool.connection.stacksAtStart.size());
+        }
+    }
+
+    @Test void aFormerToolSlotStillRequiresCalibrationWhenReplacedByMaterial() throws Exception {
+        try (var reserve = new ReserveSetting(20);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f)) {
+            var transport = tool.enableCalibrationTransport();
+            prepareProtectedMining(f, tool, 100, true, true);
+            f.candidates.setSlot(5, new ItemStack(Items.IRON_PICKAXE));
+            advanceMiningTick(f, tool, 0);
+            mine(tool, TARGET, true);
+            f.candidates.setSlot(5, new ItemStack(Items.COBBLESTONE));
+            advanceMiningTick(f, tool, 1);
+            mine(tool, TARGET.east(), true);
+            advanceMiningTick(f, tool, 2);
+            mine(tool, TARGET.east(2), true);
+            assertCalibrationBatch(transport, 1);
+            assertEquals(1, tool.connection.stacksAtStart.size(), "A tool disappearing from its recorded slot still invalidates its budget");
+        }
+    }
+
     @ParameterizedTest
     @CsvSource({"-1", "2", "10"})
     void iceWorkflowNeverCyclesBetweenAnUnsafeNonSilkToolAndASafeSilkTool(int safeNonSilkSlot) throws Exception {
@@ -1246,6 +1347,17 @@ class SurvivalMineToolSwitchTest {
             assertEquals(player.inventoryMenu.containerId, id);
             traffic.add("swap:" + slot + ":" + button);
             player.inventoryMenu.clicked(slot, button, input, player);
+            var packet = new ServerboundContainerClickPacket(id, player.inventoryMenu.getStateId(),
+                    (short) slot, (byte) button, input, new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>(),
+                    net.minecraft.network.HashedStack.EMPTY);
+            var connection = (ToolConnection) fixture.connection;
+            if (connection.transport == null) {
+                try {
+                    var service = get(realController, realController.getClass(), "toolSwitchService");
+                    call(service, "onInventoryInput", new Class<?>[]{Packet.class}, packet);
+                } catch (Exception error) { throw new AssertionError(error); }
+            }
+            connection.send(packet);
         }
     }
 

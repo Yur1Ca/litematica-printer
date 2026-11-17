@@ -480,33 +480,6 @@ class MineSelectionRefreshTest {
         }
     }
 
-    @Test void aToolBatchStopsBeforeAnInterveningDifferentToolInsteadOfSkippingItsRank() throws Exception {
-        try (var f = new Fixture(true)) {
-            BlockPos third = FIRST.east(2);
-            f.bounds(FIRST, third);
-            for (BlockPos pos : List.of(FIRST, SECOND, third)) f.queue(pos);
-            Class<?> targetType = Class.forName("me.aleksilassila.litematica.printer.handler.handlers.MineBreakExecutor$Target");
-            Constructor<?> constructor = targetType.getDeclaredConstructor(BlockPos.class,
-                    net.minecraft.world.level.block.state.BlockState.class, float.class, float.class,
-                    Direction.class, net.minecraft.world.item.Item.class, boolean.class, boolean.class);
-            constructor.setAccessible(true);
-            Object first = constructor.newInstance(FIRST, Blocks.STONE.defaultBlockState(), 1F, 1F,
-                    Direction.DOWN, net.minecraft.world.item.Items.IRON_PICKAXE, false, false);
-            Object second = constructor.newInstance(SECOND, Blocks.STONE.defaultBlockState(), 1F, 1F,
-                    Direction.DOWN, net.minecraft.world.item.Items.IRON_SHOVEL, false, false);
-            Object last = constructor.newInstance(third, Blocks.STONE.defaultBlockState(), 1F, 1F,
-                    Direction.DOWN, net.minecraft.world.item.Items.IRON_PICKAXE, false, false);
-
-            invoke(MineHandler.class, f.mining.mineHandler, "executeToolSession",
-                    new Class<?>[]{targetType, List.class}, first, List.of(first, second, last));
-
-            assertEquals(List.of(FIRST), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList());
-            assertTrue((long) get(f.mining.mineHandler, FeatureModuleBase.class, "additionalIterationActionNanos") > 0L);
-            assertEquals(List.of(SECOND, third), f.candidates.views(f.candidates.refresh()).stream()
-                    .map(MineCandidateRefreshFixture.TargetView::pos).toList());
-        }
-    }
-
     @Test void aDurabilityBlockedFirstRankCannotPermanentlyHideALaterUsableToolTarget() throws Exception {
         try (var policy = new TweakerooOnlyPolicy(); var f = new Fixture(false)) {
             Configs.Core.WORK_RANGE.setIntegerValue(6);

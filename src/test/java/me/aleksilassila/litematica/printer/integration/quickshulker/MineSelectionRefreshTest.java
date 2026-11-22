@@ -79,7 +79,7 @@ class MineSelectionRefreshTest {
             assertTrue(mine.iterator().hasNext(),
                     "A dry trench must skip fluid-free sections instead of exhausting the mining discovery allowance");
             assertTrue(f.readyFillTargets().isEmpty());
-            assertTrue(f.readyWaterloggedTargets().isEmpty());
+            assertTrue(f.readyBreakTargets().isEmpty());
         } finally {
             Configs.Core.WORK_PER_TICK.setIntegerValue(previousWork);
         }
@@ -97,7 +97,112 @@ class MineSelectionRefreshTest {
             f.installLoadedSectionMetadata();
             f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
             f.refreshTrench();
-            assertEquals(List.of(target), waterlogged ? f.readyWaterloggedTargets() : f.readyFillTargets());
+            assertEquals(List.of(target), waterlogged ? f.readyBreakTargets() : f.readyFillTargets());
+        }
+    }
+
+    @Test void aDryTrenchQueuesBuddingAmethystOnlyOnItsSidesAndFloor() throws Exception {
+        try (var f = new Fixture(false)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            BlockPos center = FIRST.offset(1, 1, 1);
+            f.bounds(FIRST, FIRST.offset(2, 2, 2));
+            var faces = java.util.Set.of(center.west(2), center.east(2), center.north(2), center.south(2), center.below(2));
+            var excluded = List.of(center.above(2), center.west(2).north(2), center.below(2).south(2),
+                    center.west(3), center.below(3));
+            for (BlockPos pos : faces) f.candidates.state(pos, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            for (BlockPos pos : excluded) f.candidates.state(pos, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            f.candidates.state(center, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            f.candidates.state(center.north(2).west(), Blocks.AMETHYST_BLOCK.defaultBlockState());
+            f.installLoadedSectionMetadata();
+            f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
+
+            f.refreshTrench();
+
+            assertEquals(faces, java.util.Set.copyOf(f.readyBreakTargets()));
+            assertTrue(f.readyFillTargets().isEmpty());
+            assertTrue(f.mining.mineHandler.canIterationBlockPos(center));
+            f.iterate(center);
+            assertEquals(List.of(center), f.candidates.views(f.candidates.refresh()).stream()
+                    .map(target -> target.pos()).toList());
+            assertTrue(f.actions().isEmpty());
+            f.dispatch();
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
+            assertEquals(center, f.mining.port.pos);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void slowBuddingAmethystKeepsMiningAcrossTicksOnAWallOrFloor(boolean floor) throws Exception {
+        try (var f = new Fixture(false)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            BlockPos target = floor ? FIRST.below() : FIRST.east();
+            f.candidates.state(target, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            f.installLoadedSectionMetadata();
+            f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
+            f.refreshTrench();
+            assertEquals(List.of(target), f.readyBreakTargets());
+            assertTrue(f.mining.mineHandler.canIterationBlockPos(target));
+            f.iterate(target);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
+            float firstProgress = f.mining.port.progress;
+
+            f.advanceTick();
+            f.continueActive();
+
+            assertEquals(target, f.mining.port.pos);
+            assertTrue(f.mining.port.progress > firstProgress);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
+            for (int tick = 0; tick < 20 && f.mining.port.destroying; tick++) {
+                f.advanceTick();
+                f.continueActive();
+            }
+            assertEquals(List.of(Action.START_DESTROY_BLOCK, Action.STOP_DESTROY_BLOCK), f.actions());
+            assertTrue(f.mining.connection.packets.stream().allMatch(packet -> packet.getPos().equals(target)));
+        }
+    }
+
+    @Test void aReachableWallCanBeMinedWithItsSelectionCellOutsideTheInteractionBox() throws Exception {
+        try (var f = new Fixture(false)) {
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.bounds(FIRST, FIRST);
+            BlockPos wall = FIRST.east();
+            set(f.mining.mineHandler, FeatureModuleBase.class, "playerInteractionBox",
+                    new AtomicReference<>(new PrinterBox(wall)));
+            for (BlockPos pos : List.of(wall, FIRST.above(), wall.south())) {
+                f.candidates.state(pos, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            }
+            f.installLoadedSectionMetadata();
+            f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
+            f.refreshTrench();
+
+            assertEquals(List.of(wall), f.readyBreakTargets());
+            invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIterationIfNeeded", new Class<?>[0]);
+            assertEquals(List.of(Action.START_DESTROY_BLOCK), f.actions());
+            assertEquals(wall, f.mining.port.pos);
+        }
+    }
+
+    @Test void dryBuddingAmethystRespectsTrenchToggleAndMineBlacklist() throws Exception {
+        try (var f = new Fixture(false)) {
+            f.bounds(FIRST, FIRST);
+            BlockPos target = FIRST.east();
+            f.candidates.state(target, Blocks.BUDDING_AMETHYST.defaultBlockState());
+            f.installLoadedSectionMetadata();
+            f.installScan().beginTick(f.candidates.level, null, f.candidates.level.tick);
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(false);
+            f.refreshTrench();
+            assertTrue(f.readyBreakTargets().isEmpty());
+
+            Configs.Mine.MINE_TRENCH_MODE.setBooleanValue(true);
+            f.refreshTrench();
+            assertEquals(List.of(target), f.readyBreakTargets());
+            Configs.Mine.EXCAVATE_LIMIT.setOptionListValue(fi.dy.masa.malilib.util.restrictions.UsageRestriction.ListType.BLACKLIST);
+            Configs.Mine.EXCAVATE_BLACKLIST.setStrings(List.of("minecraft:budding_amethyst"));
+            f.iterate(target);
+
+            assertTrue(f.actions().isEmpty());
+            assertFalse(f.mining.port.destroying);
         }
     }
 
@@ -293,7 +398,7 @@ class MineSelectionRefreshTest {
             f.refreshTrench();
 
             assertTrue(f.readyFillTargets().isEmpty(), "Trench filling still targets fluids, not ordinary air");
-            assertTrue(f.readyWaterloggedTargets().isEmpty());
+            assertTrue(f.readyBreakTargets().isEmpty());
         }
     }
 
@@ -325,7 +430,7 @@ class MineSelectionRefreshTest {
 
             f.refreshTrench();
 
-            assertEquals(List.of(bottom), f.readyWaterloggedTargets());
+            assertEquals(List.of(bottom), f.readyBreakTargets());
             assertTrue(f.readyFillTargets().isEmpty(), "A waterlogged solid uses the existing break-before-fill path");
         }
     }
@@ -893,9 +998,9 @@ class MineSelectionRefreshTest {
         }
 
         @SuppressWarnings("unchecked")
-        List<BlockPos> readyWaterloggedTargets() throws Exception {
+        List<BlockPos> readyBreakTargets() throws Exception {
             Object state = get(mining.mineHandler, MineHandler.class, "trenchFill");
-            return (List<BlockPos>) invoke(state.getClass(), state, "readyWaterloggedTargets",
+            return (List<BlockPos>) invoke(state.getClass(), state, "readyBreakTargets",
                     new Class<?>[]{Predicate.class}, (Predicate<BlockPos>) pos -> true);
         }
 

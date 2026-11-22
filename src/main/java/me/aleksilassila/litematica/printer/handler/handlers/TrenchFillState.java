@@ -12,12 +12,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
-/** Target, retry and rate history for mine trench filling. Minecraft interactions stay in MineHandler. */
+/** Target, retry and rate history for mine trench filling and breaking. Minecraft interactions stay in MineHandler. */
 final class TrenchFillState {
     static final int MAX_TARGETS = 1024;
     private static final int MAX_COLD_REPLACEMENTS_PER_TICK = 64;
     private final Set<BlockPos> fillTargets = new LinkedHashSet<>();
-    private final Set<BlockPos> waterloggedTargets = new LinkedHashSet<>();
+    private final Set<BlockPos> breakTargets = new LinkedHashSet<>();
     private final Map<BlockPos, Long> inFlight = new HashMap<>();
     private final Map<BlockPos, Object> queuedAttempts = new HashMap<>();
     private final Map<BlockPos, Long> retryAt = new HashMap<>();
@@ -31,7 +31,7 @@ final class TrenchFillState {
 
     void clear() {
         this.fillTargets.clear();
-        this.waterloggedTargets.clear();
+        this.breakTargets.clear();
         this.inFlight.clear();
         this.queuedAttempts.clear();
         this.retryAt.clear();
@@ -52,11 +52,11 @@ final class TrenchFillState {
     }
 
     boolean hasWork() {
-        return !this.fillTargets.isEmpty() || !this.waterloggedTargets.isEmpty() || !this.inFlight.isEmpty();
+        return !this.fillTargets.isEmpty() || !this.breakTargets.isEmpty() || !this.inFlight.isEmpty();
     }
 
     int targetCount() {
-        return this.fillTargets.size() + this.waterloggedTargets.size();
+        return this.fillTargets.size() + this.breakTargets.size();
     }
 
     int remainingCapacity() { return Math.max(0, MAX_TARGETS - this.targetCount()); }
@@ -88,7 +88,7 @@ final class TrenchFillState {
                 if (cold.size() == limit) return cold;
             }
         }
-        for (BlockPos pos : this.waterloggedTargets) {
+        for (BlockPos pos : this.breakTargets) {
             if (!this.inFlight.containsKey(pos) && !this.queuedAttempts.containsKey(pos)
                     && !protectedTarget.test(pos) && !reachable.test(pos)) {
                 cold.add(pos);
@@ -100,17 +100,17 @@ final class TrenchFillState {
 
     /** Refreshes the bounded retained set, without treating an unfinished source slice as complete. */
     void refreshScope(List<PrinterBox> sourceBoxes, long now, Predicate<BlockPos> isFluid,
-                      Predicate<BlockPos> isWaterlogged) {
+                      Predicate<BlockPos> isTrenchBreakTarget) {
         if (!sourceBoxes.equals(this.scopeBoxes)) {
             this.scopeBoxes = List.copyOf(sourceBoxes);
             this.fillTargets.removeIf(pos -> !this.inFlight.containsKey(pos));
-            this.waterloggedTargets.clear();
+            this.breakTargets.clear();
             this.retryAt.clear();
             this.materialWaiting.clear();
         }
         this.fillTargets.removeIf(pos -> !this.inFlight.containsKey(pos)
                 && (!this.containsScope(pos) || !isFluid.test(pos)));
-        this.waterloggedTargets.removeIf(pos -> !this.containsScope(pos) || !isWaterlogged.test(pos));
+        this.breakTargets.removeIf(pos -> !this.containsScope(pos) || !isTrenchBreakTarget.test(pos));
         this.inFlight.entrySet().removeIf(entry -> !this.queuedAttempts.containsKey(entry.getKey())
                 && (!isFluid.test(entry.getKey()) || now - entry.getValue() > 40L));
         this.retryAt.entrySet().removeIf(entry -> !this.fillTargets.contains(entry.getKey()) || entry.getValue() <= now);
@@ -118,13 +118,13 @@ final class TrenchFillState {
     }
 
     boolean retains(BlockPos pos) {
-        return this.fillTargets.contains(pos) || this.waterloggedTargets.contains(pos);
+        return this.fillTargets.contains(pos) || this.breakTargets.contains(pos);
     }
 
-    void retainBatch(Set<BlockPos> discovered, Set<BlockPos> waterlogged) {
-        for (BlockPos pos : waterlogged) {
+    void retainBatch(Set<BlockPos> discovered, Set<BlockPos> breakTargets) {
+        for (BlockPos pos : breakTargets) {
             if (this.remainingCapacity() == 0) break;
-            this.waterloggedTargets.add(pos.immutable());
+            this.breakTargets.add(pos.immutable());
         }
         discovered.stream().sorted(Comparator.comparingInt(BlockPos::getY)).forEach(pos -> {
             if (this.remainingCapacity() > 0) this.fillTargets.add(pos.immutable());
@@ -135,22 +135,22 @@ final class TrenchFillState {
         this.fillTargets.addAll(sorted);
     }
 
-    void retainBatch(Set<BlockPos> discovered, Set<BlockPos> waterlogged, long now,
+    void retainBatch(Set<BlockPos> discovered, Set<BlockPos> breakTargets, long now,
                      Predicate<BlockPos> reachable, Predicate<BlockPos> protectedTarget) {
         this.beginReplacementTick(now);
         Set<BlockPos> incoming = new LinkedHashSet<>(discovered);
-        incoming.addAll(waterlogged);
+        incoming.addAll(breakTargets);
         incoming.removeIf(this::retains);
         int needed = Math.max(0, incoming.size() - this.remainingCapacity());
         if (needed > 0) {
             for (BlockPos pos : this.coldTargets(reachable, protectedTarget, now)) {
                 if (needed-- == 0) break;
                 this.removeFillTarget(pos);
-                this.removeWaterloggedTarget(pos);
+                this.removeBreakTarget(pos);
                 this.replacedThisTick++;
             }
         }
-        this.retainBatch(discovered, waterlogged);
+        this.retainBatch(discovered, breakTargets);
     }
 
     private boolean containsScope(BlockPos pos) {
@@ -165,28 +165,28 @@ final class TrenchFillState {
         return this.fillTargets.contains(pos);
     }
 
-    boolean hasWaterloggedTarget(BlockPos pos) {
-        return this.waterloggedTargets.contains(pos);
+    boolean hasBreakTarget(BlockPos pos) {
+        return this.breakTargets.contains(pos);
     }
 
-    boolean hasWaterloggedTargets() {
-        return !this.waterloggedTargets.isEmpty();
+    boolean hasBreakTargets() {
+        return !this.breakTargets.isEmpty();
     }
 
     boolean canAttempt(BlockPos pos, long now) {
         return !this.inFlight.containsKey(pos) && this.retryAt.getOrDefault(pos, Long.MIN_VALUE) <= now;
     }
 
-    List<BlockPos> readyWaterloggedTargets(Predicate<BlockPos> reachable) {
+    List<BlockPos> readyBreakTargets(Predicate<BlockPos> reachable) {
         List<BlockPos> ready = new ArrayList<>();
-        for (BlockPos pos : this.waterloggedTargets) {
+        for (BlockPos pos : this.breakTargets) {
             if (reachable.test(pos)) ready.add(pos);
         }
         return ready;
     }
 
     BlockPos peekPriorityTarget(long now, Predicate<BlockPos> reachable) {
-        for (BlockPos pos : this.waterloggedTargets) {
+        for (BlockPos pos : this.breakTargets) {
             if (reachable.test(pos)) return pos;
         }
         for (BlockPos pos : this.fillTargets) {
@@ -213,16 +213,16 @@ final class TrenchFillState {
     }
 
     void updateTargets(List<PrinterBox> sourceBoxes, Set<BlockPos> discovered,
-                       Set<BlockPos> waterlogged, long now, Predicate<BlockPos> isFluid) {
+                       Set<BlockPos> breakTargets, long now, Predicate<BlockPos> isFluid) {
         if (!sourceBoxes.equals(this.scopeBoxes)) {
             this.scopeBoxes = List.copyOf(sourceBoxes);
             this.fillTargets.removeIf(pos -> !this.inFlight.containsKey(pos));
-            this.waterloggedTargets.clear();
+            this.breakTargets.clear();
             this.retryAt.clear();
             this.materialWaiting.clear();
         }
-        this.waterloggedTargets.removeIf(pos -> !waterlogged.contains(pos));
-        this.waterloggedTargets.addAll(waterlogged);
+        this.breakTargets.removeIf(pos -> !breakTargets.contains(pos));
+        this.breakTargets.addAll(breakTargets);
         this.fillTargets.removeIf(pos -> !discovered.contains(pos) && !this.inFlight.containsKey(pos));
         discovered.stream().sorted(Comparator.comparingInt(BlockPos::getY)).forEach(this.fillTargets::add);
         this.inFlight.entrySet().removeIf(entry -> !this.queuedAttempts.containsKey(entry.getKey())
@@ -245,8 +245,8 @@ final class TrenchFillState {
         this.materialWaiting.remove(pos);
     }
 
-    void removeWaterloggedTarget(BlockPos pos) {
-        this.waterloggedTargets.remove(pos);
+    void removeBreakTarget(BlockPos pos) {
+        this.breakTargets.remove(pos);
     }
 
     void defer(BlockPos pos, long retryTick) {

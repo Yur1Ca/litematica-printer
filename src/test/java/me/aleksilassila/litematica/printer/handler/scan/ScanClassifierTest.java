@@ -6,6 +6,8 @@ import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ScanClassifierTest {
@@ -54,5 +56,14 @@ class ScanClassifierTest {
                 ScanClassifier.flags(ScanIntent.MINE, Blocks.STONE.defaultBlockState(), null, false, false));
         assertEquals(ScanFlags.WORLD_NON_AIR | ScanFlags.WORLD_FLUID,
                 ScanClassifier.flags(ScanIntent.FLUID, Blocks.WATER.defaultBlockState(), null, false, false));
+    }
+
+    @Test
+    void trenchIncludesBuddingAmethystButLeavesDryCrystalsAndOrdinaryAmethystAlone() {
+        assertEquals(ScanFlags.WORLD_NON_AIR,
+                ScanClassifier.flags(ScanIntent.TRENCH, Blocks.BUDDING_AMETHYST.defaultBlockState(), null, false, false));
+        for (var block : List.of(Blocks.AMETHYST_BLOCK, Blocks.SMALL_AMETHYST_BUD, Blocks.AMETHYST_CLUSTER, Blocks.AIR)) {
+            assertEquals(0, ScanClassifier.flags(ScanIntent.TRENCH, block.defaultBlockState(), null, false, false));
+        }
     }
 }

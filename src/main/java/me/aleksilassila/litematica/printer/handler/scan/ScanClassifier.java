@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.scan;
 
 import net.minecraft.world.level.block.BaseRailBlock;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
@@ -25,9 +26,14 @@ final class ScanClassifier {
                     ? 0 : ScanFlags.WORLD_NON_AIR;
             case FLUID -> worldState.getFluidState().isEmpty()
                     ? 0 : (byte) (ScanFlags.WORLD_NON_AIR | ScanFlags.WORLD_FLUID);
+            case TRENCH -> isTrenchTarget(worldState) ? ScanFlags.WORLD_NON_AIR : 0;
             case FILL -> fillFlags(worldState, hasFillSupport);
             default -> 0;
         };
+    }
+
+    static boolean isTrenchTarget(BlockState state) {
+        return state.is(Blocks.BUDDING_AMETHYST) || !state.getFluidState().isEmpty();
     }
 
     private static byte printFlags(

@@ -32,6 +32,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -128,11 +129,11 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        if (this.hasTrenchFillWork()) {
-            if (this.trenchFill.hasWaterloggedTargets()) {
-                List<BlockPos> waterlogged = this.trenchFill.readyWaterloggedTargets(
-                        pos -> this.canReachTrenchTarget(pos) && this.canBreakTrenchWaterloggedTarget(pos));
-                if (!waterlogged.isEmpty()) return waterlogged;
+        if (this.hasTrenchWork()) {
+            if (this.trenchFill.hasBreakTargets()) {
+                List<BlockPos> breakTargets = this.trenchFill.readyBreakTargets(
+                        pos -> this.canReachTrenchTarget(pos) && this.canBreakTrenchTarget(pos));
+                if (!breakTargets.isEmpty()) return breakTargets;
             }
             List<BlockPos> fillPositions = this.trenchFill.readyFillTargets(
                     this.level.getGameTime(), pos -> this.isFluid(this.level.getBlockState(pos)),
@@ -151,6 +152,15 @@ public class MineHandler extends FeatureModuleBase {
             return List.of();
         }
         return this.getMineScanPositions(playerInteractionBox);
+    }
+
+    @Override
+    protected List<PrinterBox> getScanSourceBoxes(PrinterBox interactionBox) {
+        // Include the selection cell touching a reachable trench wall or floor in every scan phase.
+        if (interactionBox != null && Configs.Mine.MINE_TRENCH_MODE.getBooleanValue()) {
+            return super.getScanSourceBoxes(interactionBox.expand(1));
+        }
+        return super.getScanSourceBoxes(interactionBox);
     }
 
     private Iterable<BlockPos> getMineScanPositions(PrinterBox playerInteractionBox) {
@@ -176,10 +186,10 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override protected BlockPos peekQueuedIterationTarget() {
         if (this.activeMinePos != null) return this.activeMinePos;
-        if (this.hasTrenchFillWork()) {
+        if (this.hasTrenchWork()) {
             BlockPos trench = this.trenchFill.peekPriorityTarget(this.level.getGameTime(),
-                    pos -> this.canReachTrenchTarget(pos) && (!this.trenchFill.hasWaterloggedTarget(pos)
-                            || this.canBreakTrenchWaterloggedTarget(pos)));
+                    pos -> this.canReachTrenchTarget(pos) && (!this.trenchFill.hasBreakTarget(pos)
+                            || this.canBreakTrenchTarget(pos)));
             if (trench != null) return trench;
         }
         BlockPos next = null;
@@ -191,7 +201,7 @@ public class MineHandler extends FeatureModuleBase {
     }
 
     @Override protected boolean isPreviewPositionAllowed(BlockPos pos) {
-        return super.isPreviewPositionAllowed(pos) || this.hasTrenchFillWork()
+        return super.isPreviewPositionAllowed(pos) || this.hasTrenchWork()
                 && this.trenchFill.retains(pos) && this.isWithinTrenchScope(pos) && this.canReachTrenchTarget(pos);
     }
 
@@ -235,12 +245,12 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected boolean hasRunnableIterationWork() {
-        return !this.candidates.isEmpty() || this.hasTrenchFillWork();
+        return !this.candidates.isEmpty() || this.hasTrenchWork();
     }
 
     @Override
     protected boolean hasWaitingIterationWork() {
-        return this.activeMinePos != null || this.hasTrenchFillWork();
+        return this.activeMinePos != null || this.hasTrenchWork();
     }
 
     @Override
@@ -287,25 +297,25 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     public boolean canIterationBlockPos(BlockPos pos) {
-        if (this.hasTrenchFillWork() && this.trenchFill.hasFillTarget(pos)) {
+        if (this.hasTrenchWork() && this.trenchFill.hasFillTarget(pos)) {
             return this.level != null
                     && this.trenchFill.canAttempt(pos, this.level.getGameTime())
                     && this.isFluid(this.level.getBlockState(pos));
         }
-        if (this.hasTrenchFillWork() && this.trenchFill.hasWaterloggedTarget(pos)) {
-            return this.level != null && this.isWaterlogged(this.level.getBlockState(pos));
+        if (this.hasTrenchWork() && this.trenchFill.hasBreakTarget(pos)) {
+            return this.level != null && this.isTrenchBreakTarget(pos, this.level.getBlockState(pos));
         }
         return this.isMineScanCandidate(pos, true);
     }
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        if (this.hasTrenchFillWork() && this.trenchFill.hasFillTarget(blockPos)) {
+        if (this.hasTrenchWork() && this.trenchFill.hasFillTarget(blockPos)) {
             this.executeTrenchFill(blockPos, skipIteration);
             return;
         }
-        if (this.hasTrenchFillWork() && this.trenchFill.hasWaterloggedTarget(blockPos)) {
-            this.executeTrenchWaterloggedBreak(blockPos, skipIteration);
+        if (this.hasTrenchWork() && this.trenchFill.hasBreakTarget(blockPos)) {
+            this.executeTrenchBreak(blockPos, skipIteration);
             return;
         }
         if (this.trenchSupportBlockedThisTick) {
@@ -383,13 +393,12 @@ public class MineHandler extends FeatureModuleBase {
     }
 
     private boolean canContinueActiveMineTarget(BlockPos pos) {
-        return pos != null
-                && (this.isInSelectionRange(pos)
-                    || Configs.Mine.MINE_TRENCH_MODE.getBooleanValue()
-                        && this.isWaterlogged(this.level.getBlockState(pos)) && this.isWithinTrenchScope(pos))
-                && this.canReachIterationPosition(pos)
-                && InteractionUtils.canBreakBlock(pos)
-                && mineRestriction(this.level.getBlockState(pos));
+        if (pos == null) return false;
+        BlockState state = this.level.getBlockState(pos);
+        boolean inRange = this.isInSelectionRange(pos) ? this.canReachIterationPosition(pos)
+                : Configs.Mine.MINE_TRENCH_MODE.getBooleanValue() && this.isTrenchBreakTarget(pos, state)
+                        && this.isWithinTrenchScope(pos) && this.canReachTrenchTarget(pos);
+        return inRange && InteractionUtils.canBreakBlock(pos) && this.mineRestriction(state);
     }
 
     private boolean isMineScanCandidate(BlockPos pos, boolean checkReach) {
@@ -525,7 +534,7 @@ public class MineHandler extends FeatureModuleBase {
         this.candidateStates.remove(pos);
     }
 
-    private boolean hasTrenchFillWork() {
+    private boolean hasTrenchWork() {
         return Configs.Mine.MINE_TRENCH_MODE.getBooleanValue() && this.trenchFill.hasWork();
     }
 
@@ -545,26 +554,26 @@ public class MineHandler extends FeatureModuleBase {
             List<PrinterBox> sourceBoxes = this.getScanSourceBoxes(interactionBox);
             this.trenchFill.refreshScope(sourceBoxes, this.level.getGameTime(),
                     pos -> this.isFluid(this.level.getBlockState(pos)),
-                    pos -> this.isWaterlogged(this.level.getBlockState(pos)));
+                    pos -> this.isTrenchBreakTarget(pos, this.level.getBlockState(pos)));
             Predicate<BlockPos> protectedTarget = pos -> pos.equals(this.activeMinePos);
             long now = this.level.getGameTime();
             int remaining = this.trenchFill.discoveryAllowance(now, this::canReachTrenchTarget, protectedTarget);
             if (remaining == 0 || work.isExceeded(0L)) return;
             Set<BlockPos> discovered = new LinkedHashSet<>();
-            Set<BlockPos> waterlogged = new LinkedHashSet<>();
+            Set<BlockPos> breakTargets = new LinkedHashSet<>();
             Iterable<BlockPos> source = this.scanEngine.iterable("trench", trenchSourceBoxes(sourceBoxes),
-                    this.level, null, this.player, 0, ScanIntent.FLUID, pos -> {
+                    this.level, null, this.player, 0, ScanIntent.TRENCH, pos -> {
                         BlockState state = this.level.getBlockState(pos);
                         if (this.isFluid(state)) discovered.add(pos.immutable());
-                        else if (this.isWaterlogged(state)) waterlogged.add(pos.immutable());
+                        else if (this.isTrenchBreakTarget(pos, state)) breakTargets.add(pos.immutable());
                         else return false;
                         return true;
                     }, pos -> !this.trenchFill.retains(pos));
             var iterator = source.iterator();
             // Check capacity before hasNext(), which may advance the persistent source.
-            while (discovered.size() + waterlogged.size() < remaining && !work.isExceeded(0L)
+            while (discovered.size() + breakTargets.size() < remaining && !work.isExceeded(0L)
                     && iterator.hasNext()) iterator.next();
-            this.trenchFill.retainBatch(discovered, waterlogged, now, this::canReachTrenchTarget, protectedTarget);
+            this.trenchFill.retainBatch(discovered, breakTargets, now, this::canReachTrenchTarget, protectedTarget);
         } finally {
             work.finish(0L);
             this.timing.finish(NAME,
@@ -685,22 +694,23 @@ public class MineHandler extends FeatureModuleBase {
         this.trenchFill.defer(pos, retryAt);
     }
 
-    private boolean canBreakTrenchWaterloggedTarget(BlockPos pos) {
-        return this.level != null && this.isWaterlogged(this.level.getBlockState(pos))
-                && InteractionUtils.canBreakBlock(pos) && this.mineRestriction(this.level.getBlockState(pos));
+    private boolean canBreakTrenchTarget(BlockPos pos) {
+        if (this.level == null) return false;
+        BlockState state = this.level.getBlockState(pos);
+        return this.isTrenchBreakTarget(pos, state) && InteractionUtils.canBreakBlock(pos) && this.mineRestriction(state);
     }
 
-    private void executeTrenchWaterloggedBreak(BlockPos pos, AtomicReference<Boolean> skipIteration) {
+    private void executeTrenchBreak(BlockPos pos, AtomicReference<Boolean> skipIteration) {
         if (this.level == null || !this.isWithinTrenchScope(pos)
-                || !this.isWaterlogged(this.level.getBlockState(pos))) {
-            this.trenchFill.removeWaterloggedTarget(pos);
+                || !this.isTrenchBreakTarget(pos, this.level.getBlockState(pos))) {
+            this.trenchFill.removeBreakTarget(pos);
             return;
         }
         if (!this.canReachTrenchTarget(pos)) {
             skipIteration.set(true);
             return;
         }
-        if (!this.canBreakTrenchWaterloggedTarget(pos)) {
+        if (!this.canBreakTrenchTarget(pos)) {
             this.setIterationConsumedEffectiveExecution(false);
             return;
         }
@@ -714,7 +724,7 @@ public class MineHandler extends FeatureModuleBase {
         if (result == BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = pos.immutable();
         } else if (result != BlockBreakResult.BLOCKED) {
-            this.trenchFill.removeWaterloggedTarget(pos);
+            this.trenchFill.removeBreakTarget(pos);
         }
         skipIteration.set(true);
     }
@@ -780,10 +790,10 @@ public class MineHandler extends FeatureModuleBase {
             Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.DOWN
     };
 
-    private boolean isWaterlogged(BlockState state) {
-        return state != null
-                && !(state.getBlock() instanceof LiquidBlock)
-                && !state.getFluidState().isEmpty();
+    private boolean isTrenchBreakTarget(BlockPos pos, BlockState state) {
+        if (state == null || state.getBlock() instanceof LiquidBlock) return false;
+        return !state.getFluidState().isEmpty()
+                || (state.is(Blocks.BUDDING_AMETHYST) && !this.isInSelectionRange(pos));
     }
 
 }

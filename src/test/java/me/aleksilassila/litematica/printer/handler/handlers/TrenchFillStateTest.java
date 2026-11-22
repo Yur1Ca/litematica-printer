@@ -20,7 +20,7 @@ class TrenchFillStateTest {
         for (int i = 0; i < 100; i++) assertEquals(waterlogged, state.peekPriorityTarget(10L, pos -> true));
         assertEquals(2, state.targetCount());
         assertEquals(fill, state.peekPriorityTarget(10L, pos -> !pos.equals(waterlogged)));
-        state.removeWaterloggedTarget(waterlogged);
+        state.removeBreakTarget(waterlogged);
         state.defer(fill, 20L);
         assertEquals(null, state.peekPriorityTarget(19L, pos -> true));
         assertEquals(fill, state.peekPriorityTarget(20L, pos -> true));
@@ -147,7 +147,7 @@ class TrenchFillStateTest {
 
         assertEquals(List.of(near), state.readyFillTargets(10L, ignored -> true,
                 pos -> pos.equals(near)));
-        assertEquals(List.of(), state.readyWaterloggedTargets(pos -> pos.equals(near)));
+        assertEquals(List.of(), state.readyBreakTargets(pos -> pos.equals(near)));
     }
 
     @Test

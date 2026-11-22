@@ -39,6 +39,12 @@ public enum ScanIntent {
             return ScanFlags.has(flags, ScanFlags.WORLD_FLUID);
         }
     },
+    TRENCH {
+        @Override
+        public boolean shouldConsider(byte flags) {
+            return ScanFlags.has(flags, ScanFlags.WORLD_NON_AIR);
+        }
+    },
     FILL {
         @Override
         public boolean shouldConsider(byte flags) {

@@ -50,14 +50,31 @@ class ScanChunkReloadTest {
 
         level.chunks.chunk = SchematicIndexFixture.chunk(0, 1);
         assertFalse(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+        assertFalse(observation.hasCandidatesInSection(ScanIntent.TRENCH, 0, 0, 0, false));
         level.chunks.chunk.getSections()[4].setBlockState(0, 0, 0, Blocks.WATER.defaultBlockState());
         assertTrue(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+        assertTrue(observation.hasCandidatesInSection(ScanIntent.TRENCH, 0, 0, 0, false));
 
         // Use a fresh palette so a previously observed water block cannot satisfy this assertion.
         level.chunks.chunk = SchematicIndexFixture.chunk(0, 1);
         level.chunks.chunk.getSections()[4].setBlockState(0, 0, 0,
                 Blocks.OAK_SLAB.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true));
         assertTrue(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+        assertTrue(observation.hasCandidatesInSection(ScanIntent.TRENCH, 0, 0, 0, false));
+    }
+
+    @Test
+    void dryBuddingAmethystSectionIsScannedForTrenchingButSkippedForFluids() throws Exception {
+        var level = allocate(FluidLevel.class);
+        level.chunks = allocate(FluidChunkCache.class);
+        level.chunks.chunk = SchematicIndexFixture.chunk(0, 1);
+        var observation = new LiveWorldObservation(level, null);
+        var section = level.chunks.chunk.getSections()[4];
+        section.setBlockState(0, 0, 0, Blocks.AMETHYST_BLOCK.defaultBlockState());
+        assertFalse(observation.hasCandidatesInSection(ScanIntent.TRENCH, 0, 0, 0, false));
+        section.setBlockState(1, 0, 0, Blocks.BUDDING_AMETHYST.defaultBlockState());
+        assertTrue(observation.hasCandidatesInSection(ScanIntent.TRENCH, 0, 0, 0, false));
+        assertFalse(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
     }
 
     private static final class FluidLevel extends ClientLevel {

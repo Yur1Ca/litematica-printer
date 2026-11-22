@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -51,7 +52,7 @@ final class LiveWorldObservation implements WorldObservationPort {
     @Override
     public boolean hasCandidatesInSection(ScanIntent intent, int sectionX, int sectionY,
                                           int sectionZ, boolean breakExtraBlocks) {
-        if (intent == ScanIntent.FLUID) {
+        if (intent == ScanIntent.FLUID || intent == ScanIntent.TRENCH) {
             var source = this.level.getChunkSource();
             // Headless or incomplete observations are unknown, never proof of an empty section.
             if (source == null) return true;
@@ -60,11 +61,14 @@ final class LiveWorldObservation implements WorldObservationPort {
             var sections = chunk.getSections();
             int index = this.level.getSectionIndexFromSectionY(sectionY);
             if (index < 0 || index >= sections.length || sections[index] == null) return false;
+            var section = sections[index];
             //#if MC >= 260100
-            return sections[index].hasFluid();
+            return section.hasFluid() || intent == ScanIntent.TRENCH
+                    && section.maybeHas(state -> state.is(Blocks.BUDDING_AMETHYST));
             //#else
             // 1.21.11 tracks ticking fluids only. Check the palette for still and waterlogged states as well.
-            //$$ return sections[index].maybeHas(state -> !state.getFluidState().isEmpty());
+            //$$ return intent == ScanIntent.TRENCH ? section.maybeHas(ScanClassifier::isTrenchTarget)
+            //$$         : section.maybeHas(state -> !state.getFluidState().isEmpty());
             //#endif
         }
         if (intent != ScanIntent.PRINT || breakExtraBlocks || this.schematic == null) return true;

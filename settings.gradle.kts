@@ -22,13 +22,14 @@ plugins {
 }
 
 val versions = listOf(
-    "26.1", "26.2", "26.3"
+    "1.21.11", "26.1", "26.2", "26.3"
 )
 val mainProjectVersion = file("versions/mainProject").readText().trim()
 require(mainProjectVersion in versions) {
     "Main project '$mainProjectVersion' is not a supported Minecraft version"
 }
 val preprocessParentChain = mapOf(
+    "1.21.11" to "26.1",
     "26.2" to "26.1",
     "26.3" to "26.2"
 )

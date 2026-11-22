@@ -48,7 +48,7 @@ private val Project.ciBuildVersion: String?
         if (isReleaseWorkflow) "beta$buildNumber" else "dev$buildNumber"
     }
 
-val Project.javaVersion get() = JavaVersion.VERSION_25
+val Project.javaVersion get() = if (mcVersionInt == 12111) JavaVersion.VERSION_21 else JavaVersion.VERSION_25
 val Project.mixinJavaVersion get() = "JAVA_${javaVersion}"
 
 val Project.fullProjectVersion: String get() {
@@ -88,6 +88,6 @@ val Project.placeholderProps: Map<String, Any?>
         } else {
             ""
         },
-        "malilib" to malilib,
-        "litematica" to litematica
+        "malilib" to (propStrOrNull("malilib_min_version") ?: malilib),
+        "litematica" to (propStrOrNull("litematica_min_version") ?: litematica)
     ).filterValues { it != null }.mapValues { it.value!! }

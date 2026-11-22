@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import org.joml.Vector4f;
 
+//#if MC >= 260100
 import org.joml.Matrix4fc;
 //#if MC >= 260300
 //$$ import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
@@ -34,6 +35,9 @@ import org.joml.Matrix4fc;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 //#endif
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+//#else
+//$$ import org.joml.Matrix4f;
+//#endif
 
 public class HighlightBlockRenderer implements IRenderer {
     public static HighlightBlockRenderer instance = new HighlightBlockRenderer();
@@ -122,8 +126,10 @@ public class HighlightBlockRenderer implements IRenderer {
     @Override
     //#if MC >= 260300
     //$$ public void onRenderWorldLast(RenderTarget fb, CameraRenderState cameraState, Frustum culling, RenderBuffers buffers, GpuBufferSlice terrainFog, Vector4f fogColor, ProfilerFiller profiler) {
-    //#else
+    //#elseif MC >= 260100
     public void onRenderWorldLast(RenderTarget fb, Matrix4fc matrices, CameraRenderState cameraState, Frustum culling, RenderBuffers buffers, GpuBufferSlice terrainFog, Vector4f fogColor, ProfilerFiller profiler) {
+    //#else
+    //$$ public void onRenderWorldLast(Matrix4f matrices, Matrix4f projMatrix) {
     //#endif
         List<HighlightRenderSnapshot> snapshots = new ArrayList<>();
         synchronized (HIGHLIGHT_LOCK) {

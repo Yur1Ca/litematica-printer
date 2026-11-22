@@ -59,8 +59,13 @@ final class LiveWorldObservation implements WorldObservationPort {
             if (chunk == null) return false;
             var sections = chunk.getSections();
             int index = this.level.getSectionIndexFromSectionY(sectionY);
-            // The maintained fluid count includes both liquid blocks and waterlogged solids.
-            return index >= 0 && index < sections.length && sections[index] != null && sections[index].hasFluid();
+            if (index < 0 || index >= sections.length || sections[index] == null) return false;
+            //#if MC >= 260100
+            return sections[index].hasFluid();
+            //#else
+            // 1.21.11 tracks ticking fluids only. Check the palette for still and waterlogged states as well.
+            //$$ return sections[index].maybeHas(state -> !state.getFluidState().isEmpty());
+            //#endif
         }
         if (intent != ScanIntent.PRINT || breakExtraBlocks || this.schematic == null) return true;
         var chunk = this.schematic.getChunk(sectionX, sectionZ);

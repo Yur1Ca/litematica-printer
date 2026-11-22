@@ -6,13 +6,16 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +40,37 @@ class ScanChunkReloadTest {
     static void bootstrapRegistries() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+    }
+
+    @Test
+    void fluidScanKeepsSourceWaterAndWaterloggedSectionsAndSkipsDrySections() throws Exception {
+        var level = allocate(FluidLevel.class);
+        level.chunks = allocate(FluidChunkCache.class);
+        var observation = new LiveWorldObservation(level, null);
+
+        level.chunks.chunk = SchematicIndexFixture.chunk(0, 1);
+        assertFalse(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+        level.chunks.chunk.getSections()[4].setBlockState(0, 0, 0, Blocks.WATER.defaultBlockState());
+        assertTrue(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+
+        // Use a fresh palette so a previously observed water block cannot satisfy this assertion.
+        level.chunks.chunk = SchematicIndexFixture.chunk(0, 1);
+        level.chunks.chunk.getSections()[4].setBlockState(0, 0, 0,
+                Blocks.OAK_SLAB.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true));
+        assertTrue(observation.hasCandidatesInSection(ScanIntent.FLUID, 0, 0, 0, false));
+    }
+
+    private static final class FluidLevel extends ClientLevel {
+        private FluidChunkCache chunks;
+        private FluidLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
+        @Override public ClientChunkCache getChunkSource() { return this.chunks; }
+        @Override public int getMinY() { return -64; }
+    }
+
+    private static final class FluidChunkCache extends ClientChunkCache {
+        private LevelChunk chunk;
+        private FluidChunkCache() { super(null, 0); }
+        @Override public LevelChunk getChunk(int x, int z, ChunkStatus status, boolean load) { return this.chunk; }
     }
 
     @Test

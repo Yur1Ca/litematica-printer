@@ -34,12 +34,14 @@ class InventoryRegressionTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
+        //#endif
     }
     static SchematicBlockContext context(BlockState required) throws Exception {
         Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");

@@ -7,7 +7,7 @@ import net.minecraft.world.item.ItemStack;
 import java.awt.*;
 
 /**
- * 封装 26.x 原版 GUI 渲染的底层工具类。
+ * 封装原版 GUI 渲染的底层工具类。
  */
 public class Render2DUtils {
     public static final Minecraft client = Minecraft.getInstance();
@@ -85,6 +85,10 @@ public class Render2DUtils {
      */
     public static void drawItem(ItemStack stack, int x, int y) {
         ensureInitialized();
+        //#if MC >= 260100
         guiGraphics.fakeItem(stack, x, y);
+        //#else
+        //$$ guiGraphics.renderFakeItem(stack, x, y);
+        //#endif
     }
 }

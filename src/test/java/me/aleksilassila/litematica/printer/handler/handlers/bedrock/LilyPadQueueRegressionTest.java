@@ -150,7 +150,11 @@ class LilyPadQueueRegressionTest {
             itemMode = allocate(SurfaceMode.class);
             itemMode.fixture = this;
             client.gameMode = itemMode;
+            //#if MC >= 260100
             bindWater(List.of(net.minecraft.tags.FluidTags.WATER, net.minecraft.tags.FluidTags.SUPPORTS_LILY_PAD));
+            //#else
+            //$$ bindWater(List.of(net.minecraft.tags.FluidTags.WATER));
+            //#endif
         }
         void queue() {
             assertTrue(manager.queueClick(TARGET, Direction.DOWN, Vec3.ZERO, false, 1, new Item[]{Items.LILY_PAD}, ActionManager.ActionSource.PRINT));

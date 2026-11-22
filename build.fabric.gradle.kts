@@ -1,11 +1,18 @@
 @file:Suppress("UnstableApiUsage")
 
+import net.fabricmc.loom.api.LoomGradleExtensionAPI
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
+
 plugins {
     id("mod-plugin")
     id("maven-publish")
-    id("net.fabricmc.fabric-loom")
-    id("com.replaymod.preprocess")
 }
+
+val remapGame = mcVersionInt == 12111
+apply(plugin = if (remapGame) "net.fabricmc.fabric-loom-remap" else "net.fabricmc.fabric-loom")
+apply(plugin = "com.replaymod.preprocess")
+val loom = extensions.getByType<LoomGradleExtensionAPI>()
+val modImplementation = if (remapGame) "modImplementation" else "implementation"
 
 version = artifactVersion
 group = modMavenGroup
@@ -75,21 +82,26 @@ configurations.all {
 }
 
 dependencies {
-    minecraft("com.mojang:minecraft:$mcVersion")
+    add("minecraft", "com.mojang:minecraft:$mcVersion")
+    if (remapGame) {
+        add("mappings", loom.officialMojangMappings())
+    }
 
-    implementation("net.fabricmc:fabric-loader:$fabricLoaderVersion")
-    implementation("net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
+    add(modImplementation, "net.fabricmc:fabric-loader:$fabricLoaderVersion")
+    add(modImplementation, "net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
 
-    implementation("com.belerweb:pinyin4j:${prop("pinyin_version")}")?.let { include(it) }
+    val pinyin = "com.belerweb:pinyin4j:${prop("pinyin_version")}"
+    add(modImplementation, pinyin)
+    add("include", pinyin)
 
-    implementation(modMenuDependency)
+    add(modImplementation, modMenuDependency)
 
     // masa
-    implementation(malilibDependency)
-    implementation(litematicaDependency)
-    implementation(tweakerooDependency) {
+    add(modImplementation, malilibDependency)
+    add(modImplementation, litematicaDependency)
+    add(modImplementation, tweakerooDependency) {
         exclude(group = "com.github.sakura-ryoko", module = "malilib")
         exclude(group = "maven.modrinth", module = "malilib")
         exclude(group = "fi.dy.masa.malilib")
@@ -100,7 +112,7 @@ dependencies {
     if (quickshulkerUrl.isNotEmpty()) {
         val quickshulkerFile = downloadDependencyMod(quickshulkerUrl)
         if (quickshulkerFile != null && quickshulkerFile.exists()) {
-            implementation(files(quickshulkerFile))
+            add(modImplementation, files(quickshulkerFile))
         }
     }
 
@@ -108,7 +120,7 @@ dependencies {
     if (chestTrackerUrl?.startsWith("http") == true) {
         val chestTrackerFile = downloadDependencyMod(chestTrackerUrl)
         if (chestTrackerFile != null && chestTrackerFile.exists()) {
-            implementation(files(chestTrackerFile))
+            add(modImplementation, files(chestTrackerFile))
         }
     }
 
@@ -120,14 +132,14 @@ dependencies {
         }
     }
 
-    implementation("me.fallenbreath:conditional-mixin-fabric:0.6.4")
+    add(modImplementation, "me.fallenbreath:conditional-mixin-fabric:0.6.4")
 }
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 
-loom {
+loom.apply {
     val commonVmArgs = listOf("-Dmixin.debug.export=true", "-Dmixin.debug.verbose=true")
     val programArgs = listOf("--width", "1280", "--height", "720", "--username", "PrinterTest")
     runs {
@@ -135,16 +147,21 @@ loom {
             generateRunConfig.set(true)
             jvmArguments.addAll(commonVmArgs)
             programArguments.addAll(programArgs)
-            runDirectory.set(file(if (project.name == "26.3") "../../run/client-26.3" else "../../run/client"))
+            val clientDir = when (project.name) {
+                "1.21.11", "26.3" -> "client-${project.name}"
+                else -> "client"
+            }
+            runDirectory.set(rootProject.file("run/$clientDir"))
         }
     }
 }
 
 tasks {
+    val distributionJar = named<AbstractArchiveTask>(if (remapGame) "remapJar" else "jar")
     register<Copy>("buildAndCollect") {
         group = "build"
         val collectedJarDir = rootProject.layout.buildDirectory.dir("libs/$modVersion/${project.name}")
-        from(jar.map { it.archiveFile })
+        from(distributionJar.flatMap { it.archiveFile })
         into(collectedJarDir)
         doFirst {
             delete(collectedJarDir)

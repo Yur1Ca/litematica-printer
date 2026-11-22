@@ -101,6 +101,9 @@ abstract class ModPlugin : Plugin<Project> {
     private fun Project.configureJavaCompile() {
         tasks.withType<JavaCompile>().configureEach {
             options.encoding = "UTF-8"
+            if (mcVersionInt == 12111) {
+                options.release.set(21)
+            }
             options.compilerArgs.addAll(
                 listOf(
                     "-Xlint:deprecation",

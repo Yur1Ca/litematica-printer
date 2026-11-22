@@ -21,8 +21,9 @@ This repository is an independently maintained continuation of earlier Litematic
 
 ## Supported Minecraft versions
 
-`master` maintains Minecraft 26.1 and later. The current build targets are:
+The `master` branch supports the following Minecraft versions.
 
+- 1.21.11
 - 26.1.x
 - 26.2
 - 26.3
@@ -140,7 +141,7 @@ If a vanilla block is placed incorrectly even at a conservative work interval, s
 
 ## Building
 
-JDK 25 is required. Build all three supported Minecraft targets and the Wrapper with:
+JDK 25 is required. Build all supported Minecraft targets and the Wrapper with:
 
 ```bash
 ./gradlew :fabricWrapper:build
@@ -153,9 +154,9 @@ Build outputs:
 
 The first build downloads Minecraft and mod dependencies and may require a working connection to their Maven repositories.
 
-Push builds on `master` compile and package all three supported versions, but run tests only for the main development version in `versions/mainProject` (currently `26.1`). Pull requests keep the full test matrix. Manual runs of the `build` workflow default to `full`, with `main` also available. The local build command above still runs all checks. Runs of the `build` workflow upload a `gradle-profile` artifact with task timings; compare it with the Actions step timings to distinguish cache restoration from compilation and tests.
+Push builds on `master` compile and package all supported versions, but run tests only for the main development version in `versions/mainProject` (currently `26.1`). Pull requests keep the full test matrix. Manual runs of the `build` workflow default to `full`, with `main` also available. The local build command above still runs all checks. Runs of the `build` workflow upload a `gradle-profile` artifact with task timings; compare it with the Actions step timings to distinguish cache restoration from compilation and tests.
 
-For a Beta release, run the `release` workflow from `master` and provide `target_release_tag`. It builds the complete Wrapper with all checks, uploads the Wrapper and all three standalone JARs to the specified GitHub Release, and publishes the Wrapper to Modrinth. There is no separate legacy version set on `master`.
+For a Beta release, run the `release` workflow from `master` and provide `target_release_tag`. It builds the complete Wrapper with all checks, uploads the Wrapper and all four standalone JARs to the specified GitHub Release, and publishes the Wrapper to Modrinth. There is no separate legacy version set on `master`.
 
 ## Acknowledgements
 

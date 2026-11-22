@@ -21,8 +21,9 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 ## 支持的 Minecraft 版本
 
-`master` 只维护 Minecraft 26.1 及以上版本，目前构建以下三个目标：
+`master` 分支支持以下 Minecraft 版本。
 
+- 1.21.11
 - 26.1.x
 - 26.2
 - 26.3
@@ -144,7 +145,7 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 ## 编译
 
-构建需要 JDK 25。以下命令会构建全部三个 Minecraft 目标和多版本 Wrapper：
+构建需要 JDK 25。以下命令会构建全部 Minecraft 目标和多版本 Wrapper：
 
 ```bash
 ./gradlew :fabricWrapper:build
@@ -157,9 +158,9 @@ Litematica Printer — Hana 是一个客户端 Fabric 模组，为 Litematica �
 
 首次构建会下载 Minecraft 和模组依赖，需要能够正常访问对应 Maven 仓库。在中国大陆网络环境下，如果下载失败，请检查网络或代理配置。
 
-日常 push 到 `master` 的 Actions 会编译并打包全部三个支持版本，只运行 `versions/mainProject` 指定的主开发版本测试（当前为 `26.1`）；PR 保留全版本测试。手动运行 `build` 工作流默认选择 `full`，也可选择 `main`。上述本地构建命令仍执行完整验证。`build` 工作流的 `gradle-profile` 产物记录各任务耗时，结合 Actions 步骤耗时可区分缓存恢复与编译、测试开销。
+日常 push 到 `master` 的 Actions 会编译并打包全部支持版本，只运行 `versions/mainProject` 指定的主开发版本测试（当前为 `26.1`）；PR 保留全版本测试。手动运行 `build` 工作流默认选择 `full`，也可选择 `main`。上述本地构建命令仍执行完整验证。`build` 工作流的 `gradle-profile` 产物记录各任务耗时，结合 Actions 步骤耗时可区分缓存恢复与编译、测试开销。
 
-发布 Beta 时，从 `master` 运行 `release` 工作流并填写 `target_release_tag`。工作流会执行完整验证，构建 Wrapper，将 Wrapper 和三个独立版本 JAR 上传到指定的 GitHub Release，并将 Wrapper 发布到 Modrinth。`master` 不再提供单独的旧版本发布集合。
+发布 Beta 时，从 `master` 运行 `release` 工作流并填写 `target_release_tag`。工作流会执行完整验证，构建 Wrapper，将 Wrapper 和四个独立版本 JAR 上传到指定的 GitHub Release，并将 Wrapper 发布到 Modrinth。`master` 不再提供单独的旧版本发布集合。
 
 ## 感谢
 

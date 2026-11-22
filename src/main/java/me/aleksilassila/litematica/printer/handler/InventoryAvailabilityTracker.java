@@ -133,7 +133,11 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             if (chunk == null) {
                 continue;
             }
+            //#if MC >= 260100
             schematic.scheduleChunkRenders(chunk.getPos().x(), chunk.getPos().z());
+            //#else
+            //$$ schematic.scheduleChunkRenders(chunk.getPos().x, chunk.getPos().z);
+            //#endif
         }
     }
 

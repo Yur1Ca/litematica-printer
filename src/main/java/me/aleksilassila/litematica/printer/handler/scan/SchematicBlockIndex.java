@@ -159,8 +159,13 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
         try (var comparison = this.sectionSnapshots.compare()) {
             for (ChunkSchematic chunk : loadedChunks.chunks()) {
                 ChunkPos chunkPos = chunk.getPos();
+                //#if MC >= 260100
                 int chunkX = chunkPos.x();
                 int chunkZ = chunkPos.z();
+                //#else
+                //$$ int chunkX = chunkPos.x;
+                //$$ int chunkZ = chunkPos.z;
+                //#endif
                 LevelChunkSection[] sections = chunk.getSections();
                 for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
                     LevelChunkSection section = sections[sectionIndex];
@@ -211,7 +216,11 @@ final class SchematicBlockIndex implements SchematicPositionQuery {
             boolean filled = false;
             if (chunk != null) {
                 ChunkPos chunkPos = chunk.getPos();
+                //#if MC >= 260100
                 key = chunkKey(chunkPos.x(), chunkPos.z());
+                //#else
+                //$$ key = chunkKey(chunkPos.x, chunkPos.z);
+                //#endif
                 filled = chunk.getState().atLeast(ChunkSchematicState.FILLED);
                 allFilled &= filled;
             }

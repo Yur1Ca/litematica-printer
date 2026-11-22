@@ -68,12 +68,14 @@ class BedrockPlacementRegressionTest {
     @BeforeAll static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        //#if MC >= 260100
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
                 //#if MC >= 260300
                 //$$ .build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup()).forEach(p -> p.apply());
                 //#else
                 .build(net.minecraft.data.registries.VanillaRegistries.createLookup()).forEach(p -> p.apply());
                 //#endif
+        //#endif
     }
 
     @ParameterizedTest @EnumSource(Direction.class)
@@ -394,8 +396,10 @@ class BedrockPlacementRegressionTest {
         Inventory inventory;
         //#if MC >= 260300
         //$$ TestPlayer() { super(null, null, null, null, null, null, false, null, null); }
-        //#else
+        //#elseif MC >= 260100
         TestPlayer() { super(null, null, null, null, null, null, false, null); }
+        //#else
+        //$$ TestPlayer() { super(null, null, null, null, null, null, false); }
         //#endif
         @Override public Inventory getInventory() { return inventory; }
         @Override public ItemStack getMainHandItem() { return inventory.getItem(InventoryUtils.getSelectedSlot(inventory)); }

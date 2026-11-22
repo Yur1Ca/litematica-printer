@@ -45,15 +45,17 @@ jobs:
         uses: actions/cache@v5
         with:
           path: |
+            ~/.gradle/caches/fabric-loom/1.21.11
             ~/.gradle/caches/fabric-loom/26.*
             ~/.gradle/caches/fabric-loom/*.json
+            ~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/*/1.21.11*
             ~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/*/26.*
+            ./.gradle/loom-cache/minecraftMaven/net/minecraft/*/1.21.11*
             ./.gradle/loom-cache/minecraftMaven/net/minecraft/*/26.*
             ./libs
-          # Share the build workflow's cache, without inheriting its legacy bundle.
-          key: ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'build.fabric.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'versions/*/gradle.properties', 'versions/mainProject') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-loom-12111-26-v1-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'build.fabric.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'versions/*/gradle.properties', 'versions/mapping-*.txt', 'versions/mainProject') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-loom-26-v3-
+            ${{ runner.os }}-${{ runner.arch }}-loom-12111-26-v1-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew

@@ -12,16 +12,20 @@ import me.aleksilassila.litematica.printer.enums.HighlightType;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.phys.Vec3;
+//#if MC >= 260100
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import org.joml.Matrix4fc;
 import org.joml.Vector4f;
 //#if MC >= 260300
 //$$ import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 //#else
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+//#endif
+//#else
+//$$ import org.joml.Matrix4f;
 //#endif
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,15 +38,24 @@ import java.util.List;
 public final class BlockHighlightRenderer implements IRenderer {
     private boolean renderFailureLogged;
     @Override
+    //#if MC >= 260100
     //#if MC >= 260300
     //$$ public void onRenderWorldLast(RenderTarget target, CameraRenderState camera, Frustum frustum,
     //#else
     public void onRenderWorldLast(RenderTarget target, Matrix4fc matrices, CameraRenderState camera, Frustum frustum,
     //#endif
                                   RenderBuffers buffers, GpuBufferSlice fog, Vector4f fogColor, ProfilerFiller profiler) {
+    //#else
+    //$$ public void onRenderWorldLast(Matrix4f matrices, Matrix4f projection) {
+    //#endif
         if (!Configs.Highlight.ENABLED.getBooleanValue()) return;
         var runtime = RuntimeAccess.currentOrNull();
         if (runtime == null || runtime.client().level == null || runtime.operationHighlights() == null) return;
+        //#if MC >= 260100
+        Vec3 cameraPos = camera.pos;
+        //#else
+        //$$ Vec3 cameraPos = fi.dy.masa.malilib.render.RenderUtils.camPos();
+        //#endif
         var trace = runtime.operationHighlights();
         long duration = Configs.Highlight.FADE_DURATION.getIntegerValue() * 100L;
         long now = trace.now();
@@ -53,14 +66,14 @@ public final class BlockHighlightRenderer implements IRenderer {
         float previewFill = 0.13f + 0.04f * (float) Math.sin(now % 1800L * (Math.PI * 2.0 / 1800.0));
         for (var preview : previews) {
             if (previewPositions.add(preview.pos())) entries.add(entry(preview.pos(), Configs.Highlight.NEXT.getIntegerValue(), 1f,
-                    HighlightStyleType.BOTH, true, camera.pos));
+                    HighlightStyleType.BOTH, true, cameraPos));
         }
         for (var operation : trace.snapshot(duration)) {
             if (previewPositions.contains(operation.pos())) continue;
             float fade = 1f - Math.clamp((float)(now - operation.time()) / duration, 0f, 1f);
-            entries.add(entry(operation.pos(), color(operation.type()), fade, style, false, camera.pos));
+            entries.add(entry(operation.pos(), color(operation.type()), fade, style, false, cameraPos));
         }
-        if (!entries.isEmpty()) this.draw(entries, camera.pos, previewFill);
+        if (!entries.isEmpty()) this.draw(entries, cameraPos, previewFill);
     }
 
     private static int color(HighlightType type) {

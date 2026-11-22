@@ -5,7 +5,7 @@ set -Eeuo pipefail
 MODRINTH_API="https://api.modrinth.com/v2"
 MODRINTH_PROJECT_ID="${MODRINTH_PROJECT_ID:-nriQwbvD}"
 MODRINTH_FILE_DIR="${MODRINTH_FILE_DIR:-fabricWrapper/build/libs}"
-MODRINTH_GAME_VERSIONS="${MODRINTH_GAME_VERSIONS:-[\"26.1\",\"26.1.1\",\"26.1.2\",\"26.2\",\"26.3\"]}"
+MODRINTH_GAME_VERSIONS="${MODRINTH_GAME_VERSIONS:-[\"1.21.11\",\"26.1\",\"26.1.1\",\"26.1.2\",\"26.2\",\"26.3\"]}"
 MODRINTH_DRY_RUN="${MODRINTH_DRY_RUN:-false}"
 MODRINTH_REPOSITORY="${MODRINTH_REPOSITORY:-Yur1Ca/litematica-printer}"
 

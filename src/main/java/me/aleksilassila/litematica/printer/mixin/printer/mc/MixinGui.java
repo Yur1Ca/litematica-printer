@@ -27,7 +27,11 @@ import net.minecraft.client.DeltaTracker;
 //#endif
 public abstract class MixinGui {
     // @formatter:off
+    //#if MC >= 260100
     @Inject(method = "extractRenderState", at = @At("TAIL"))
+    //#else
+    //$$ @Inject(method = "render", at = @At("TAIL"))
+    //#endif
 
     private void hookRenderHud(GuiGraphicsExtractor guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
         Minecraft mc = Minecraft.getInstance();

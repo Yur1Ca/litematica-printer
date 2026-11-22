@@ -65,6 +65,9 @@ public class LegacyEasyPlaceTargetTest {
         final List<Item> requests = new ArrayList<>();
         final List<Item> takeItOutRequests = new ArrayList<>();
         RayTraceWrapper selected = new RayTraceWrapper(HitType.SCHEMATIC_BLOCK, HIT);
+        Entity easyPlaceCamera;
+        RayTraceWrapper cameraHit;
+        Entity vanillaTraceEntity;
         boolean cached;
         boolean tooFast;
         boolean restricted;
@@ -187,6 +190,45 @@ public class LegacyEasyPlaceTargetTest {
             assertEquals(List.of(Items.REDSTONE_TORCH), f.requests, "Request the native target, not a separate schematic-only ray");
             assertEquals(first ? "generic" : "furthest", f.traceMethod);
             assertEquals(4.5D, f.tracedRange);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {true, false})
+    void freeCameraChoosesThePlacementAndMaterialWhileTheBodyOwnsTheInteraction(boolean first) throws Exception {
+        try (var f = new Fixture()) {
+            Configs.Generic.EASY_PLACE_FIRST.setBooleanValue(first);
+            f.easyPlaceCamera = allocate(MaterialSelectionFixture.Player.class);
+            f.cameraHit = new RayTraceWrapper(HitType.SCHEMATIC_BLOCK, HIT);
+            f.selected = null;
+            f.requestConsumed = false;
+            assertFalse(f.rightClick(), "A body miss must allow the camera's eligible placement to continue");
+            assertEquals(List.of(Items.STONE), f.requests);
+            assertSame(f.easyPlaceCamera, f.vanillaTraceEntity);
+
+            f.requests.clear();
+            f.schematic.states.put(OTHER, Blocks.REDSTONE_TORCH.defaultBlockState());
+            f.selected = new RayTraceWrapper(HitType.SCHEMATIC_BLOCK,
+                    new BlockHitResult(Vec3.atCenterOf(OTHER), Direction.UP, OTHER, false));
+            f.requestConsumed = true;
+            assertSame(InteractionResult.FAIL, f.rightClickResult().getReturnValue());
+            assertEquals(List.of(Items.STONE), f.requests, "Only request the material at the camera's target");
+            assertEquals(first ? "generic" : "furthest", f.traceMethod);
+            assertEquals(4.5D, f.tracedRange);
+        }
+    }
+
+    @Test void aFreeCameraObstructionStopsForeignRestockButLeavesMiddleClickOnTheBody() throws Exception {
+        try (var f = new Fixture()) {
+            f.easyPlaceCamera = allocate(MaterialSelectionFixture.Player.class);
+            f.cameraHit = new RayTraceWrapper(HitType.VANILLA_BLOCK, HIT);
+            var result = f.rightClickResult();
+            if (!result.isCancelled()) f.programmaticPick();
+            assertSame(InteractionResult.PASS, result.getReturnValue());
+            assertTrue(f.requests.isEmpty());
+            assertTrue(f.takeItOutRequests.isEmpty());
+
+            f.middleClick();
+            assertEquals(List.of(Items.STONE), f.requests);
         }
     }
 
@@ -356,6 +398,7 @@ public class LegacyEasyPlaceTargetTest {
 
     public static final class Traces {
         public static BlockHitResult traceToSchematicWorld(Entity entity, double range, boolean fluids, boolean rangeOnly) {
+            assertSame(active.game.player, entity, "Independent schematic picks keep their original ray");
             active.tracedRange = range;
             active.traceMethod = "schematic_only";
             return HIT;
@@ -364,17 +407,23 @@ public class LegacyEasyPlaceTargetTest {
                                                        boolean targetFluids, boolean visibleOnly) {
             active.tracedRange = range;
             active.traceMethod = "generic";
-            return active.selected;
+            return entity == active.easyPlaceCamera ? active.cameraHit : active.selected;
         }
         public static RayTraceWrapper getFurthestSchematicWorldTraceBeforeVanilla(Level world, Entity entity, double range) {
             active.tracedRange = range;
             active.traceMethod = "furthest";
-            return active.selected;
+            return entity == active.easyPlaceCamera ? active.cameraHit : active.selected;
         }
-        public static HitResult getRayTraceFromEntity(Level world, Entity entity, boolean fluids, double range) { return HIT; }
+        public static HitResult getRayTraceFromEntity(Level world, Entity entity, boolean fluids, double range) {
+            active.vanillaTraceEntity = entity;
+            return HIT;
+        }
     }
 
     public static final class Context {
+        public static Entity easyPlaceTraceEntity(Minecraft client) {
+            return active.easyPlaceCamera == null ? client.player : active.easyPlaceCamera;
+        }
         public static WorldSchematic getSchematicWorld() { return active.schematic; }
         public static double getValidBlockRange(Minecraft client) { return 4.5D; }
         public static boolean placementRestrictionInEffect(Minecraft client) { return active.restricted; }
@@ -392,6 +441,7 @@ public class LegacyEasyPlaceTargetTest {
             return true;
         }
         public static boolean handleEasyPlacePickBlock(LocalPlayer player, ItemStack stack) {
+            assertSame(active.game.player, player);
             if (active.useRealRequests) {
                 return me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge.handleEasyPlacePickBlock(player, stack);
             }
@@ -400,6 +450,7 @@ public class LegacyEasyPlaceTargetTest {
         }
         public static boolean easyPlaceBlockChecksCancel(BlockState schematic, BlockState real, Player player,
                                                          HitResult hit, ItemStack required) throws Exception {
+            assertSame(active.game.player, player);
             var method = WorldUtils.class.getDeclaredMethod("easyPlaceBlockChecksCancel", BlockState.class,
                     BlockState.class, Player.class, HitResult.class, ItemStack.class);
             method.setAccessible(true);
@@ -434,6 +485,7 @@ public class LegacyEasyPlaceTargetTest {
                             if (call.owner.equals("fi/dy/masa/litematica/util/RayTraceUtils")) {
                                 call.owner = Type.getInternalName(Traces.class);
                             } else if (call.owner.equals("fi/dy/masa/litematica/world/SchematicWorldHandler")
+                                    || call.owner.equals("me/aleksilassila/litematica/printer/utils/mods/QuickCraftUtils")
                                     || call.owner.equals("me/aleksilassila/litematica/printer/utils/mods/QuickShulkerBridge")
                                     || call.name.equals("getValidBlockRange") || call.name.equals("easyPlaceIsPositionCached")
                                     || call.name.equals("easyPlaceIsTooFast") || call.name.equals("easyPlaceBlockChecksCancel")

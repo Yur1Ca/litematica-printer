@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.mixin;
 
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerInvocationPolicy;
+import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.mods.ChestTrackerBridge;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
@@ -34,6 +35,9 @@ public abstract class MixinContainerScreenGuard {
         if (containerScreen && ChestTrackerBridge.shouldSuppressContainerScreen()) {
             ChestTrackerBridge.rememberSuppressedScreen((AbstractContainerScreen<?>) screen);
             ci.cancel();
+            return;
         }
+        var runtime = RuntimeAccess.currentOrNull();
+        if (runtime != null && runtime.containerSync() != null && runtime.containerSync().suppressScreen(screen)) ci.cancel();
     }
 }

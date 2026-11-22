@@ -2,18 +2,25 @@ package me.aleksilassila.litematica.printer.integration.containersync;
 
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ContainerSyncControllerTest {
@@ -48,15 +55,47 @@ class ContainerSyncControllerTest {
         }
     }
 
-    @Test void disabledWhileInitialContentsAreDelayedKeepsInventoryExclusive() throws Exception {
+    @Test void masterSwitchOffDoesNotCancelOrReleaseAPendingOpen() throws Exception {
         try (var f = new Fixture()) {
             me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
             set(f.controller, "requestedAt", 0L);
             for (int tick = 0; tick < 100; tick++) f.controller.tick();
             assertEquals("CONTENT", get(f.controller, "phase").toString());
-            assertEquals(true, get(f.controller, "cancelling"));
+            assertEquals(false, get(f.controller, "cancelling"));
             assertFalse(f.otherInventoryOwner());
             assertTrue(f.controller.guardClose());
+            assertEquals(true, get(f.controller, "cancelling"));
+        }
+    }
+
+    @Test void syncHotkeyResumesAndCancelsWithTheMasterSwitchOff() throws Exception {
+        try (var f = new Fixture()) {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
+            f.phase("PAUSED");
+            f.controller.toggle();
+            assertEquals("READY", get(f.controller, "phase").toString());
+            f.controller.toggle();
+            assertEquals("IDLE", get(f.controller, "phase").toString());
+            assertTrue(f.otherInventoryOwner());
+        }
+    }
+
+    @Test void warehouseReturnsWaitAcrossContainerChangesWhenTheMasterSwitchIsOff() throws Exception {
+        try (var f = new Fixture()) {
+            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
+            set(f.runtime, "containerSync", f.controller);
+            set(f.runtime, "inventorySwitchGuard", new me.aleksilassila.litematica.printer.utils.InventorySwitchGuard(f.client, () -> 0));
+            var inventoryMenu = new net.minecraft.world.inventory.InventoryMenu(ContainerSyncTypesTest.inventory(f.client.player), true, f.client.player);
+            set(f.client.player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", inventoryMenu);
+            f.client.player.containerMenu = inventoryMenu;
+            for (String phase : List.of("SCANNING", "READY", "OPENING", "CONTENT", "TRANSFER", "RESYNC")) {
+                f.phase(phase);
+                assertEquals(true, invoke(f.runtime, "isInventoryBusyForWarehouseReturn"), phase);
+            }
+            for (String phase : List.of("IDLE", "PAUSED")) {
+                f.phase(phase);
+                assertEquals(false, invoke(f.runtime, "isInventoryBusyForWarehouseReturn"), phase);
+            }
         }
     }
 
@@ -101,6 +140,8 @@ class ContainerSyncControllerTest {
             f.controller.content(0, 1, java.util.List.of(ItemStack.EMPTY), ItemStack.EMPTY);
             assertFalse(f.otherInventoryOwner(), "Ignore old-menu, stale-revision and incomplete snapshots");
             f.controller.content(0, 1, java.util.List.of(), ItemStack.EMPTY);
+            assertFalse(f.otherInventoryOwner(), "A delayed full snapshot cannot settle the outstanding close");
+            f.ack();
             assertTrue(f.otherInventoryOwner());
             assertSame(inventory, f.client.player.containerMenu);
             assertEquals("PAUSED", get(f.controller, "phase").toString());
@@ -115,6 +156,8 @@ class ContainerSyncControllerTest {
             f.controller.tick();
             inventory.setCarried(ContainerSyncPlanTest.stone(4));
             f.controller.content(0, 1, java.util.List.of(), inventory.getCarried());
+            assertTrue(f.controller.guardManualInput(), "Do not expose the cursor before the read is ordered");
+            f.ack();
             assertFalse(f.otherInventoryOwner());
             assertTrue(f.controller.guardClose(), "Closing with an unsettled cursor could invoke vanilla dropping");
             assertFalse(f.controller.guardManualInput(), "Let the user put down the authoritative cursor");
@@ -124,8 +167,53 @@ class ContainerSyncControllerTest {
             assertFalse(f.otherInventoryOwner());
             f.controller.tick();
             f.controller.content(0, 3, java.util.List.of(), ItemStack.EMPTY);
+            assertFalse(f.otherInventoryOwner());
+            f.ack();
             assertTrue(f.otherInventoryOwner());
             assertEquals(java.util.List.of(1, 0), port.clicks);
+        }
+    }
+
+    @Test void staleEmptyCursorCannotReleaseOwnershipBeforeALaterCorrection() throws Exception {
+        try (var f = new Fixture()) {
+            f.startTransfer("pickup");
+            var inventory = new Menu(0);
+            f.client.player.containerMenu = inventory;
+            f.controller.tick();
+            f.controller.content(0, 1, List.of(), ItemStack.EMPTY);
+            f.controller.tick();
+            assertFalse(f.otherInventoryOwner());
+            inventory.setCarried(ContainerSyncPlanTest.stone(3));
+            f.controller.content(0, 2, List.of(), inventory.getCarried());
+            f.ack();
+            assertFalse(f.otherInventoryOwner());
+            assertFalse(f.controller.guardManualInput());
+            inventory.setCarried(ItemStack.EMPTY);
+            f.controller.tick();
+            f.ack();
+            assertFalse(f.otherInventoryOwner(), "The marker cannot acknowledge the recovery without a fresh snapshot");
+            f.controller.content(0, 3, List.of(), ItemStack.EMPTY);
+            f.controller.tick();
+            assertTrue(f.otherInventoryOwner());
+        }
+    }
+
+    @Test void cursorDeltaAfterTheSnapshotTriggersOneFreshRead() throws Exception {
+        try (var f = new Fixture()) {
+            f.startTransfer("pickup");
+            var inventory = new Menu(0);
+            f.client.player.containerMenu = inventory;
+            f.controller.tick();
+            f.controller.content(0, 1, List.of(), ItemStack.EMPTY);
+            inventory.setCarried(ContainerSyncPlanTest.stone(2));
+            f.ack();
+            assertFalse(f.otherInventoryOwner());
+            for (int i = 0; i < 100; i++) f.controller.tick();
+            assertEquals(4, f.listener.packets.size(), "Each read sends one no-op and one marker");
+            f.controller.content(0, 2, List.of(), inventory.getCarried());
+            f.ack();
+            assertFalse(f.otherInventoryOwner());
+            assertFalse(f.controller.guardManualInput());
         }
     }
 
@@ -153,6 +241,7 @@ class ContainerSyncControllerTest {
             f.controller.content(owned.containerId, 99, java.util.List.of(), ItemStack.EMPTY);
             assertFalse(f.otherInventoryOwner());
             f.controller.content(0, 1, java.util.List.of(), ItemStack.EMPTY);
+            f.ack();
             assertTrue(f.otherInventoryOwner());
             assertEquals(clicks, port.clicks.size(), "No old half-pickup or recovery may be replayed in inventory menu 0");
             assertSame(inventory, f.client.player.containerMenu);
@@ -172,6 +261,9 @@ class ContainerSyncControllerTest {
             f.controller.content(0, 2, java.util.List.of(), ItemStack.EMPTY);
             assertFalse(f.otherInventoryOwner());
             f.controller.content(9, 1, java.util.List.of(), ItemStack.EMPTY);
+            f.ack(); // old menu's marker
+            assertFalse(f.otherInventoryOwner(), "An ordered reply for the previous menu cannot confirm its replacement");
+            f.ack();
             assertTrue(f.otherInventoryOwner());
             assertSame(manual, f.client.player.containerMenu);
         }
@@ -183,11 +275,12 @@ class ContainerSyncControllerTest {
             f.client.player.containerMenu = new Menu(0);
             f.controller.tick();
             var event = new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.EpochChanged(
-                    RuntimeEpoch.INITIAL, RuntimeEpoch.INITIAL.next(), "work_switch_disabled");
+                    RuntimeEpoch.INITIAL, RuntimeEpoch.INITIAL.next(), "work_switch_off");
             f.broker.onEpochChanged(event);
             set(f.client, "gameThread", Thread.currentThread());
             f.controller.onEpochChanged(event);
             assertFalse(f.otherInventoryOwner());
+            assertEquals(false, get(f.controller, "cancelling"));
             set(f.client.player, LocalPlayer.class, "connection",
                     allocate(net.minecraft.client.multiplayer.ClientPacketListener.class));
             var replacement = new Menu(0);
@@ -200,10 +293,37 @@ class ContainerSyncControllerTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"SCANNING", "READY", "OPENING", "CONTENT", "TRANSFER"})
+    void closingTheMasterSwitchPreservesIndependentSyncAndItsInventoryLease(String phase) throws Exception {
+        try (var f = new Fixture()) {
+            f.phase(phase);
+            var event = new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.EpochChanged(
+                    RuntimeEpoch.INITIAL, RuntimeEpoch.INITIAL.next(), "work_switch_off");
+            f.broker.onEpochChanged(event);
+            set(f.client, "gameThread", Thread.currentThread());
+            f.controller.onEpochChanged(event);
+            assertEquals(phase, get(f.controller, "phase").toString());
+            assertEquals(false, get(f.controller, "cancelling"));
+            assertFalse(f.otherInventoryOwner());
+        }
+    }
+
     static class Menu extends AbstractContainerMenu {
         Menu(int id) { super(null, id); }
         @Override public ItemStack quickMoveStack(net.minecraft.world.entity.player.Player player, int slot) { return ItemStack.EMPTY; }
         @Override public boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
+    }
+
+    static class RecordingListener extends ClientPacketListener {
+        List<Packet<?>> packets;
+        Connection wire;
+        RecordingListener() { super(null, null, null); }
+        @Override public Connection getConnection() { return wire; }
+        @Override public void send(Packet<?> packet) {
+            packets.add(packet);
+            InventoryRecoveryFence.sent(wire, packet);
+        }
     }
 
     static class Fixture implements AutoCloseable {
@@ -213,12 +333,17 @@ class ContainerSyncControllerTest {
         final PrinterRuntime runtime = allocate(PrinterRuntime.class);
         final ActionBroker broker = new ActionBroker(runtime, new ActionManager());
         final ContainerSyncController controller = new ContainerSyncController(runtime);
+        final RecordingListener listener = allocate(RecordingListener.class);
 
         Fixture() throws Exception {
             set(runtime, "epoch", RuntimeEpoch.INITIAL);
             set(runtime, "actionBroker", broker);
             set(controller, "client", client);
             client.player = allocate(LocalPlayer.class);
+            listener.packets = new ArrayList<>();
+            listener.wire = new Connection(PacketFlow.CLIENTBOUND);
+            set(client.player, LocalPlayer.class, "connection", listener);
+            set(controller, "connection", listener);
             client.player.containerMenu = new Menu(7);
             var guiField = Minecraft.class.getDeclaredField("gui");
             Object gui = allocate(guiField.getType());
@@ -241,6 +366,10 @@ class ContainerSyncControllerTest {
         }
         boolean otherInventoryOwner() {
             return broker.tryAcquire("quick_shulker", EnumSet.of(ResourceLease.INVENTORY, ResourceLease.CONTAINER), 0);
+        }
+        void ack() {
+            InventoryRecoveryFence.received(listener.wire);
+            controller.tick();
         }
         ContainerSyncTransferTest.Port startTransfer(String step) throws Exception {
             return startTransfer(step, ContainerSyncTransferTest.plan());

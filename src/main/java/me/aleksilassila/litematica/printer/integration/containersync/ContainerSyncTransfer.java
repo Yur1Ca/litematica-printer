@@ -2,8 +2,9 @@ package me.aleksilassila.litematica.printer.integration.containersync;
 
 import net.minecraft.world.item.ItemStack;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
-/** One outstanding click. Only full server snapshots advance the plan, never menu prediction. */
+/** Advance from server-confirmed inventory states, never from local menu prediction. */
 public final class ContainerSyncTransfer {
     public interface Port {
         Object context();
@@ -15,7 +16,14 @@ public final class ContainerSyncTransfer {
         /** Keep the original count as a conservative limit unless the port knows the slot rules. */
         default int recoveryCapacity(int slot, ItemStack stack, int originalCount) { return originalCount; }
     }
+    /** Only container synchronization opts into batching. Other inventory owners confirm each click. */
+    public interface BatchPort extends Port {
+        boolean canSendBatch(List<ContainerSyncPlan.Step> steps);
+        BooleanSupplier sendBatch(List<ContainerSyncPlan.Step> steps);
+    }
+    private static final int MAX_BATCH_CLICKS = 16;
     private final Port port;
+    private final BatchPort batchPort;
     private final Object context;
     private final ContainerSyncPlan plan;
     private int next;
@@ -28,9 +36,13 @@ public final class ContainerSyncTransfer {
     private boolean cancellationRecovery;
     private int returnLimit;
     private String problem;
+    private int batchEnd;
+    private BooleanSupplier batchFence;
+    private boolean manualClickSent;
 
     public ContainerSyncTransfer(Port port, ContainerSyncPlan plan) {
         this.port = port;
+        this.batchPort = port instanceof BatchPort batch ? batch : null;
         this.context = port.context();
         this.plan = plan;
         if (plan.problem() != null) { this.problem = plan.problem().name(); this.finished = true; }
@@ -43,6 +55,15 @@ public final class ContainerSyncTransfer {
     public boolean needsAttention() { return "CURSOR_NEEDS_ATTENTION".equals(problem); }
     public boolean waitingForServer() { return waiting; }
 
+    boolean blockManualClick(boolean consume) {
+        if (!needsAttention()) return true;
+        if (batchPort == null) return false;
+        if (manualClickSent || batchFence != null) return true;
+        // Called before vanilla sends the allowed click. Queue its confirmation on the next tick.
+        if (consume) manualClickSent = true;
+        return false;
+    }
+
     public static boolean newerRevision(int received, int previous) {
         int delta = (received - previous) & 32767;
         return delta > 0 && delta < 16384;
@@ -53,6 +74,18 @@ public final class ContainerSyncTransfer {
         if (context == null || port.context() != context) { finish("CONTEXT_CHANGED"); return; }
         if (!enabled) cancel();
         if (!port.acquire()) return;
+        if (manualClickSent) {
+            manualClickSent = false;
+            submitBatch(List.of(), now);
+        }
+        if (batchFence != null) {
+            if (unexpected == null || !batchFence.getAsBoolean()) {
+                waiting = now - sentAt >= 5000;
+                return;
+            }
+            confirmBatch();
+            if (finished || needsAttention()) return;
+        }
         if (pending) {
             if (now - sentAt >= 5000) {
                 waiting = true;
@@ -89,13 +122,15 @@ public final class ContainerSyncTransfer {
             pending = true;
             cancelled = true;
             sentAt = now;
-            port.refresh();
+            if (batchPort == null) port.refresh();
+            else submitBatch(List.of(), now);
             return;
         }
         if (cancelled && !cursor.isEmpty()) {
             int back = plan.steps().get(next - 1).returnSlot();
             recovery = recoveryStep(before, back, cursor);
-            if (recovery == null) {
+            if (recovery == null || (batchPort != null && !batchPort.canSendBatch(List.of(recovery)))) {
+                recovery = null;
                 problem = "CURSOR_NEEDS_ATTENTION";
                 pending = true; unexpected = null; sentAt = now;
                 port.refresh();
@@ -103,7 +138,12 @@ public final class ContainerSyncTransfer {
             }
             cancellationRecovery = true;
             pending = true; unexpected = null; sentAt = now;
-            port.click(back, 0);
+            if (batchPort != null) submitBatch(List.of(recovery), now);
+            else port.click(back, 0);
+            return;
+        }
+        if (batchPort != null) {
+            sendNextBatch(before, now);
             return;
         }
         var step = plan.steps().get(next);
@@ -117,7 +157,14 @@ public final class ContainerSyncTransfer {
     }
 
     public void observe(Object context, List<ItemStack> items, ItemStack carried) {
-        if (finished || !pending || this.context != context || port.context() != context) return;
+        if (finished || !pending || manualClickSent || this.context != context || port.context() != context) return;
+        if (batchFence != null) {
+            // Vanilla can send corrections mid-batch. Keep only the latest full snapshot
+            // and let the ordered marker prove every submitted click has been processed.
+            unexpected = ContainerSyncPlan.copy(items);
+            unexpectedCursor = carried.copy();
+            return;
+        }
         if (needsAttention()) {
             // Once handed back to the user, never resume a partially matching automatic plan.
             if (carried.isEmpty()) finish("SERVER_CHANGED");
@@ -139,6 +186,64 @@ public final class ContainerSyncTransfer {
             unexpected = ContainerSyncPlan.copy(items);
             unexpectedCursor = carried.copy();
         }
+    }
+
+    private void sendNextBatch(List<ItemStack> before, long now) {
+        batchEnd = Math.min(next + MAX_BATCH_CLICKS, plan.steps().size());
+        // Prefer completed moves, so cancellation typically finds an empty cursor.
+        for (int end = batchEnd; end > next; end--) {
+            if (plan.steps().get(end - 1).cursor().isEmpty()) { batchEnd = end; break; }
+        }
+        var steps = plan.steps().subList(next, batchEnd);
+        if (!batchPort.canSendBatch(steps)) {
+            // The background UI lets the user select a different hotbar slot between batches.
+            // A previously confirmed cursor may still need one return to its original source.
+            batchEnd = next;
+            cancelled = true;
+            problem = "SERVER_CHANGED";
+            if (cursor.isEmpty()) finish(problem);
+            return;
+        }
+        // If a batch has to split a single long move, preserve its original source limit
+        // across successive batches for a possible cancellation return.
+        if (cursor.isEmpty()) returnLimit = before.get(plan.steps().get(next).returnSlot()).getCount();
+        submitBatch(steps, now);
+    }
+
+    private void submitBatch(List<ContainerSyncPlan.Step> steps, long now) {
+        pending = true;
+        sentAt = now;
+        unexpected = null;
+        batchFence = batchPort.sendBatch(steps);
+    }
+
+    private void confirmBatch() {
+        batchFence = null;
+        waiting = false;
+        var received = unexpected;
+        unexpected = null;
+        if (needsAttention()) {
+            if (unexpectedCursor.isEmpty()) finish("SERVER_CHANGED");
+            return;
+        }
+        var expected = recovery;
+        if (expected == null && batchEnd > next) expected = plan.steps().get(batchEnd - 1);
+        if (expected == null || !ContainerSyncPlan.matches(expected.items(), received)
+                || !ItemStack.matches(expected.cursor(), unexpectedCursor)
+                || !port.unchanged(expected.items(), expected.cursor())) {
+            // A rejected middle click can change what later clicks picked up. An unknown
+            // cursor belongs to the user; never return it to a guessed source slot.
+            if (unexpectedCursor.isEmpty()) finish("SERVER_CHANGED");
+            else problem = "CURSOR_NEEDS_ATTENTION";
+            return;
+        }
+        if (recovery != null) {
+            finish(cancellationRecovery ? null : "SERVER_CHANGED");
+            return;
+        }
+        next = batchEnd;
+        cursor = unexpectedCursor;
+        pending = false;
     }
 
     private ContainerSyncPlan.Step recoveryStep(List<ItemStack> items, int back, ItemStack carried) {

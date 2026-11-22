@@ -106,6 +106,15 @@ public record ContainerSyncPlan(List<ItemStack> initial, List<Step> steps, Probl
             put(state, to, cursor, count);
             cursor = ItemStack.EMPTY;
             steps.add(new Step(to, 0, from, copy(state), cursor));
+        } else if (cursor.getCount() - count < count && rules.capacity(from, cursor) >= cursor.getCount()) {
+            // Leave the smaller remainder in the source, then place the whole carried stack.
+            while (cursor.getCount() > count) {
+                put(state, from, cursor, 1);
+                cursor.shrink(1);
+                steps.add(new Step(from, 1, from, copy(state), cursor.copy()));
+            }
+            put(state, to, cursor, count);
+            steps.add(new Step(to, 0, from, copy(state), ItemStack.EMPTY));
         } else {
             for (int i = 0; i < count; i++) {
                 put(state, to, cursor, 1);

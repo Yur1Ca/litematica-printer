@@ -2,7 +2,10 @@
 package me.aleksilassila.litematica.printer.integration.containersync;
 
 import java.util.*;
+import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRecoveryFence;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.*;
 import net.minecraft.world.item.*;
@@ -22,10 +25,9 @@ class ContainerSyncCrafterTest {
     }
     static class CrafterFixture extends Fixture {
         final Player player = allocate(Player.class);
-        final ContainerSyncClosePacketTest.Connection connection = allocate(ContainerSyncClosePacketTest.Connection.class);
+        final RecordingListener connection = listener;
         final CrafterMenu menu;
         CrafterFixture(boolean reference) throws Exception {
-            connection.packets = new ArrayList<>();
             set(player, LocalPlayer.class, "connection", connection);
             player.inventory = new Inventory(player, new net.minecraft.world.entity.EntityEquipment());
             set(player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
@@ -65,9 +67,24 @@ class ContainerSyncCrafterTest {
             return new ContainerSyncPickupSemantics(ContainerSyncLayout.CRAFTER.contents(menu.slots.stream()
                     .map(s -> s.getItem()).toList()), ContainerSyncPlanTest.RULES);
         }
-        net.minecraft.network.protocol.game.ServerboundContainerClickPacket lastClick() {
-            return assertInstanceOf(net.minecraft.network.protocol.game.ServerboundContainerClickPacket.class,
-                    connection.packets.get(connection.packets.size() - 1));
+        List<ServerboundContainerClickPacket> batchSince(int start) {
+            var packets = connection.packets.subList(start, connection.packets.size());
+            int noOpIndex = packets.size() - 2;
+            assertTrue(noOpIndex > 0);
+            var snapshotRequest = assertInstanceOf(ServerboundContainerClickPacket.class, packets.get(noOpIndex));
+            assertEquals(-1, snapshotRequest.slotNum());
+            assertEquals(-1, snapshotRequest.stateId());
+            var marker = assertInstanceOf(ServerboundClientCommandPacket.class, packets.getLast());
+            assertEquals(ServerboundClientCommandPacket.Action.REQUEST_STATS, marker.getAction());
+            var clicks = new ArrayList<ServerboundContainerClickPacket>();
+            for (var packet : packets.subList(0, noOpIndex)) {
+                var click = assertInstanceOf(ServerboundContainerClickPacket.class, packet);
+                assertEquals(menu.containerId, click.containerId());
+                assertEquals(ContainerInput.PICKUP, click.containerInput());
+                assertTrue(click.slotNum() >= 0 && click.slotNum() < 45, "Never click the recipe preview");
+                clicks.add(click);
+            }
+            return clicks;
         }
         void reply(ContainerSyncPickupSemantics server) {
             for (int i = 0; i < server.items.size(); i++) menu.getSlot(i).set(server.items.get(i).copy());
@@ -165,10 +182,10 @@ class ContainerSyncCrafterTest {
         }
     }
 
-    @Test void disablingWhileStatePacketsAreDelayedClosesKnownEmptyCursorAndReleasesLease() throws Exception {
+    @Test void cancellingWhileStatePacketsAreDelayedClosesKnownEmptyCursorAndReleasesLease() throws Exception {
         try (var f = new CrafterFixture(false)) {
             f.snapshot();
-            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
+            f.controller.toggle();
             f.controller.tick();
             assertEquals("IDLE", field(f.controller, "phase").toString());
             assertSame(f.player.inventoryMenu, f.player.containerMenu);
@@ -184,7 +201,7 @@ class ContainerSyncCrafterTest {
         try (var f = new CrafterFixture(false)) {
             f.snapshot();
             if (scope.equals("level")) f.client.level = allocate(net.minecraft.client.multiplayer.ClientLevel.class);
-            else set(f.player, LocalPlayer.class, "connection", allocate(ContainerSyncClosePacketTest.Connection.class));
+            else set(f.player, LocalPlayer.class, "connection", allocate(RecordingListener.class));
             f.controller.tick();
             for (int i = 0; i < 9; i++) f.controller.data(7, i);
             f.snapshot();
@@ -211,20 +228,21 @@ class ContainerSyncCrafterTest {
         try (var f = new CrafterFixture(false)) {
             f.ready();
             var server = f.server();
-            for (int step = 0; step < 10 && field(f.controller, "phase").toString().equals("TRANSFER"); step++) {
-                int before = f.connection.packets.size();
-                f.controller.tick();
-                if (field(f.controller, "phase").toString().equals("READY")) break;
-                assertEquals(before + 1, f.connection.packets.size());
-                for (int tick = 0; tick < 100; tick++) f.controller.tick();
-                assertEquals(before + 1, f.connection.packets.size());
-                assertFalse(f.otherInventoryOwner());
-                var click = f.lastClick();
-                assertTrue(click.slotNum() >= 0 && click.slotNum() < 45);
+            f.controller.tick();
+            var clicks = f.batchSince(0);
+            assertTrue(clicks.size() > 1, "A multi-click move must fit in a batch");
+            for (var click : clicks) {
                 server.click(click.slotNum(), click.buttonNum());
-                f.menu.getSlot(45).set(new ItemStack(Items.STONE_BUTTON, step + 1));
-                f.reply(server);
             }
+            f.menu.getSlot(45).set(new ItemStack(Items.STONE_BUTTON));
+            f.reply(server);
+            int sent = f.connection.packets.size();
+            for (int tick = 0; tick < 100; tick++) f.controller.tick();
+            assertEquals(sent, f.connection.packets.size());
+            assertEquals("TRANSFER", field(f.controller, "phase").toString());
+            assertFalse(f.otherInventoryOwner());
+            InventoryRecoveryFence.received(f.connection.getConnection());
+            f.controller.tick();
             assertEquals("READY", field(f.controller, "phase").toString());
             assertEquals(1, server.items.get(0).getCount());
             assertTrue(server.cursor.isEmpty());
@@ -232,53 +250,66 @@ class ContainerSyncCrafterTest {
         }
     }
 
-    @Test void disablingWithPickupInFlightReturnsCursorOnlyAfterServerConfirmation() throws Exception {
+    @Test void cancellingWithAPartialBatchInFlightReturnsCursorOnlyAfterServerConfirmation() throws Exception {
         try (var f = new CrafterFixture(false)) {
+            var template = new ArrayList<>(Collections.nCopies(9, ItemStack.EMPTY));
+            template.set(0, new ItemStack(Items.STONE, 29));
+            set(f.controller, ContainerSyncController.class, "template", template);
             f.ready();
             var server = f.server();
             f.controller.tick();
-            var pickup = f.lastClick();
-            server.click(pickup.slotNum(), pickup.buttonNum());
-            me.aleksilassila.litematica.printer.config.Configs.Core.WORK_SWITCH.setBooleanValue(false);
-            for (int tick = 0; tick < 100; tick++) f.controller.tick();
-            assertEquals(1, f.connection.packets.size());
-            assertFalse(f.otherInventoryOwner());
+            var clicks = f.batchSince(0);
+            f.controller.toggle();
+            for (var click : clicks) server.click(click.slotNum(), click.buttonNum());
+            assertFalse(server.cursor.isEmpty(), "The last click in the first batch left material on the cursor");
+            int placed = server.items.get(0).getCount();
+            assertTrue(placed > 0 && placed < 29);
             f.reply(server);
+            int sent = f.connection.packets.size();
+            for (int tick = 0; tick < 100; tick++) f.controller.tick();
+            assertEquals(sent, f.connection.packets.size());
+            assertFalse(f.otherInventoryOwner());
+            InventoryRecoveryFence.received(f.connection.getConnection());
             f.controller.tick();
-            var recovery = f.lastClick();
-            assertEquals(pickup.slotNum(), recovery.slotNum());
+            var recoveryBatch = f.batchSince(sent);
+            assertEquals(1, recoveryBatch.size(), "The only remaining move is the cursor return");
+            var recovery = recoveryBatch.getFirst();
+            assertEquals(clicks.getFirst().slotNum(), recovery.slotNum());
             server.click(recovery.slotNum(), recovery.buttonNum());
             assertTrue(server.cursor.isEmpty());
             assertFalse(f.otherInventoryOwner());
             f.reply(server);
             f.controller.tick();
+            assertFalse(f.otherInventoryOwner());
+            f.ack();
             assertEquals("IDLE", field(f.controller, "phase").toString());
             assertTrue(f.otherInventoryOwner());
-            assertTrue(server.items.get(0).isEmpty());
-            assertEquals(64, f.player.inventory.getItem(9).getCount());
+            assertEquals(placed, server.items.get(0).getCount());
+            assertEquals(64 - placed, f.player.inventory.getItem(9).getCount());
         }
     }
 
-    @Test void slotDisableAfterPickupStopsPlacementAndRecoversTheOwnedCursor() throws Exception {
+    @Test void slotDisabledAfterPickupRejectsInsertionAndStopsAfterTheBatch() throws Exception {
         try (var f = new CrafterFixture(false)) {
             f.ready();
             var server = f.server();
             f.controller.tick();
-            var pickup = f.lastClick();
+            var clicks = f.batchSince(0);
+            var pickup = clicks.getFirst();
             server.click(pickup.slotNum(), pickup.buttonNum());
-            f.reply(server);
             f.data(0, 1);
-            f.controller.tick();
-            assertEquals(-1, f.lastClick().slotNum(), "A changed disabled mask requests a snapshot instead of placing");
+            assertFalse(f.menu.getSlot(0).mayPlace(server.cursor));
+            for (var click : clicks.subList(1, clicks.size())) {
+                if (f.menu.getSlot(click.slotNum()).mayPlace(server.cursor)) server.click(click.slotNum(), click.buttonNum());
+            }
+            int sent = f.connection.packets.size();
             f.reply(server);
-            var transfer = (ContainerSyncTransfer) field(f.controller, "transfer");
-            transfer.tick(System.nanoTime() / 1_000_000L + 5001, true);
-            var recovery = f.lastClick();
-            assertEquals(pickup.slotNum(), recovery.slotNum());
-            server.click(recovery.slotNum(), recovery.buttonNum());
-            f.reply(server);
+            InventoryRecoveryFence.received(f.connection.getConnection());
             f.controller.tick();
             assertEquals("PAUSED", field(f.controller, "phase").toString());
+            assertEquals(sent, f.connection.packets.size(), "Never retry the rejected insertion");
+            assertTrue(server.items.get(0).isEmpty());
+            assertEquals(64, f.player.inventory.getItem(9).getCount());
             assertTrue(server.cursor.isEmpty());
             assertTrue(f.menu.isSlotDisabled(0));
             assertTrue(f.otherInventoryOwner());

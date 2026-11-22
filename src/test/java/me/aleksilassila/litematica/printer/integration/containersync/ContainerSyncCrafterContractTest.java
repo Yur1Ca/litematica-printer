@@ -74,9 +74,9 @@ class ContainerSyncCrafterContractTest {
             menu.setCarried(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE));
             if (disabledCrafterSlot) menu.setSlotState(0, false);
             f.phase("RESYNC");
-            set(f.controller, ContainerSyncController.class, "resyncMenu", menu);
-            set(f.controller, ContainerSyncController.class, "resyncRequested", true);
-            set(f.controller, ContainerSyncController.class, "resyncNeedsAttention", true);
+            f.controller.tick();
+            f.controller.content(7, menu.getStateId() + 1, menu.slots.stream().map(s -> s.getItem()).toList(), menu.getCarried());
+            f.ack();
             var type = Class.forName("me.aleksilassila.litematica.printer.mixin.MixinCrafterScreen");
             var method = type.getDeclaredMethod("printer$guardCrafterInput", CallbackInfo.class);
             method.setAccessible(true);
@@ -86,7 +86,7 @@ class ContainerSyncCrafterContractTest {
             // Vanilla predicts an enable before calling super.slotClicked for this recovery destination.
             if (disabledCrafterSlot) menu.setSlotState(0, true);
             assertFalse(f.controller.guardManualInput(), "The gameMode guard must allow the same recovery click");
-            assertFalse((boolean) ContainerSyncTypesTest.field(f.controller, "resyncRequested"));
+            assertNull(ContainerSyncTypesTest.field(f.controller, "resyncFence"));
             assertFalse((boolean) ContainerSyncTypesTest.field(f.controller, "resyncNeedsAttention"));
             assertTrue(f.controller.guardManualInput(), "Only one actual recovery click may be in flight");
             assertFalse(f.otherInventoryOwner());
@@ -94,6 +94,8 @@ class ContainerSyncCrafterContractTest {
             menu.setCarried(net.minecraft.world.item.ItemStack.EMPTY);
             f.controller.tick();
             f.controller.content(7, menu.getStateId() + 1, menu.slots.stream().map(s -> s.getItem()).toList(), menu.getCarried());
+            assertFalse(f.otherInventoryOwner());
+            f.ack();
             assertTrue(f.otherInventoryOwner());
             assertEquals("PAUSED", ContainerSyncTypesTest.field(f.controller, "phase").toString());
         } finally {

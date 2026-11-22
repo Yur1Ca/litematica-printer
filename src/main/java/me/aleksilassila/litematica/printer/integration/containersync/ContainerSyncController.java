@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.integration.containersync;
 
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.action.ResourceLease;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeComponent;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
@@ -11,7 +10,11 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUtilsAccessor;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.InventorySyncPackets;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
@@ -24,6 +27,7 @@ import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import java.util.*;
+import java.util.function.BooleanSupplier;
 
 /** Selection/template orchestration. Inventory transport remains alive while ordinary modules pause. */
 public final class ContainerSyncController implements RuntimeComponent {
@@ -43,9 +47,12 @@ public final class ContainerSyncController implements RuntimeComponent {
     private boolean cancelling, closing;
     private long requestedAt;
     private AbstractContainerMenu menu;
+    private AbstractContainerScreen<?> hiddenScreen;
     private AbstractContainerMenu resyncMenu;
     private int resyncRevision;
-    private boolean resyncRequested, resyncNeedsAttention;
+    private InventorySyncPackets.SyncFence resyncFence;
+    private ItemStack resyncCursor;
+    private boolean resyncNeedsAttention;
     private ContainerSyncTransfer transfer;
     private ContainerSyncLayout layout;
     private int slotStatesSeen, openingContentRevision;
@@ -61,9 +68,11 @@ public final class ContainerSyncController implements RuntimeComponent {
 
     public ContainerSyncController(PrinterRuntime runtime) { this.runtime = runtime; this.client = runtime.client(); }
 
+    public boolean isActive() { return phase != Phase.IDLE && phase != Phase.PAUSED; }
+
     public void toggle() {
+        if (handoffStalledMenu()) return;
         if (phase == Phase.PAUSED) {
-            if (!Configs.Core.WORK_SWITCH.getBooleanValue()) { message("enable"); return; }
             cancelling = false;
             if (scanPaused) {
                 remaining.clear(); boxes = selection.iterator(); positions = Collections.emptyIterator();
@@ -72,7 +81,6 @@ public final class ContainerSyncController implements RuntimeComponent {
             message("resuming"); return;
         }
         if (phase != Phase.IDLE) { cancel(); return; }
-        if (!Configs.Core.WORK_SWITCH.getBooleanValue()) { message("enable"); return; }
         if (client.player == null || client.level == null || client.gameMode == null
                 || client.player.containerMenu != client.player.inventoryMenu
                 || !client.player.containerMenu.getCarried().isEmpty()
@@ -101,7 +109,6 @@ public final class ContainerSyncController implements RuntimeComponent {
     public void tick() {
         if (phase == Phase.IDLE) return;
         if (client.level != level || client.getConnection() != connection || client.player == null) { discard(); return; }
-        if (!Configs.Core.WORK_SWITCH.getBooleanValue() && phase != Phase.PAUSED) cancel();
         if (phase == Phase.SCANNING) { scan(); return; }
         if (phase == Phase.PAUSED || phase == Phase.IDLE) return;
         if (phase == Phase.TRANSFER && client.player.containerMenu != menu) {
@@ -113,21 +120,38 @@ public final class ContainerSyncController implements RuntimeComponent {
         if (phase == Phase.RESYNC) {
             if (!acquire()) return;
             var current = client.player.containerMenu;
-            if (resyncMenu != current || !resyncRequested) {
+            if (resyncMenu != current || resyncFence == null) {
+                var listener = client.getConnection();
+                if (listener == null || listener.getConnection() == null) return;
                 resyncMenu = current; resyncRevision = current.getStateId();
-                resyncRequested = true; resyncNeedsAttention = false;
+                resyncCursor = null; resyncNeedsAttention = false;
+                requestedAt = now();
                 me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log(
                         "container-sync closed-menu resync menu=" + current.containerId);
-                // Ordered after all previously sent clicks. One no-op, with no local prediction.
+                // A previous click can also request a full snapshot for this menu. The marker
+                // orders our read after all old clicks, including manual cursor recovery.
                 QuickShulkerClicks.requestFullSync(current);
+                resyncFence = InventorySyncPackets.prepareFence(listener.getConnection());
+                listener.send(resyncFence.packet());
+            } else if (resyncCursor != null && resyncFence.complete()) {
+                if (!ItemStack.matches(resyncCursor, current.getCarried())) {
+                    // A newer cursor delta superseded the full snapshot. Read this new state once.
+                    resyncFence = null; resyncNeedsAttention = false;
+                } else if (resyncCursor.isEmpty()) {
+                    pause("changed"); return;
+                } else {
+                    resyncNeedsAttention = true;
+                }
             }
-            message(resyncNeedsAttention ? "cursor" : "waiting");
+            if (resyncNeedsAttention) showRecoveryScreen();
+            if (resyncNeedsAttention) message("cursor");
+            else message(stalledMenu() ? "take_over" : "waiting");
             return;
         }
         if (phase == Phase.TRANSFER) {
             transfer.tick(now(), !cancelling);
-            if (transfer.needsAttention()) message("cursor");
-            else if (transfer.waitingForServer()) message("waiting");
+            if (transfer.needsAttention()) { showRecoveryScreen(); message("cursor"); }
+            else if (transfer.waitingForServer()) message("take_over");
             if (transfer.finished()) {
                 boolean complete = transfer.completed();
                 String problem = transfer.problem();
@@ -151,13 +175,13 @@ public final class ContainerSyncController implements RuntimeComponent {
                 return;
             }
             // Time alone cannot prove that a queued open was rejected. Keep ownership until its barrier reply.
-            if (now() - requestedAt > 10000) message("waiting");
+            if (now() - requestedAt > 10000) message(stalledMenu() ? "take_over" : "waiting");
             return;
         }
         if (cancelling) { discard(); return; }
         if (template != null && remaining.isEmpty()) { discard(); message("complete"); return; }
         if (!acquire()) return;
-        if (client.player.containerMenu != client.player.inventoryMenu
+        if (currentScreen() != null || client.player.containerMenu != client.player.inventoryMenu
                 || !client.player.containerMenu.getCarried().isEmpty()
                 || runtime.inventorySwitchGuard().isWaiting()) return;
         // A blocked chest must not fall through to placing the held block beside it.
@@ -225,19 +249,79 @@ public final class ContainerSyncController implements RuntimeComponent {
         me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log("container-sync opened menu=" + id);
     }
 
+    /** Vanilla has already installed the menu when it asks to show its screen. */
+    public boolean suppressScreen(Screen screen) {
+        if (screen == null) {
+            // Closing a background menu must not dismiss chat or another foreground screen.
+            return closing && hiddenScreen != null && currentScreen() != null;
+        }
+        if (screen instanceof InventoryScreen && sameWorld() && client.player != null
+                && (phase == Phase.OPENING || hiddenScreen != null
+                    && client.player.containerMenu == hiddenScreen.getMenu())) {
+            // InventoryScreen sends menu-0 slot numbers. Finish the automatic menu first.
+            cancel();
+            return true;
+        }
+        if (phase != Phase.CONTENT || hiddenScreen != null || !sameWorld() || client.player == null
+                || !(screen instanceof AbstractContainerScreen<?> container)
+                || container.getMenu() != client.player.containerMenu || container.getMenu().containerId != candidate
+                || layout == null || container.getMenu().getType() != layout.type
+                || !layout.acceptsSlots(container.getMenu(), client.player.getInventory())) return false;
+        hiddenScreen = container;
+        return true;
+    }
+
+    private Screen currentScreen() {
+        //#if MC > 260100
+        //$$ return client.gui.screen();
+        //#else
+        return client.screen;
+        //#endif
+    }
+
+    private void showRecoveryScreen() {
+        if (hiddenScreen == null || currentScreen() != null) return;
+        var current = client.player.containerMenu;
+        Screen screen = hiddenScreen;
+        if (current != hiddenScreen.getMenu()) {
+            if (current != client.player.inventoryMenu) return;
+            screen = new InventoryScreen(client.player);
+        }
+        hiddenScreen = null;
+        //#if MC > 260100
+        //$$ client.gui.setScreen(screen);
+        //#else
+        client.setScreen(screen);
+        //#endif
+    }
+
+    private boolean stalledMenu() {
+        if (phase == Phase.TRANSFER) return transfer.waitingForServer();
+        return (phase == Phase.CONTENT || phase == Phase.RESYNC) && now() - requestedAt > 10000;
+    }
+
+    /** A server that withholds confirmations must still let the player take back its live menu. */
+    private boolean handoffStalledMenu() {
+        if (!stalledMenu() || !sameWorld() || client.player == null) return false;
+        if (hiddenScreen != null && client.player.containerMenu == hiddenScreen.getMenu()
+                && currentScreen() != null && currentScreen() != hiddenScreen) return false;
+        showRecoveryScreen();
+        // Leave the actual menu and cursor with vanilla. Previously sent actions remain ordered
+        // before the player's next input; the abandoned plan is never resumed or repeated.
+        discard();
+        message("handed_over");
+        return true;
+    }
+
     public void content(int id, int revision, List<ItemStack> items, ItemStack carried) {
         if (!sameWorld() || client.player == null) return;
         if (phase == Phase.RESYNC) {
-            if (!resyncRequested || resyncMenu != client.player.containerMenu || resyncMenu.containerId != id
+            if (resyncFence == null || resyncMenu != client.player.containerMenu || resyncMenu.containerId != id
                     || items.size() != resyncMenu.slots.size()
                     || !ContainerSyncTransfer.newerRevision(revision, resyncRevision)) return;
-            if (!carried.isEmpty()) {
-                // A plugin may retain a cursor after closing. Only the user can decide where it belongs.
-                resyncNeedsAttention = true;
-                return;
-            }
-            // Never close a replacement/manual menu, nor continue the old material plan.
-            pause("changed");
+            resyncRevision = revision;
+            resyncCursor = carried.copy();
+            resyncNeedsAttention = false;
             return;
         }
         if (phase == Phase.OPENING && id == 0 && ContainerSyncTransfer.newerRevision(revision, openingInventoryRevision)) {
@@ -299,11 +383,35 @@ public final class ContainerSyncController implements RuntimeComponent {
         }
         final AbstractContainerMenu owned = menu;
         final ContainerSyncLayout ownedLayout = layout;
-        transfer = new ContainerSyncTransfer(new ContainerSyncTransfer.Port() {
-            public Object context() { return sameWorld() && client.player != null && client.player.containerMenu == owned ? owned : null; }
+        var listener = client.getConnection();
+        transfer = new ContainerSyncTransfer(new ContainerSyncTransfer.BatchPort() {
+            public Object context() {
+                return listener != null && listener.getConnection() != null && sameWorld()
+                        && client.player != null && client.player.containerMenu == owned ? owned : null;
+            }
             public boolean acquire() { return ContainerSyncController.this.acquire(); }
             // The batch owns the lease across menu changes; pause/discard releases it.
             public void release() { }
+            public boolean canSendBatch(List<ContainerSyncPlan.Step> steps) {
+                var inventory = client.player.getInventory();
+                int selected = me.aleksilassila.litematica.printer.utils.InventoryUtils.getSelectedSlot(inventory);
+                int heldSlot = owned.findSlot(inventory, selected).orElse(-1);
+                for (var step : steps) {
+                    if (step.slot() == heldSlot || step.returnSlot() == heldSlot) return false;
+                }
+                return true;
+            }
+            public BooleanSupplier sendBatch(List<ContainerSyncPlan.Step> steps) {
+                sentRevision = owned.getStateId();
+                for (var step : steps) {
+                    QuickShulkerClicks.sendPlannedPickup(owned, step.slot(), step.button(),
+                            step.items().get(step.slot()), step.cursor());
+                }
+                QuickShulkerClicks.requestFullSync(owned);
+                var fence = InventorySyncPackets.prepareFence(listener.getConnection());
+                listener.send(fence.packet());
+                return fence::complete;
+            }
             public void click(int slot, int button) {
                 sentRevision = owned.getStateId();
                 QuickShulkerClicks.sendWithFullSync(owned, slot, button, ContainerInput.PICKUP);
@@ -334,6 +442,13 @@ public final class ContainerSyncController implements RuntimeComponent {
     }
 
     /** Manual clicks/close request cancellation; an in-flight cursor must be settled first. */
+    public boolean guardManualUse() {
+        if (!isActive() || !sameWorld()) return false;
+        // A second use can open an indistinguishable same-type menu while ours is in flight.
+        cancel();
+        return phase != Phase.IDLE;
+    }
+
     public boolean guardManualInput() {
         return guardManualInput(true);
     }
@@ -347,13 +462,13 @@ public final class ContainerSyncController implements RuntimeComponent {
         if (closing || !sameWorld() || client.player == null) return false;
         if (phase == Phase.RESYNC) {
             cancel();
-            if (!resyncNeedsAttention || resyncMenu != client.player.containerMenu || !resyncRequested) return true;
+            if (!resyncNeedsAttention || resyncMenu != client.player.containerMenu || resyncFence == null) return true;
             // Let one manual recovery click through, then request its full confirmation on the next tick.
-            if (consumeRecovery) { resyncRequested = false; resyncNeedsAttention = false; }
+            if (consumeRecovery) { resyncFence = null; resyncNeedsAttention = false; }
             return false;
         }
         if (phase == Phase.TRANSFER && client.player.containerMenu == menu && !transfer.finished()) {
-            cancel(); return !transfer.needsAttention();
+            cancel(); return transfer.blockManualClick(consumeRecovery);
         }
         if (phase == Phase.CONTENT) {
             // Keep the opened menu alive until its first snapshot can finish cancellation.
@@ -389,23 +504,31 @@ public final class ContainerSyncController implements RuntimeComponent {
             try { client.player.closeContainer(); } finally { closing = false; }
         }
         menu = null; candidate = -1;
+        hiddenScreen = null;
         openingContents = null; openingCursor = null; slotStatesSeen = 0;
     }
 
     private void pause(String reason) {
         me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerDiagnostics.log(
                 "container-sync paused reason=" + reason + " target=" + target);
+        if (hiddenScreen != null && menu == hiddenScreen.getMenu() && client.player.containerMenu == menu
+                && !menu.getCarried().isEmpty()) {
+            // Keep ownership until the server confirms where the unexpected cursor ended up.
+            resyncFence = null;
+            phase = Phase.RESYNC;
+            return;
+        }
         closeOwned();
-        resyncMenu = null; resyncRequested = false; resyncNeedsAttention = false;
+        resyncMenu = null; resyncFence = null; resyncCursor = null; resyncNeedsAttention = false;
         runtime.actionBroker().releaseOwner(OWNER);
         phase = Phase.PAUSED;
         message(reason);
     }
 
     private void discard() {
-        transfer = null; menu = null; candidate = -1; template = null;
+        transfer = null; menu = null; hiddenScreen = null; candidate = -1; template = null;
         openingContents = null; openingCursor = null; slotStatesSeen = 0;
-        resyncMenu = null; resyncRequested = false; resyncNeedsAttention = false;
+        resyncMenu = null; resyncFence = null; resyncCursor = null; resyncNeedsAttention = false;
         remaining.clear(); if (highlights != null) highlights.clear();
         phase = Phase.IDLE; cancelling = false; scanPaused = false;
         runtime.actionBroker().releaseOwner(OWNER);
@@ -424,9 +547,9 @@ public final class ContainerSyncController implements RuntimeComponent {
         if (!sameWorld() || event.reason().equals("disconnect") || event.reason().equals("client_scope_changed")
                 || event.reason().equals("local_player_init")) discard();
         else if (phase != Phase.IDLE) {
-            cancel();
-            // ActionBroker clears leases earlier in the epoch reset. Retain ownership for draining.
-            if (phase == Phase.TRANSFER || phase == Phase.OPENING || phase == Phase.CONTENT || phase == Phase.RESYNC) acquire();
+            if (!event.reason().equals("work_switch_off")) cancel();
+            // The broker has already cleared leases. Reclaim an active sync or its pending drain.
+            if (isActive()) acquire();
         }
     }
 

@@ -1,9 +1,7 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.containersync;
 
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -25,18 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class ContainerSyncClosePacketTest {
     @BeforeAll static void bootstrap() { ContainerSyncPlanTest.bootstrap(); }
 
-    static class Connection extends ClientPacketListener {
-        List<Packet<?>> packets;
-        Connection() { super(null, null, null); }
-        @Override public void send(Packet<?> packet) { packets.add(packet); }
-    }
-
     @Test void forcedCloseRequestsOnlyOneNonMutatingSnapshotWhileDisabled() throws Exception {
         try (var f = new Fixture()) {
-            var connection = allocate(Connection.class);
-            connection.packets = new ArrayList<>();
-            set(f.client.player, LocalPlayer.class, "connection", connection);
-            set(f.controller, ContainerSyncController.class, "connection", connection);
+            var connection = f.listener;
             var clicks = f.startTransfer("insertion").clicks;
             var inventory = new Menu(0);
             f.client.player.containerMenu = inventory;
@@ -45,8 +34,10 @@ class ContainerSyncClosePacketTest {
             for (int tick = 0; tick < 200; tick++) f.controller.tick();
             assertFalse(f.otherInventoryOwner());
             assertEquals(List.of(1, 0), clicks);
-            assertEquals(1, connection.packets.size());
+            assertEquals(2, connection.packets.size());
             var request = assertInstanceOf(ServerboundContainerClickPacket.class, connection.packets.get(0));
+            var marker = assertInstanceOf(ServerboundClientCommandPacket.class, connection.packets.get(1));
+            assertEquals(ServerboundClientCommandPacket.Action.REQUEST_STATS, marker.getAction());
             assertEquals(0, request.containerId());
             assertEquals(-1, request.stateId());
             assertEquals(-1, request.slotNum()); // -999 would drop; -1 is a vanilla no-op.
@@ -54,8 +45,10 @@ class ContainerSyncClosePacketTest {
             assertEquals(net.minecraft.network.HashedStack.EMPTY, request.carriedItem(), "Never copy the old menu's cursor");
             assertTrue(request.changedSlots().isEmpty());
             f.controller.content(0, 1, List.of(), ItemStack.EMPTY);
+            assertFalse(f.otherInventoryOwner());
+            f.ack();
             assertTrue(f.otherInventoryOwner());
-            assertEquals(1, connection.packets.size(), "Do not close the replacement menu or send a cleanup click");
+            assertEquals(2, connection.packets.size(), "Do not close the replacement menu or send a cleanup click");
             assertSame(inventory, f.client.player.containerMenu);
         }
     }

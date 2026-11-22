@@ -56,6 +56,8 @@ class PickBlockInventoryExclusionTest {
         @SuppressWarnings({"rawtypes", "unchecked"})
         void startSync(String phase) throws Exception {
             var type = ContainerSyncController.class.getDeclaredField("phase").getType();
+            set(connection, net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl.class, "connection",
+                    new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.CLIENTBOUND));
             set(sync, ContainerSyncController.class, "phase", Enum.valueOf((Class) type, phase));
             set(sync, ContainerSyncController.class, "level", client.level);
             set(sync, ContainerSyncController.class, "connection", client.getConnection());
@@ -151,6 +153,15 @@ class PickBlockInventoryExclusionTest {
             var inventory = f.player.inventoryMenu;
             f.sync.content(0, inventory.getStateId() + 1,
                     inventory.slots.stream().map(slot -> slot.getItem().copy()).toList(), ItemStack.EMPTY);
+            if (phase.equals("RESYNC")) {
+                f.assertSyncStillOwnsInventory();
+                var marker = assertInstanceOf(net.minecraft.network.protocol.game.ServerboundClientCommandPacket.class,
+                        f.connection.packets.getLast());
+                assertEquals(net.minecraft.network.protocol.game.ServerboundClientCommandPacket.Action.REQUEST_STATS, marker.getAction());
+                InventoryRecoveryFence.sent(f.connection.getConnection(), marker);
+                InventoryRecoveryFence.received(f.connection.getConnection());
+                f.sync.tick();
+            }
             assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
             f.useUnavailableProviders();
             assertFalse(QuickShulkerBridge.handlePickBlock(f.player, Items.STONE),

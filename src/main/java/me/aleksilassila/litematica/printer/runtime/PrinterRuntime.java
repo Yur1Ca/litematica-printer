@@ -125,7 +125,7 @@ public final class PrinterRuntime {
         this.warehouseReturn = new VoidWarehouseReturnController(
                 client,
                 this::isPrinterWorkingForWarehouse,
-                this.inventorySwitchGuard::isWaiting,
+                this::isInventoryBusyForWarehouseReturn,
                 this::warehouseRequestedItems);
         this.scope.register(this.warehouseReturn);
         this.modules = new FeatureModuleSet(this);
@@ -256,6 +256,11 @@ public final class PrinterRuntime {
      */
     private boolean isPrinterWorkingForWarehouse() {
         return Configs.Core.WORK_SWITCH.getBooleanValue();
+    }
+
+    private boolean isInventoryBusyForWarehouseReturn() {
+        // Between synced containers the inventory menu is active, but the batch still needs its materials.
+        return this.containerSync.isActive() || this.inventorySwitchGuard.isWaiting();
     }
 
     /**

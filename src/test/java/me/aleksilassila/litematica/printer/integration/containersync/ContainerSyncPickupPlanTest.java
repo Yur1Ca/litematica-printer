@@ -41,6 +41,17 @@ class ContainerSyncPickupPlanTest {
         }
     }
 
+    @ParameterizedTest @CsvSource({"64,63,0,3", "64,61,2,5", "63,60,1,5"})
+    void leavesSmallRemaindersInTheOriginBeforePlacingTheRest(int source, int moved, int target, int clicks) {
+        var plan = ContainerSyncPlan.create(List.of(stone(target + moved)),
+                List.of(stone(target), stone(source)), RULES);
+        ContainerSyncPickupSemantics.verify(plan, RULES);
+        assertEquals(clicks, plan.steps().size());
+        var end = plan.steps().getLast();
+        assertEquals(target + moved, end.items().get(0).getCount());
+        assertEquals(source - moved, end.items().get(1).getCount());
+    }
+
     @ParameterizedTest @CsvSource({"64,16,0,16", "64,16,8,24", "31,16,0,16", "63,32,7,39"})
     void everyIntermediateInsertionRespectsTheActualSlotCapacity(int source, int moved, int target, int capacity) {
         var rules = new ContainerSyncPlan.Rules() {

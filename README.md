@@ -72,9 +72,9 @@ Dependency versions must match the Minecraft version being launched.
 
 ### Inventory integrations
 
-- Container sync: bind **Sync Containers**, enable the master work switch, select an empty main-hand slot and point at a template chest, barrel, shulker box, hopper, dispenser, dropper or crafter. Containers of the same type and capacity in the Litematica area selection are filled slot by slot; double chests count as one container. Move within normal interaction range of each target.
+- Bind **Sync Containers**, select an empty main-hand slot, point at a template chest, barrel, shulker box, hopper, dispenser, dropper or crafter, then press the hotkey. Container sync runs independently of the master work switch. It fills the template slots in batches in the background, keeping the world view open. It processes containers of the same type and capacity within the Litematica area selection. Double chests count as one container. Move within normal interaction range of each target.
 - Crafters synchronize items only, preserving each target's disabled slots. A template item that conflicts with a disabled target slot pauses the task. The recipe result preview is excluded.
-- Materials come from your inventory; surplus returns there. Missing items or storage space pauses the task; press the hotkey to retry after resolving it. Pressing the hotkey while running or disabling the master switch cancels after the current transfer settles. Main hand, armor, offhand and protected hotbar slots are excluded. Remote retrieval integrations are not required.
+- Materials come from your inventory and surplus returns there. Missing items or storage space pauses the task. Press the hotkey to retry after resolving it. Press it while running to cancel once the current transfer settles. Main hand, armor, offhand and protected hotbar slots are excluded. Remote retrieval integrations are not required.
 - If the server forcibly closes a container during transfer, synchronization waits for a full inventory confirmation before pausing. The server handles the carried stack; vanilla may drop items that cannot fit in your inventory.
 
 - Quick Shulker material retrieval and ordered return.

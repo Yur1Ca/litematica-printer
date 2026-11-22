@@ -21,6 +21,7 @@
     "printer.mc.MixinClientPacketListener",
     "printer.mc.MixinGui",
     "printer.mc.MixinLocalPlayer",
+    "printer.mc.MixinPlayerMiningEfficiency",
     "printer.chesttracker.ItemListWidgetAccessor",
     "printer.chesttracker.ItemListWidgetMixin",
     "printer.mc.MixinMultiPlayerGameMode"

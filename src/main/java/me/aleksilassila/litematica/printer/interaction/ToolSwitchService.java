@@ -1,11 +1,13 @@
 package me.aleksilassila.litematica.printer.interaction;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.ToolInventorySelector;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
@@ -24,6 +26,9 @@ public final class ToolSwitchService {
     private final TweakerooToolSwitchPort tweakeroo;
     private final InventorySwitchGuard switchGuard;
     private final MiningDurabilityGuard durabilityGuard;
+    private ClientLevel acknowledgedLevel;
+    private Object acknowledgedConnection;
+    private int lastAcknowledgedMiningAction;
 
     public ToolSwitchService(
             Minecraft client,
@@ -225,7 +230,49 @@ public final class ToolSwitchService {
 
     public void onInventorySynchronized(Object connection) { this.durabilityGuard.onInventorySynchronized(connection); }
 
-    public void reset() { this.durabilityGuard.reset(); }
+    public void onRuntimeEvent(RuntimeEvent event) {
+        if (event instanceof RuntimeEvent.BlockActionAcknowledged ack) {
+            this.acknowledgeMiningAction(ack.connection(), ack.sequence());
+        } else if (event instanceof RuntimeEvent.InventorySynchronized inventory) {
+            this.onInventorySynchronized(inventory.connection());
+        } else if (event instanceof RuntimeEvent.EpochChanged) {
+            this.resetMiningAcknowledgements();
+        }
+    }
+
+    public void acknowledgeMiningAction(Object connection, int sequence) {
+        this.observeMiningScope();
+        if (connection != null && connection == this.acknowledgedConnection && this.acknowledgedLevel != null
+                && sequence > this.lastAcknowledgedMiningAction) {
+            this.lastAcknowledgedMiningAction = sequence;
+        }
+    }
+
+    public int lastAcknowledgedMiningAction() {
+        this.observeMiningScope();
+        return this.lastAcknowledgedMiningAction;
+    }
+
+    private void observeMiningScope() {
+        var listener = this.client.getConnection();
+        Object connection = listener == null ? null : listener.getConnection();
+        if (this.acknowledgedLevel != this.client.level || this.acknowledgedConnection != connection) {
+            this.acknowledgedLevel = this.client.level;
+            this.acknowledgedConnection = connection;
+            this.lastAcknowledgedMiningAction = 0;
+        }
+    }
+
+    private void resetMiningAcknowledgements() {
+        this.acknowledgedLevel = null;
+        this.acknowledgedConnection = null;
+        this.lastAcknowledgedMiningAction = 0;
+    }
+
+    public void reset() {
+        this.resetMiningAcknowledgements();
+        this.durabilityGuard.reset();
+    }
 
     private static boolean stackFingerprintChanged(ItemStack before, ItemStack after) {
         if (before.isEmpty() || after.isEmpty()) {

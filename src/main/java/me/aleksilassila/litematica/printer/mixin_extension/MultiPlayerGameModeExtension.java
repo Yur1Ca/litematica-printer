@@ -38,6 +38,10 @@ public interface MultiPlayerGameModeExtension {
     default void litematica_printer$confirmServerBlockUpdate(BlockPos blockPos) {
     }
 
+    default void litematica_printer$confirmServerBlockUpdate(BlockPos blockPos, boolean confirmedAir) {
+        litematica_printer$confirmServerBlockUpdate(blockPos);
+    }
+
     default void litematica_printer$resetRuntime() {
     }
 }

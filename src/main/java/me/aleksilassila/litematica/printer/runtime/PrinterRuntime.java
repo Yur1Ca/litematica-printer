@@ -99,11 +99,7 @@ public final class PrinterRuntime {
         this.scope.register(new InventorySwitchRuntime(this.inventorySwitchGuard));
         this.tweakeroo = new TweakerooAdapter();
         this.toolSwitchService = new ToolSwitchService(client, this.tweakeroo, this.inventorySwitchGuard);
-        this.events.subscribe(event -> {
-            if (event instanceof RuntimeEvent.InventorySynchronized synchronizedInventory) {
-                this.toolSwitchService.onInventorySynchronized(synchronizedInventory.connection());
-            }
-        });
+        this.events.subscribe(this.toolSwitchService::onRuntimeEvent);
         this.strippableBlocks = new StrippableBlockAdapter();
         this.inventoryMessageCooldown = new InventoryMessageCooldown();
         this.scope.register(this.inventoryMessageCooldown);

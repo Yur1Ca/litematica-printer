@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.handlers.MineHandler;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooAdapter;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooToolSwitchPort;
+import me.aleksilassila.litematica.printer.interaction.HeldToolMiningProgress;
 import me.aleksilassila.litematica.printer.interaction.MiningInteractionPort;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
@@ -23,6 +24,7 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
@@ -32,15 +34,24 @@ import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.PlayerEquipment;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -59,6 +70,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 
+import java.lang.invoke.MethodHandleProxies;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -66,10 +79,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.DoubleUnaryOperator;
 
 import static me.aleksilassila.litematica.printer.integration.quickshulker.MiningInteractionRegressionTest.alloc;
 import static me.aleksilassila.litematica.printer.integration.quickshulker.MiningInteractionRegressionTest.get;
 import static me.aleksilassila.litematica.printer.integration.quickshulker.MiningInteractionRegressionTest.set;
+import static net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK;
+import static net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Real survival analysis, preparation, inventory prediction and START; only mixin invokers and transport are bounded. */
@@ -77,6 +93,195 @@ class SurvivalMineToolSwitchTest {
     private static final BlockPos TARGET = BlockPos.ZERO;
 
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
+
+    @ParameterizedTest @CsvSource({"1,false,20", "10,false,20", "1,true,20", "10,true,20", "1,true,0", "10,true,0"})
+    void aPredictedToolSwitchDropsOldEfficiencyAndWaitsForTheNewEquipmentTick(int slot, boolean switchToPickaxe, int reserveValue) throws Exception {
+        var dirt = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.DIRT);
+        var oldTags = dirt.tags().toList();
+        var bindTags = Holder.Reference.class.getDeclaredMethod("bindTags", java.util.Collection.class);
+        bindTags.setAccessible(true);
+        try (var reserve = new ReserveSetting(reserveValue);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f, false, AttributePlayer.class)) {
+            var transport = tool.enableCalibrationTransport();
+            bindTags.invoke(dirt, List.of(BlockTags.MINEABLE_WITH_SHOVEL));
+            var pickaxe = prepareProtectedMining(f, tool, 200, true, false);
+            var efficiency = VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.EFFICIENCY);
+            pickaxe.enchant(efficiency, 5);
+            var shovel = new ItemStack(Items.DIAMOND_SHOVEL);
+            shovel.setDamageValue(91);
+            if (!switchToPickaxe) tool.player.getAttribute(Attributes.MINING_EFFICIENCY).addTransientModifier(efficiencyModifier(efficiency, 5));
+            f.candidates.setSlot(0, switchToPickaxe ? shovel : pickaxe);
+            f.candidates.setSlot(slot, switchToPickaxe ? pickaxe : shovel);
+            f.candidates.state(TARGET, (switchToPickaxe ? Blocks.STONE : Blocks.DIRT).defaultBlockState());
+            advanceMiningTick(f, tool, 0);
+            f.candidates.beginTick();
+            f.callToolSession("beginTick");
+            f.iterate(TARGET);
+            f.dispatch();
+            assertTrue(f.actions().isEmpty(), () -> tool.connection.traffic.toString());
+            assertTrue(tool.guard.isWaiting(), () -> tool.connection.traffic.toString());
+            assertTrue(firstEvent(tool.connection.traffic, slot == 1 ? "select:1" : "swap:10:") >= 0, () -> tool.connection.traffic.toString());
+
+            advanceMiningTick(f, tool, 1);
+            f.continueActive();
+            f.dispatch();
+            assertEquals(1, tool.connection.stacksAtStart.size());
+            assertTrue(ItemStack.isSameItemSameComponents(switchToPickaxe ? pickaxe : shovel, tool.connection.stacksAtStart.getFirst()));
+            assertEquals(List.of(START_DESTROY_BLOCK), f.actions());
+            advanceMiningTick(f, tool, 2);
+            if (switchToPickaxe) {
+                int startSequence = tool.connection.packets.getFirst().getSequence();
+                assertTrue(startSequence > 0);
+                transport.acknowledgeMiningAction(startSequence - 1);
+                call(transport.service, "acknowledgeMiningAction", new Class<?>[]{Object.class, int.class}, new Object(), startSequence);
+                f.continueActive();
+                f.dispatch();
+                assertEquals(List.of(START_DESTROY_BLOCK), f.actions(), "An older ACK or another connection cannot confirm this switch");
+                transport.acknowledgeMiningAction(startSequence);
+            }
+            f.continueActive();
+            f.dispatch();
+            assertEquals(List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK), f.actions());
+            assertEquals(switchToPickaxe ? 0.0 : 26.0, tool.player.getAttributeValue(Attributes.MINING_EFFICIENCY));
+        } finally {
+            bindTags.invoke(dirt, oldTags);
+        }
+    }
+
+    @ParameterizedTest @CsvSource({"1,true", "10,false"})
+    void returningToTheSamePickaxeAfterUsingAShovelCannotBorrowItsOldSyncedEfficiency(int shovelSlot, boolean acknowledge) throws Exception {
+        var dirt = BuiltInRegistries.BLOCK.wrapAsHolder(Blocks.DIRT);
+        var oldTags = dirt.tags().toList();
+        var bindTags = Holder.Reference.class.getDeclaredMethod("bindTags", java.util.Collection.class);
+        bindTags.setAccessible(true);
+        try (var reserve = new ReserveSetting(0);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f, false, AttributePlayer.class)) {
+            var transport = tool.enableCalibrationTransport();
+            bindTags.invoke(dirt, List.of(BlockTags.MINEABLE_WITH_SHOVEL));
+            var pickaxe = prepareProtectedMining(f, tool, 200, true, false);
+            var efficiency = VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.EFFICIENCY);
+            pickaxe.enchant(efficiency, 5);
+            tool.player.getAttribute(Attributes.MINING_EFFICIENCY).addTransientModifier(efficiencyModifier(efficiency, 5));
+            f.candidates.setSlot(shovelSlot, new ItemStack(Items.DIAMOND_SHOVEL));
+            var soil = TARGET.east();
+            var stone = TARGET.east(2);
+            var targets = acknowledge ? List.of(TARGET, soil, stone, stone.east(), stone.east(2)) : List.of(TARGET, soil, stone);
+            f.bounds(TARGET, targets.getLast());
+            f.candidates.state(soil, Blocks.DIRT.defaultBlockState());
+            f.candidates.beginTick();
+            f.callToolSession("beginTick");
+            for (var pos : targets) f.iterate(pos);
+
+            for (int tick = 0; tick <= 3; tick++) {
+                advanceMiningTick(f, tool, tick);
+                f.candidates.beginTick();
+                f.callToolSession("beginTick");
+                f.continueActive();
+                f.dispatch();
+            }
+            assertEquals(List.of(Items.DIAMOND_PICKAXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_PICKAXE), tool.connection.heldAtStart);
+            assertEquals(List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK, START_DESTROY_BLOCK, STOP_DESTROY_BLOCK,
+                    START_DESTROY_BLOCK), f.actions(), "The source +26 is still visible from the first pickaxe");
+            assertEquals(26.0, tool.player.getAttributeValue(Attributes.MINING_EFFICIENCY));
+            var start = tool.connection.packets.getLast();
+            assertEquals(stone, start.getPos());
+            if (acknowledge) transport.acknowledgeMiningAction(start.getSequence());
+            int stopTick = acknowledge ? 4 : 6; // Base delta is 8/45: four ticks reach 0.7 without an ACK.
+            for (int tick = 4; tick <= stopTick; tick++) {
+                advanceMiningTick(f, tool, tick);
+                f.candidates.beginTick();
+                f.callToolSession("beginTick");
+                f.continueActive();
+                f.dispatch();
+                var actions = tool.connection.packets.stream().filter(packet -> stone.equals(packet.getPos()))
+                        .map(ServerboundPlayerActionPacket::getAction).toList();
+                assertEquals(tick == stopTick ? List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK) : List.of(START_DESTROY_BLOCK), actions);
+            }
+            if (acknowledge) {
+                for (var pos : List.of(stone.east(), stone.east(2))) {
+                    assertEquals(List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK), tool.connection.packets.stream()
+                            .filter(packet -> pos.equals(packet.getPos())).map(ServerboundPlayerActionPacket::getAction).toList(),
+                            "Once the switch is confirmed, the rest of this same-tool batch can finish in the same tick");
+                }
+            }
+        } finally {
+            bindTags.invoke(dirt, oldTags);
+        }
+    }
+
+    @Test void aLowerSyncedEnchantmentCanFinishStoneWithoutAnEquipmentAck() throws Exception {
+        try (var reserve = new ReserveSetting(0);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f, false, AttributePlayer.class)) {
+            var pickaxe = prepareProtectedMining(f, tool, 200, false, false);
+            var efficiency = VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.EFFICIENCY);
+            pickaxe.enchant(efficiency, 5);
+            tool.player.getAttribute(Attributes.MINING_EFFICIENCY).addTransientModifier(efficiencyModifier(efficiency, 3));
+            advanceMiningTick(f, tool, 0);
+            mine(tool, TARGET, false);
+            assertEquals(List.of(START_DESTROY_BLOCK), f.actions());
+            advanceMiningTick(f, tool, 1);
+            mine(tool, TARGET, false);
+            // Efficiency III gives (8 + 10) / 45 per tick; the second tick clears the server's 0.7 threshold.
+            assertEquals(List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK), f.actions());
+        }
+    }
+
+    @Test void aSlowHoldKeepsOtherMiningModifiersAndTheAirbornePenaltyWhenAnOldEfficiencyUpdateArrives() throws Exception {
+        try (var reserve = new ReserveSetting(20);
+             var f = new MineSelectionRefreshTest.Fixture(false);
+             var optional = new OptionalToolBindings(false);
+             var tool = new ToolFixture(f, false, AttributePlayer.class)) {
+            var transport = tool.enableCalibrationTransport();
+            prepareProtectedMining(f, tool, 200, false, false);
+            var attribute = tool.player.getAttribute(Attributes.MINING_EFFICIENCY);
+            attribute.setBaseValue(3.0);
+            attribute.addTransientModifier(new AttributeModifier(Identifier.fromNamespaceAndPath("test", "mining_bonus"),
+                    1.0, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+            set(tool.player, Entity.class, "onGround", false);
+            var stone = Blocks.STONE.defaultBlockState();
+            // Vanilla with the correct hand: (8 + 3 * 2) / 5 airborne / 1.5 hardness / 30.
+            float expectedDelta = stone.getDestroyProgress(tool.player, f.candidates.level, TARGET);
+            assertEquals(14.0F / 225.0F, expectedDelta, 0.00001F);
+            advanceMiningTick(f, tool, 0);
+            mine(tool, TARGET, false);
+            assertEquals(expectedDelta, f.mining.port.destroyProgress(), 0.00001F);
+            var efficiency = VanillaRegistries.createLookup().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.EFFICIENCY);
+            attribute.addTransientModifier(efficiencyModifier(efficiency, 5));
+            for (int tick = 1; tick <= 10; tick++) {
+                advanceMiningTick(f, tool, tick);
+                mine(tool, TARGET, false);
+                assertEquals(expectedDelta * (tick + 1), f.mining.port.destroyProgress(), 0.00001F);
+                assertEquals(List.of(START_DESTROY_BLOCK), f.actions());
+            }
+            advanceMiningTick(f, tool, 11);
+            mine(tool, TARGET, false);
+            assertEquals(List.of(START_DESTROY_BLOCK, STOP_DESTROY_BLOCK), f.actions());
+            assertEquals(58.0, attribute.getValue(), "A local prediction must leave the synchronized attribute intact");
+            float synchronizedDelta = stone.getDestroyProgress(tool.player, f.candidates.level, TARGET.east());
+            assertEquals(66.0F / 225.0F, synchronizedDelta, 0.00001F, "Outside printer mining vanilla still sees the old attribute");
+
+            tool.player.getMainHandItem().enchant(efficiency, 5);
+            advanceMiningTick(f, tool, 12);
+            mine(tool, TARGET.east(), false);
+            var nextStart = tool.connection.packets.getLast();
+            assertEquals(START_DESTROY_BLOCK, nextStart.getAction());
+            transport.acknowledgeMiningAction(nextStart.getSequence());
+            advanceMiningTick(f, tool, 13);
+            mine(tool, TARGET.east(), false);
+            assertEquals(2 * synchronizedDelta, f.mining.port.destroyProgress(), 0.00001F,
+                    "After the equipment tick, preserve the full vanilla delta");
+        }
+    }
+
+    private static AttributeModifier efficiencyModifier(Holder<Enchantment> efficiency, int level) {
+        return efficiency.value().effects().get(EnchantmentEffectComponents.ATTRIBUTES).getFirst().getModifier(level, EquipmentSlot.MAINHAND);
+    }
 
     @ParameterizedTest @CsvSource({"1,4", "10,4", "1,5", "10,5"})
     void orderedMixedToolBatchesPrepareTheNextToolWithoutAnIdleDispatchTick(int axeSlot, int efficiencyLevel) throws Exception {
@@ -1109,12 +1314,16 @@ class SurvivalMineToolSwitchTest {
         }
 
         ToolFixture(MineSelectionRefreshTest.Fixture f, boolean sharedRuntimeService) throws Exception {
+            this(f, sharedRuntimeService, InventoryPlayer.class);
+        }
+
+        ToolFixture(MineSelectionRefreshTest.Fixture f, boolean sharedRuntimeService, Class<? extends InventoryPlayer> playerType) throws Exception {
             this.f = f;
             this.sharedRuntimeService = sharedRuntimeService;
             this.previousInventoryClient = sharedRuntimeService ? get(null, InventoryUtils.class, "client") : null;
             if (sharedRuntimeService) set(null, InventoryUtils.class, "client", f.mining.client);
             var previous = f.mining.player;
-            player = alloc(InventoryPlayer.class);
+            player = alloc(playerType);
             player.abilities = previous.abilities;
             player.abilities.instabuild = false;
             player.speed = previous.speed;
@@ -1170,6 +1379,12 @@ class SurvivalMineToolSwitchTest {
             // Production Mixin invokers are absent in JUnit. Preserve the production classes and
             // replace only those invoker calls, as MaterialSelectionFixture already does.
             ClassLoader loader = sharedRuntimeService ? SurvivalMineToolSwitchTest.class.getClassLoader() : new ToolLoader();
+            if (player instanceof AttributePlayer attributePlayer) {
+                // The mixin callback must observe the prediction scope opened by this loader's controller.
+                var hook = loader.loadClass(HeldToolMiningProgress.class.getName()).getMethod("efficiency", Player.class, double.class);
+                attributePlayer.miningEfficiency = MethodHandleProxies.asInterfaceInstance(DoubleUnaryOperator.class,
+                        MethodHandles.publicLookup().unreflect(hook).bindTo(player));
+            }
             var serviceType = loader.loadClass("me.aleksilassila.litematica.printer.interaction.ToolSwitchService");
             var service = serviceType.getConstructor(Minecraft.class, TweakerooToolSwitchPort.class, InventorySwitchGuard.class)
                     .newInstance(f.mining.client, new TweakerooAdapter(), guard);
@@ -1253,6 +1468,18 @@ class SurvivalMineToolSwitchTest {
         @Override public GameType gameMode() { return GameType.SURVIVAL; }
     }
 
+    static class AttributePlayer extends InventoryPlayer {
+        DoubleUnaryOperator miningEfficiency;
+
+        @Override public float getDestroySpeed(BlockState state) { return vanillaDestroySpeed(state); }
+
+        // JUnit does not apply the Player mixin. Supply its single attribute hook to vanilla getDestroySpeed.
+        @Override public double getAttributeValue(Holder<Attribute> attribute) {
+            double vanilla = super.getAttributeValue(attribute);
+            return attribute.equals(Attributes.MINING_EFFICIENCY) ? miningEfficiency.applyAsDouble(vanilla) : vanilla;
+        }
+    }
+
     /** Same source-wakeup bridge as the production Mixin, with the real fixture-owned scan engine. */
     static class RetryPort extends MiningInteractionRegressionTest.Port {
         MineSelectionRefreshTest.Fixture fixture;
@@ -1314,6 +1541,9 @@ class SurvivalMineToolSwitchTest {
         void receiveStats() throws Exception {
             InventoryRecoveryFence.received(this);
             call(service, "onInventorySynchronized", new Class<?>[]{Object.class}, this);
+        }
+        void acknowledgeMiningAction(int sequence) throws Exception {
+            call(service, "acknowledgeMiningAction", new Class<?>[]{Object.class, int.class}, this, sequence);
         }
     }
 
@@ -1428,7 +1658,8 @@ class SurvivalMineToolSwitchTest {
     private static final class ToolLoader extends ClassLoader {
         private static final String PREFIX = "me.aleksilassila.litematica.printer.";
         private static final Set<String> ISOLATED = Set.of("utils.InventoryUtils", "utils.ToolInventorySelector",
-                "interaction.ToolSwitchService", "interaction.MiningInteractionController", "interaction.MiningFeedback");
+                "interaction.ToolSwitchService", "interaction.MiningInteractionController", "interaction.MiningFeedback",
+                "interaction.HeldToolMiningProgress");
         ToolLoader() { super(SurvivalMineToolSwitchTest.class.getClassLoader()); }
         @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             String rootName = name.contains("$") ? name.substring(0, name.indexOf('$')) : name;

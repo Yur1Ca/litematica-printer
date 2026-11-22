@@ -79,6 +79,7 @@ class MiningInteractionRegressionTest {
         @Override public boolean blockActionRestricted(net.minecraft.world.level.Level level, BlockPos pos,
                 net.minecraft.world.level.GameType mode) { return restricted; }
         @Override public float getDestroySpeed(BlockState state) { return speed; }
+        final float vanillaDestroySpeed(BlockState state) { return super.getDestroySpeed(state); }
         @Override public boolean hasCorrectToolForDrops(BlockState state) { return true; }
         @Override public void resetAttackStrengthTicker() { }
     }
@@ -451,6 +452,67 @@ class MiningInteractionRegressionTest {
                     "Elapsed game ticks count even when the controller was not called on every intervening tick");
             assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
                     ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK), actions(f));
+        }
+    }
+
+    @Test void serverAirAfterStartReleasesTheHoldWithoutAbortingTheFinishedBlock() throws Exception {
+        try (var f = new Fixture(0.2f, false)) {
+            f.level.states = new HashMap<>();
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+            assertFalse(f.controller.isPendingDelayedDestroy(TARGET), "Only START has been sent");
+            f.level.states.put(TARGET, Blocks.AIR.defaultBlockState());
+            f.controller.confirmServerBlockUpdate(TARGET, false);
+            assertTrue(f.port.isDestroying(), "Client-visible air alone cannot confirm a server break");
+            f.controller.confirmServerBlockUpdate(TARGET, true);
+            boolean stillHolding = f.port.isDestroying();
+            float remainingProgress = f.port.destroyProgress();
+
+            var next = TARGET.east();
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.controller.continueForMine(next, Direction.DOWN, false));
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK), actions(f));
+            assertEquals(List.of(TARGET, next), f.connection.packets.stream().map(ServerboundPlayerActionPacket::getPos).toList());
+            assertFalse(stillHolding);
+            assertEquals(0.0F, remainingProgress);
+        }
+    }
+
+    @Test void pendingAirOnAnotherBlockAndSolidUpdatesKeepTheCurrentHold() throws Exception {
+        try (var f = new Fixture(0.8f, true)) {
+            var pending = TARGET.east();
+            f.level.states = new HashMap<>();
+            assertEquals(BlockBreakResult.COMPLETED_WAIT, f.controller.continueForMine(pending, Direction.DOWN, false));
+            assertTrue(f.controller.isPendingDelayedDestroy(pending));
+            f.player.speed = 0.2f * 45;
+            assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+
+            f.controller.confirmServerBlockUpdate(TARGET, false);
+            f.level.states.put(pending, Blocks.AIR.defaultBlockState());
+            f.controller.confirmServerBlockUpdate(pending, true);
+            assertFalse(f.controller.isPendingDelayedDestroy(pending));
+            assertTrue(f.port.isDestroying());
+            assertEquals(TARGET, f.port.destroyPos());
+            assertEquals(0.2F, f.port.destroyProgress(), 0.0001F);
+            assertEquals(List.of(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
+                    ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK), actions(f));
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void serverAirCannotReleaseANativeHoldOutsideTheControllersOwnership(boolean playerChangedTarget) throws Exception {
+        try (var f = new Fixture(0.2f, false)) {
+            if (playerChangedTarget) assertEquals(BlockBreakResult.IN_PROGRESS, f.mine());
+            // Vanilla can start its own hold at the updated position or take over a different position.
+            var manual = playerChangedTarget ? TARGET.east() : TARGET;
+            f.port.destroyPos(manual);
+            f.port.isDestroying(true);
+            f.port.destroyProgress(0.4F);
+            f.level.states = Map.of(TARGET, Blocks.AIR.defaultBlockState());
+            f.controller.confirmServerBlockUpdate(TARGET, true);
+            assertTrue(f.port.isDestroying());
+            assertEquals(manual, f.port.destroyPos());
+            assertEquals(0.4F, f.port.destroyProgress());
         }
     }
 

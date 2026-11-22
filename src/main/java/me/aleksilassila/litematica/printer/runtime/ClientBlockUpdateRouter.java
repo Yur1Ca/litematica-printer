@@ -17,7 +17,7 @@ public final class ClientBlockUpdateRouter {
         runtime.scanEngine().invalidate(pos);
         runtime.events().publish(new RuntimeEvent.BlockUpdated(
                 pos.getX(), pos.getY(), pos.getZ()));
-        runtime.interactionUtils().confirmServerBlockUpdate(pos);
+        runtime.interactionUtils().confirmServerBlockUpdate(pos, authoritativeState.isAir());
         runtime.hudStats().confirmBlockUpdate(pos, authoritativeState);
     }
 }

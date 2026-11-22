@@ -251,10 +251,14 @@ public final class InteractionUtils implements RuntimeComponent {
     }
 
     public void confirmServerBlockUpdate(BlockPos pos) {
+        this.confirmServerBlockUpdate(pos, false);
+    }
+
+    public void confirmServerBlockUpdate(BlockPos pos, boolean confirmedAir) {
         this.breakState.confirmServerBlockUpdate(pos);
         MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
         if (gameMode != null) {
-            gameMode.litematica_printer$confirmServerBlockUpdate(pos);
+            gameMode.litematica_printer$confirmServerBlockUpdate(pos, confirmedAir);
         }
     }
 

@@ -3,8 +3,6 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.runtime.ClientBlockUpdateRouter;
-import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
-import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -12,7 +10,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
-import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -44,10 +41,4 @@ public abstract class MixinClientPacketListener {
         packet.runUpdates(ClientBlockUpdateRouter::accept);
     }
 
-    @Inject(method = "handleBlockChangedAck", at = @At("RETURN"))
-    private void acknowledgeBedrockToolTick(ClientboundBlockChangedAckPacket packet, CallbackInfo ci) {
-        var runtime = RuntimeAccess.currentOrNull();
-        if (runtime != null) runtime.events().publish(new RuntimeEvent.BlockActionAcknowledged(
-                ((ClientPacketListener) (Object) this).getConnection(), packet.sequence()));
-    }
 }

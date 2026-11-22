@@ -66,6 +66,14 @@ final class OrderedStorageOrigin {
         contents = menu.slots.subList(0, BOX_SLOTS).stream().map(slot -> slot.getItem().copy()).toList();
     }
 
+    boolean matchesCarriedBox(LocalPlayer player) {
+        if (inventoryMenuSlot < 0 || inventoryMenuSlot >= player.inventoryMenu.slots.size()) return false;
+        var slot = player.inventoryMenu.getSlot(inventoryMenuSlot);
+        var carriedBox = slot.getItem();
+        return slot.container == player.getInventory() && matchesBox(carriedBox)
+                && matchesContents(OrderedStorageStacks.snapshotShulker(carriedBox));
+    }
+
     boolean beginReturn(LocalPlayer player, AbstractContainerMenu menu) {
         var carriedBox = player.inventoryMenu.getSlot(inventoryMenuSlot).getItem();
         if (!matchesBox(carriedBox) || !matchesMenu(contents, menu)

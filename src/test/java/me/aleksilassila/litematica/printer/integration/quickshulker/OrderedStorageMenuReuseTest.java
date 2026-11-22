@@ -157,8 +157,8 @@ class OrderedStorageMenuReuseTest {
         }
     }
 
-    private static final class Fixture extends BedrockOrderedStorageBoundaryTest.Fixture {
-        private ShulkerBoxMenu opened;
+    static class Fixture extends BedrockOrderedStorageBoundaryTest.Fixture {
+        ShulkerBoxMenu opened;
 
         Fixture() throws Exception {
             CancelledSwapLifecycleTest.set(runtime, PrinterRuntime.class, "materialRequests",
@@ -194,14 +194,18 @@ class OrderedStorageMenuReuseTest {
             adapter.tick();
             assertEquals(1, connection.packets.size());
             assertEquals(10, click(0).slotNum());
+            acceptReturnMenu();
+            assertEquals(2, connection.packets.size());
+        }
+
+        void acceptReturnMenu() {
             opened = new ShulkerBoxMenu(7, player.inventory);
             player.containerMenu = opened;
             adapter.onContainerOpen(7, MenuType.SHULKER_BOX);
             reply(opened, 1, snapshot(), ItemStack.EMPTY);
-            assertEquals(2, connection.packets.size());
         }
 
-        private void borrow(List<ItemStack> before, int originalSlot, int boxSlot, int hotbarSlot) throws Exception {
+        void borrow(List<ItemStack> before, int originalSlot, int boxSlot, int hotbarSlot) throws Exception {
             var box = QuickShulkerQueryFixture.box(before.toArray(ItemStack[]::new));
             player.inventory.setItem(boxSlot, box.copy());
             var menu = new ShulkerBoxMenu(5 + hotbarSlot, player.inventory);

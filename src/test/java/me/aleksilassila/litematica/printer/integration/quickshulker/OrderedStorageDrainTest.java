@@ -30,6 +30,8 @@ class OrderedStorageDrainTest {
 
     static class Player extends CancelledSwapLifecycleTest.Player {
         QuickShulkerPacketContractTest.AuditLevel auditLevel;
+        boolean dead;
+        @Override public float getHealth() { return dead ? 0 : 20; }
         @Override public net.minecraft.world.level.Level level() { return auditLevel; }
         @Override public net.minecraft.world.level.GameType gameMode() { return net.minecraft.world.level.GameType.SURVIVAL; }
         @Override public void updateTutorialInventoryAction(ItemStack a, ItemStack b, ClickAction action) { }

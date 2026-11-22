@@ -94,7 +94,7 @@ public final class QuickShulkerRequestController {
             }
             AbstractContainerMenu sc = player.containerMenu;
             if (!sc.equals(player.inventoryMenu)) return true;
-            if (Configs.Placement.STORE_ORDERLY.getBooleanValue()
+            if (Configs.Core.WORK_SWITCH.getBooleanValue() && Configs.Placement.STORE_ORDERLY.getBooleanValue()
                     && Configs.Placement.QUICK_SHULKER.getBooleanValue()
                     && this.orderedStorage.tryRestoreForInventoryPressure()) {
                 return true;
@@ -133,7 +133,7 @@ public final class QuickShulkerRequestController {
                 || client.player.containerMenu.containerId != containerId || !this.containerSession.candidateStillCurrent()) return false;
         if (this.containerSession.owns(containerId)) return this.containerSession.ownsCurrentMenu();
         if (!this.containerSession.isCandidate(containerId)) return false;
-        if (!this.containerSession.confirm(containerId, items, carried)) {
+        if (!this.orderedStorage.canConfirmRestoreOpening() || !this.containerSession.confirm(containerId, items, carried)) {
             QuickShulkerDiagnostics.log("open-rejected contents differ from source box menu=" + containerId);
             // This is not our container: do not hide it, click it, close it or discard cursor ownership.
             if (this.orderedStorage.isWaitingForRestoreContainer()) {
@@ -185,7 +185,8 @@ public final class QuickShulkerRequestController {
 
     private boolean activeContainerScreen() {
         LocalPlayer player = client == null ? null : client.player;
-        return (Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestAllowed)
+        return (Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestAllowed
+                || this.orderedStorage.returnsAfterStop() && this.orderedStorage.isWaitingForRestoreContainer())
                 && Configs.Placement.QUICK_SHULKER.getBooleanValue()
                 && player != null && player.containerMenu != player.inventoryMenu
                 && (this.isOpenHandler || this.orderedStorage.isWaitingForRestoreContainer());
@@ -193,6 +194,30 @@ public final class QuickShulkerRequestController {
 
     public void setExternalRequestAllowed(boolean allowed) {
         this.externalRequestAllowed = allowed;
+    }
+
+    boolean hasUnsettledWithdrawal() {
+        return this.transfer.active() && isTransferScopeCurrent() && !this.externalRequestAllowed;
+    }
+
+    int movingBorrowedSlot() {
+        return this.clearingHotbar && hasUnsettledWithdrawal() ? this.targetHotbarSlot : -1;
+    }
+
+    void stopProductionForReturns() {
+        this.lastNeedItemList.clear();
+        if (this.orderedStorage.hasPendingRestore()) {
+            // The current open/click belongs to a return. Keep its menu identity and cursor recovery.
+            this.externalRequestAllowed = false;
+        } else if (hasUnsettledWithdrawal()) {
+            // A SWAP already on the wire may have succeeded. Wait for the authoritative snapshot
+            // before registering it, without selecting a tool or sending another extraction.
+            this.cancellation.begin(this.transferMenu, this.transferConnection);
+            this.isOpenHandler = false;
+            tickCancellation();
+        } else {
+            resetRuntime();
+        }
     }
 
     public void resetRuntime() {
@@ -233,6 +258,16 @@ public final class QuickShulkerRequestController {
         var menu = client.player.containerMenu;
         if (!this.cancellation.accepts(menu, client.getConnection(), containerId, size)) return false;
         boolean close = this.cancellation.owns(menu) && menu != client.player.inventoryMenu;
+        if (this.transfer.active()) {
+            if (close && this.orderedStorage.returnsEnabled() && isTransferScopeCurrent()
+                    && this.transfer.confirmed() && menu.getCarried().isEmpty()
+                    && this.containerSession.ownsCurrentMenu()) {
+                if (this.clearingHotbar) this.orderedStorage.moveTrackedItem(targetHotbarSlot, movedInventorySlot);
+                else recordWithdrawal();
+            }
+            clearSwitchRequest();
+            this.orderedStorage.finishStoppedWithdrawal();
+        }
         this.cancellation.reset();
         QuickShulkerDiagnostics.log("cancel-synchronized menu=" + containerId);
         if (close) client.player.closeContainer();
@@ -371,13 +406,17 @@ public final class QuickShulkerRequestController {
             switchInv();
             return;
         }
-        orderedStorage.newItem(extractedStack, sourceShulker, extractionSlot,
-                shulkerInventoryMenuSlot, targetHotbarSlot);
+        if (Configs.Core.WORK_SWITCH.getBooleanValue()) recordWithdrawal();
         me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), targetHotbarSlot);
         // The swap is authoritative; ordered hotbar selection precedes subsequent interactions.
         me.aleksilassila.litematica.printer.utils.InventoryUtils.syncSelectedHotbarSlot();
         closeAutomatedContainer();
         clearSwitchRequest();
+    }
+
+    private void recordWithdrawal() {
+        orderedStorage.newItem(extractedStack, sourceShulker, extractionSlot,
+                shulkerInventoryMenuSlot, targetHotbarSlot);
     }
 
     private boolean openShulker(HashSet<Item> items) {

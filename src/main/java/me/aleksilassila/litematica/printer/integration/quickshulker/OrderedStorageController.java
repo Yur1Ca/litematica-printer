@@ -31,8 +31,10 @@ final class OrderedStorageController {
     private final Supplier<Set<Item>> neededItems;
     private final List<OrderedStorageEntry> trackedItems = new ArrayList<>();
     private final RestoreSession<OrderedStorageEntry> restoreSession = new RestoreSession<>();
-    private final OrderedStorageDrain drain = new OrderedStorageDrain();
+    private final OrderedStorageDrain drain = new OrderedStorageDrain(this::returnsEnabled);
+    private final StoppedWorkReturns stopped = new StoppedWorkReturns();
     private OrderedStorageOrigin openOrigin;
+    private boolean stoppedOpening;
     private long nextRestoreTick = Long.MIN_VALUE;
 
     OrderedStorageController(Minecraft client, Supplier<Set<Item>> neededItems, QuickShulkerContainerSession containerSession) {
@@ -41,13 +43,8 @@ final class OrderedStorageController {
         this.neededItems = neededItems;
     }
 
-    public void newItem(
-            ItemStack itemStack,
-            ItemStack sourceShulker,
-            int sourceContainerSlot,
-            int shulkerInventoryMenuSlot,
-            int playerInventorySlot
-    ) {
+    public void newItem(ItemStack itemStack, ItemStack sourceShulker, int sourceContainerSlot,
+                        int shulkerInventoryMenuSlot, int playerInventorySlot) {
         if (itemStack == null || itemStack.isEmpty()
                 || sourceContainerSlot < 0
                 || shulkerInventoryMenuSlot < 0
@@ -55,24 +52,21 @@ final class OrderedStorageController {
                 || playerInventorySlot >= 36) {
             return;
         }
-        var entry = new OrderedStorageEntry(
-                itemStack,
-                sourceShulker,
-                sourceContainerSlot,
-                shulkerInventoryMenuSlot,
-                playerInventorySlot,
-                currentGameTick()
-        );
+        var entry = new OrderedStorageEntry(itemStack, sourceShulker, sourceContainerSlot,
+                shulkerInventoryMenuSlot, playerInventorySlot, currentGameTick());
+        stopped.noteWithdrawal(client, entry);
         if (containerSession.ownsCurrentMenu()) {
             entry.origin = OrderedStorageOrigin.afterWithdrawal(entry, trackedItems, client.player.containerMenu);
         }
         this.trackedItems.removeIf(statistics -> statistics.playerInventorySlot == playerInventorySlot);
         this.trackedItems.add(entry);
-        markPrinterActivity();
+        restoreSession.markActivity(currentGameTick());
         yieldToWork();
     }
 
     public void moveTrackedItem(int oldPlayerSlot, int newPlayerSlot) {
+        if (returnsAfterStop()) trackedItems.stream().filter(entry -> entry.playerInventorySlot == oldPlayerSlot)
+                .findFirst().ifPresent(entry -> stopped.moved(entry, newPlayerSlot, client.player));
         OrderedStorageTracking.move(trackedItems, restoreSession, oldPlayerSlot, newPlayerSlot);
     }
 
@@ -103,42 +97,25 @@ final class OrderedStorageController {
                 || !player.containerMenu.equals(player.inventoryMenu)) {
             return this.restoreSession.hasPending();
         }
+        boolean afterStop = returnsAfterStop();
+        if (afterStop && !StoppedWorkReturns.manualInputIdle(client)) return this.restoreSession.hasPending();
         if (this.restoreSession.hasPending()) {
             if (!this.restoreSession.isWaitingForContainer()) {
                 openPendingShulker();
             }
             return true;
         }
-        if (shouldYieldNewRestore()) return false;
-
-        OrderedStorageTracking.reconcile(this.trackedItems, player);
-        if (this.trackedItems.isEmpty()) {
-            this.restoreSession.clearPressureRecovery();
-            this.restoreSession.clearActivity();
-            return false;
+        if (afterStop) {
+            if (!canContinueIdleReturn()) return false;
+            return scheduleRestore(player, currentGameTick(), true, true);
         }
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue() || shouldYieldNewRestore()) return false;
 
-        long currentTick = client.level.getGameTime();
-        OrderedStoragePolicy.normalizeActivityTicks(this.restoreSession, this.trackedItems, currentTick);
-        int freeSlots = OrderedStoragePolicy.countEmptyInventorySlots(player);
-        updatePressureRecovery(freeSlots);
-        if (this.restoreSession.isPressureRecoveryActive()) {
-            boolean emergency = freeSlots <= EMERGENCY_FREE_SLOTS;
-            return scheduleRestore(player, currentTick, emergency, false);
-        }
-        if (!this.neededItems.get().isEmpty()) {
-            return false;
-        }
-
-        if (currentTick - this.restoreSession.lastActivityTick() < IDLE_RESTORE_DELAY_TICKS) {
-            return false;
-        }
-
-        return scheduleRestore(player, currentTick, false, true);
+        return scheduleMaintenance(player, false);
     }
 
     public boolean tryRestoreForInventoryPressure() {
-        if (deferUnopenedRestoreForBedrock()) {
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue() || deferUnopenedRestoreForBedrock()) {
             return false;
         }
         LocalPlayer player = client.player;
@@ -147,22 +124,53 @@ final class OrderedStorageController {
             return false;
         }
         if (!this.restoreSession.hasPending() && shouldYieldNewRestore()) return false;
+        return scheduleMaintenance(player, true);
+    }
+
+    private boolean scheduleMaintenance(LocalPlayer player, boolean pressureOnly) {
         OrderedStorageTracking.reconcile(this.trackedItems, player);
         if (this.trackedItems.isEmpty()) {
             this.restoreSession.clearPressureRecovery();
+            if (!pressureOnly) this.restoreSession.clearActivity();
             return false;
         }
         long currentTick = client.level.getGameTime();
         OrderedStoragePolicy.normalizeActivityTicks(this.restoreSession, this.trackedItems, currentTick);
         int freeSlots = OrderedStoragePolicy.countEmptyInventorySlots(player);
-        updatePressureRecovery(freeSlots);
-        return this.restoreSession.isPressureRecoveryActive()
-                && scheduleRestore(player, currentTick, freeSlots <= EMERGENCY_FREE_SLOTS, false);
+        this.restoreSession.updatePressureRecovery(freeSlots, PRESSURE_TRIGGER_FREE_SLOTS, PRESSURE_TARGET_FREE_SLOTS);
+        if (this.restoreSession.isPressureRecoveryActive())
+            return scheduleRestore(player, currentTick, freeSlots <= EMERGENCY_FREE_SLOTS, false);
+        return !pressureOnly && neededItems.get().isEmpty()
+                && currentTick - restoreSession.lastActivityTick() >= IDLE_RESTORE_DELAY_TICKS
+                && scheduleRestore(player, currentTick, false, true);
     }
 
     public boolean hasPendingRestore() {
         return this.drain.active() || this.restoreSession.hasPending();
     }
+
+    boolean beginStoppedReturns(boolean pendingWithdrawal, int movingHotbarSlot) {
+        return Configs.Placement.QUICK_SHULKER.getBooleanValue() && Configs.Placement.STORE_ORDERLY.getBooleanValue()
+                && stopped.begin(client, trackedItems, pendingWithdrawal, movingHotbarSlot);
+    }
+
+    boolean returnsAfterStop() {
+        if (!Configs.Placement.QUICK_SHULKER.getBooleanValue() || !Configs.Placement.STORE_ORDERLY.getBooleanValue()) {
+            stopped.disable(trackedItems);
+            return false;
+        }
+        return stopped.active(client, trackedItems, hasPendingRestore(), drain.active() ? restoreSession.pending() : null);
+    }
+    boolean hasTrackedReturns() { return !trackedItems.isEmpty(); }
+    boolean returnsEnabled() {
+        return Configs.Placement.QUICK_SHULKER.getBooleanValue() && Configs.Placement.STORE_ORDERLY.getBooleanValue()
+                && (Configs.Core.WORK_SWITCH.getBooleanValue() || returnsAfterStop());
+    }
+    void endStoppedReturns() {
+        stopped.active(client, trackedItems, hasPendingRestore(), drain.active() ? restoreSession.pending() : null);
+        stopped.end();
+    }
+    void finishStoppedWithdrawal() { stopped.finishWithdrawal(); }
 
     /** Observe activity before acquiring leases, including ticks when bedrock owns the main hand. */
     boolean deferUnopenedRestoreForBedrock() {
@@ -170,7 +178,7 @@ final class OrderedStorageController {
         if (runtime == null || runtime.bedrockEngine() == null || !runtime.bedrockEngine().hasActiveWork()) {
             return false;
         }
-        markPrinterActivity();
+        restoreSession.markActivity(currentGameTick());
         // A sent open or return click still owns its menu/cursor until it safely settles.
         if (this.drain.active() || this.restoreSession.isWaitingForContainer()) {
             return false;
@@ -193,6 +201,10 @@ final class OrderedStorageController {
 
     public boolean isWaitingForRestoreContainer() {
         return this.restoreSession.isWaitingForContainer();
+    }
+
+    boolean canConfirmRestoreOpening() {
+        return !stoppedOpening || StoppedWorkReturns.originalBoxSlot(restoreSession.pending(), client.player) >= 0;
     }
 
     void rejectRestoreContainer() {
@@ -225,12 +237,20 @@ final class OrderedStorageController {
         var origin = statistics.origin;
         openOrigin = origin != null && statistics.shulkerInventoryMenuSlot == origin.inventoryMenuSlot
                 && containerSession.ownsCurrentMenu() && origin.beginReturn(player, menu) ? origin : null;
+        if (stoppedOpening && openOrigin == null) {
+            rejectRestoreContainer();
+            if (containerSession.ownsCurrentMenu()) player.closeContainer();
+            return;
+        }
+        stoppedOpening = false;
         returnStack(menu, statistics);
     }
 
     private void returnStack(AbstractContainerMenu menu, OrderedStorageEntry statistics) {
         LocalPlayer player = client.player;
-        int playerMenuSlot = OrderedStorageStacks.findPlayerInventoryMenuSlot(menu, statistics);
+        int playerMenuSlot = !Configs.Core.WORK_SWITCH.getBooleanValue()
+                ? stopped.sourceSlot(statistics, player, menu)
+                : OrderedStorageStacks.findPlayerInventoryMenuSlot(menu, statistics);
         if (playerMenuSlot < 0) {
             failPendingRestore();
             player.closeContainer();
@@ -275,6 +295,8 @@ final class OrderedStorageController {
     }
 
     public void reset() {
+        stopped.reset();
+        stoppedOpening = false;
         this.drain.cancel();
         this.openOrigin = null;
         this.automatedContainerId = -1;
@@ -293,13 +315,16 @@ final class OrderedStorageController {
         var completed = restoreSession.clearPending();
         trackedItems.remove(completed);
         boolean pressure = restoreSession.isPressureRecoveryActive();
-        clearPressureRecoveryIfSatisfied();
         var player = client.player;
+        if (pressure && OrderedStoragePolicy.countEmptyInventorySlots(player) >= PRESSURE_TARGET_FREE_SLOTS) {
+            restoreSession.clearPressureRecovery();
+        }
         var menu = player.containerMenu;
         if (completed != null && openOrigin != null && containerSession.ownsCurrentMenu()
                 && openOrigin.confirmReturn(player, menu)) {
-            if (!pressure && canContinueIdleReturn()) {
-                var next = openOrigin.nextReturn(trackedItems, player, menu, currentGameTick(), RECENT_USE_PROTECTION_TICKS);
+            boolean afterStop = returnsAfterStop();
+            if ((!pressure || afterStop) && canContinueIdleReturn()) {
+                var next = openOrigin.nextReturn(trackedItems, player, menu, currentGameTick(), afterStop ? 0 : RECENT_USE_PROTECTION_TICKS);
                 if (next != null) {
                     restoreSession.schedule(next);
                     returnStack(menu, next);
@@ -314,19 +339,15 @@ final class OrderedStorageController {
 
     private boolean canContinueIdleReturn() {
         var runtime = RuntimeAccess.currentOrNull();
-        return !trackedItems.isEmpty() && Configs.Core.WORK_SWITCH.getBooleanValue()
-                && Configs.Placement.QUICK_SHULKER.getBooleanValue() && Configs.Placement.STORE_ORDERLY.getBooleanValue()
+        return !trackedItems.isEmpty() && returnsEnabled()
                 && neededItems.get().isEmpty() && (runtime == null || !runtime.materialRequests().isBusy())
-                && currentGameTick() - restoreSession.lastActivityTick() >= IDLE_RESTORE_DELAY_TICKS
+                && (returnsAfterStop() ? StoppedWorkReturns.manualInputIdle(client)
+                                      : currentGameTick() - restoreSession.lastActivityTick() >= IDLE_RESTORE_DELAY_TICKS)
                 && !deferUnopenedRestoreForBedrock();
     }
 
     private long currentGameTick() {
         return client.level == null ? 0L : client.level.getGameTime();
-    }
-
-    private void markPrinterActivity() {
-        this.restoreSession.markActivity(currentGameTick());
     }
 
     private void yieldToWork() {
@@ -342,49 +363,22 @@ final class OrderedStorageController {
         return false;
     }
 
-    private void updatePressureRecovery(int freeSlots) {
-        this.restoreSession.updatePressureRecovery(
-                freeSlots,
-                PRESSURE_TRIGGER_FREE_SLOTS,
-                PRESSURE_TARGET_FREE_SLOTS
-        );
-    }
-
-    private boolean scheduleRestore(
-            LocalPlayer player,
-            long currentTick,
-            boolean allowRecentlyUsed,
-            boolean allowCurrentMainHand
-    ) {
+    private boolean scheduleRestore(LocalPlayer player, long currentTick, boolean allowRecentlyUsed,
+                                    boolean allowCurrentMainHand) {
         if (this.restoreSession.hasPending()) {
             if (!this.restoreSession.isWaitingForContainer()) {
                 openPendingShulker();
             }
             return true;
         }
-        OrderedStorageEntry selected = OrderedStoragePolicy.selectRestoreCandidate(
-                player,
-                this.trackedItems,
-                this.neededItems.get(),
-                currentTick,
-                RECENT_USE_PROTECTION_TICKS,
-                allowRecentlyUsed,
-                allowCurrentMainHand
-        );
+        OrderedStorageEntry selected = OrderedStoragePolicy.selectRestoreCandidate(player, trackedItems,
+                neededItems.get(), currentTick, RECENT_USE_PROTECTION_TICKS, allowRecentlyUsed, allowCurrentMainHand);
         if (selected == null) {
             return false;
         }
         this.restoreSession.schedule(selected);
         openPendingShulker();
         return this.restoreSession.hasPending();
-    }
-
-    private void clearPressureRecoveryIfSatisfied() {
-        LocalPlayer player = client.player;
-        if (player != null
-                && OrderedStoragePolicy.countEmptyInventorySlots(player) >= PRESSURE_TARGET_FREE_SLOTS) {
-            this.restoreSession.clearPressureRecovery();
-        }
     }
 
     private void openPendingShulker() {
@@ -396,13 +390,16 @@ final class OrderedStorageController {
                 || !player.containerMenu.equals(player.inventoryMenu)) {
             return;
         }
-        OrderedStorageTracking.reconcile(this.trackedItems, player);
+        boolean afterStop = !Configs.Core.WORK_SWITCH.getBooleanValue();
+        if (afterStop && !returnsAfterStop()) return;
+        if (!afterStop) OrderedStorageTracking.reconcile(this.trackedItems, player);
         if (!this.trackedItems.contains(pendingRestore)) {
             this.restoreSession.clearPending();
             return;
         }
 
-        int shulkerMenuSlot = OrderedStorageStacks.findBestShulkerMenuSlot(player, pendingRestore);
+        int shulkerMenuSlot = afterStop ? StoppedWorkReturns.originalBoxSlot(pendingRestore, player)
+                : OrderedStorageStacks.findBestShulkerMenuSlot(player, pendingRestore);
         if (shulkerMenuSlot < 0) {
             failPendingRestore();
             return;
@@ -417,6 +414,7 @@ final class OrderedStorageController {
             retryPendingRestore();
             return;
         }
+        stoppedOpening = afterStop;
         ModLoadUtils.closeScreen++;
         this.restoreSession.beginContainerWait(RESTORE_TIMEOUT_TICKS);
     }
@@ -428,6 +426,7 @@ final class OrderedStorageController {
     }
 
     private void retryPendingRestore() {
+        stoppedOpening = false;
         OrderedStorageEntry pendingRestore = this.restoreSession.pending();
         if (pendingRestore != null && pendingRestore.shulkerInventoryMenuSlot >= 0) {
             pendingRestore.attemptedShulkerMenuSlots.add(pendingRestore.shulkerInventoryMenuSlot);

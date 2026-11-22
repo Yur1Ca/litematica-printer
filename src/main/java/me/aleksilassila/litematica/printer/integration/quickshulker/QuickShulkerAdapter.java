@@ -44,6 +44,10 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public MaterialReservation request(MaterialRequest request) {
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue()
+                && !(this.externalRequestActive && request.source() == MaterialRequest.Source.PICK_BLOCK)) {
+            return new MaterialReservation(request.token(), MaterialReservation.State.UNAVAILABLE);
+        }
         if (this.requests.isCancelling() || this.orderedStorage.isDraining()
                 || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             return new MaterialReservation(request.token(), MaterialReservation.State.PENDING);
@@ -157,28 +161,27 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void tick() {
+        if (Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.endStoppedReturns();
         this.orderedStorage.deferUnopenedRestoreForBedrock();
         if (this.requests.isCancelling() || this.orderedStorage.isDraining()
                 || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) {
             if (!this.acquireResources()) return;
-            if (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                    || !Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.cancelDrain();
+            this.cancelDisabledDrain();
             this.requests.tickCancellation();
             this.orderedStorage.tick();
             this.synchronizeResources();
             return;
         }
-        // A manual container must never be affected after the printer has been disabled.
-        // Clear the automation session before the screen guard can observe stale state.
+        boolean extracting = Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestActive;
         if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                || (!Configs.Core.WORK_SWITCH.getBooleanValue() && !this.externalRequestActive)) {
+                || (!extracting && !this.orderedStorage.returnsAfterStop())) {
             this.reset();
             return;
         }
         // Maintenance must acquire the same lease before it can send a container click.
         if (!this.acquireResources()) return;
         this.requests.tick();
-        this.requests.switchItem();
+        if (extracting) this.requests.switchItem();
         this.synchronizeResources();
     }
 
@@ -205,11 +208,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
             this.synchronizeResources();
             return;
         }
-        if (this.orderedStorage.isWaitingForRestoreContainer()
-                && (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                || !Configs.Core.WORK_SWITCH.getBooleanValue())) {
-            // An external pick request permits extraction with WORK off, never an orderly return.
-            // Cancel the pending restore session too, so it cannot retain its lease or reopen.
+        if (this.orderedStorage.isWaitingForRestoreContainer() && !this.orderedStorage.returnsEnabled()) {
             this.reset();
             return;
         }
@@ -231,7 +230,8 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
             return false;
         }
         if (!Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                || (!Configs.Core.WORK_SWITCH.getBooleanValue() && !this.externalRequestActive)) {
+                || (!Configs.Core.WORK_SWITCH.getBooleanValue() && !this.externalRequestActive
+                && !this.orderedStorage.returnsAfterStop())) {
             this.reset();
             return false;
         }
@@ -239,8 +239,7 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
     }
 
     private void cancelDisabledDrain() {
-        if (!Configs.Placement.STORE_ORDERLY.getBooleanValue() || !Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                || !Configs.Core.WORK_SWITCH.getBooleanValue()) this.orderedStorage.cancelDrain();
+        if (!this.orderedStorage.returnsEnabled()) this.orderedStorage.cancelDrain();
     }
 
     public void onMainHandUse(LocalPlayer player) {
@@ -249,20 +248,32 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
 
     @Override
     public void reset() {
-        this.orderedStorage.reset();
-        this.requests.resetRuntime();
+        // The coordinator also resets its providers after the runtime delivers a stop event.
+        // Cancel production requests there without interrupting already-authorized returns.
+        if (this.orderedStorage.returnsAfterStop()
+                && (this.orderedStorage.hasTrackedReturns() || this.orderedStorage.hasPendingRestore()
+                || this.requests.hasUnsettledWithdrawal())) {
+            this.requests.stopProductionForReturns();
+        } else {
+            this.orderedStorage.reset();
+            this.requests.resetRuntime();
+        }
         this.attemptedToken = 0L;
         this.externalRequestActive = false;
-        if (this.requests.isCancelling() || this.orderedStorage.isDraining()
-                || me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils.isRecovering()) this.acquireResources();
-        else this.releaseResources();
+        this.synchronizeResources();
     }
 
     @Override
     public void onEpochChanged(RuntimeEvent.EpochChanged event) {
         // The action broker has discarded its leases at this epoch boundary.
         this.resourcesAcquired = false;
-        if ("client_scope_changed".equals(event.reason())) {
+        if ("work_switch_off".equals(event.reason()) && !Configs.Core.WORK_SWITCH.getBooleanValue()) {
+            this.orderedStorage.beginStoppedReturns(this.requests.hasUnsettledWithdrawal(), this.requests.movingBorrowedSlot());
+        } else {
+            this.orderedStorage.endStoppedReturns();
+        }
+        if ("client_scope_changed".equals(event.reason()) || "disconnect".equals(event.reason())
+                || "local_player_init".equals(event.reason())) {
             this.orderedStorage.discardForClientScopeChange();
             this.requests.discardForClientScopeChange();
         }

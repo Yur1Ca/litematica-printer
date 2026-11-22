@@ -2,7 +2,7 @@ package me.aleksilassila.litematica.printer.integration.quickshulker;
 
 import java.util.ArrayList;
 import java.util.List;
-import me.aleksilassila.litematica.printer.config.Configs;
+import java.util.function.BooleanSupplier;
 import me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncPlan;
 import me.aleksilassila.litematica.printer.integration.containersync.ContainerSyncTransfer;
 import net.minecraft.client.Minecraft;
@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 
 /** Keeps an orderly return's menu and lease alive until all earlier clicks have been synchronized. */
 final class OrderedStorageDrain {
+    private final BooleanSupplier returnsEnabled;
     private AbstractContainerMenu ownedMenu;
     private AbstractContainerMenu requestedMenu;
     private Object connection;
@@ -20,6 +21,8 @@ final class OrderedStorageDrain {
     private ContainerSyncTransfer transfer;
     private boolean needsAttention;
     private boolean restored;
+
+    OrderedStorageDrain(BooleanSupplier returnsEnabled) { this.returnsEnabled = returnsEnabled; }
 
     boolean active() { return ownedMenu != null; }
     boolean restored() { return restored; }
@@ -111,9 +114,7 @@ final class OrderedStorageDrain {
         if (client.player == null || client.getConnection() != connection) { discard(); return; }
         var current = client.player.containerMenu;
         if (transfer != null && current == ownedMenu) {
-            transfer.tick(System.nanoTime() / 1_000_000L, Configs.Core.WORK_SWITCH.getBooleanValue()
-                    && Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                    && Configs.Placement.STORE_ORDERLY.getBooleanValue());
+            transfer.tick(System.nanoTime() / 1_000_000L, returnsEnabled.getAsBoolean());
             if (transfer.finished()) {
                 restored = transfer.completed();
                 if (current.getCarried().isEmpty()) {

@@ -13,8 +13,10 @@ final class OrderedStorageEntry {
     final List<ItemStack> shulkerSnapshot;
     final Set<Integer> attemptedShulkerMenuSlots = new HashSet<>();
     final int sourceContainerSlot;
+    final int borrowedCount;
     final int originalBoxSlot;
     OrderedStorageOrigin origin;
+    StoppedWorkReturns.Scope borrowedIn;
     int shulkerInventoryMenuSlot;
     int playerInventorySlot;
     long lastUseTick;
@@ -27,6 +29,7 @@ final class OrderedStorageEntry {
             int playerInventorySlot,
             long currentTick
     ) {
+        this.borrowedCount = itemStack.getCount();
         this.itemStack = itemStack.copy();
         this.itemStack.setCount(1);
         this.shulkerStack = shulkerStack == null ? ItemStack.EMPTY : shulkerStack.copy();

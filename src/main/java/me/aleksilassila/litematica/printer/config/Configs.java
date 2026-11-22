@@ -166,8 +166,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(RadiusShapeType.SPHERE)
                 .build();
 
+        // 每刻处理量
         public static final ConfigInteger WORK_PER_TICK = integer("workPerTick")
-                .defaultValue(2048).range(256, 131072).build();
+                .defaultValue(8192).range(256, 131072).build();
 
         // 核心 - 显示打印机HUD
         public static final ConfigBoolean RENDER_HUD = bool("renderHud")
@@ -325,7 +326,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 快捷潜影盒 - 冷却时间
         public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
-                .defaultValue(5)
+                .defaultValue(1)
                 .range(0, 20)
                 .build();
 

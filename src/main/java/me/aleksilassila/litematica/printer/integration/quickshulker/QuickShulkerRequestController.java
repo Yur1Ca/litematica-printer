@@ -7,6 +7,8 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.mods.TakeItOutUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -81,7 +83,9 @@ public final class QuickShulkerRequestController {
     }
 
     public boolean switchItem() {
-        if (this.cancellation.active() || this.orderedStorage.isDraining()) return true;
+        // A return and an extraction share the menu session, including the wait for the first reply.
+        if (this.cancellation.active() || this.orderedStorage.isWaitingForRestoreContainer()
+                || this.orderedStorage.isDraining()) return true;
         if (!this.lastNeedItemList.isEmpty() && !this.isOpenHandler) {
             LocalPlayer player = client.player;
             if (player == null) {
@@ -125,17 +129,25 @@ public final class QuickShulkerRequestController {
 
     public boolean confirmContainer(int containerId, java.util.List<ItemStack> items, ItemStack carried) {
         if (!this.isOpenHandler && !this.orderedStorage.isWaitingForRestoreContainer()) return false;
-        if (this.containerSession.owns(containerId)) return true;
+        if (client == null || client.player == null || client.player.containerMenu == client.player.inventoryMenu
+                || client.player.containerMenu.containerId != containerId || !this.containerSession.candidateStillCurrent()) return false;
+        if (this.containerSession.owns(containerId)) return this.containerSession.ownsCurrentMenu();
         if (!this.containerSession.isCandidate(containerId)) return false;
         if (!this.containerSession.confirm(containerId, items, carried)) {
             QuickShulkerDiagnostics.log("open-rejected contents differ from source box menu=" + containerId);
             // This is not our container: do not hide it, click it, close it or discard cursor ownership.
-            this.orderedStorage.reset();
-            clearSwitchRequest();
-            this.containerSession.reset();
+            if (this.orderedStorage.isWaitingForRestoreContainer()) {
+                this.orderedStorage.rejectRestoreContainer();
+                this.automatedContainerId = -1;
+                ModLoadUtils.closeScreen = 0;
+                this.containerSession.reset();
+            } else {
+                clearSwitchRequest();
+            }
             ShulkerUtils.recoverFailedOpen();
             return false;
         }
+        this.containerSession.bindOwnedMenu(client);
         this.automatedContainerId = containerId;
         this.orderedStorage.onContainerOpen(containerId);
         ShulkerUtils.clearOpenAttempt();
@@ -148,7 +160,8 @@ public final class QuickShulkerRequestController {
         //#else
         var screen = client.screen;
         //#endif
-        if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container
+        if (screen instanceof AbstractContainerScreen<?> container
+                && client.player != null && container.getMenu() == client.player.containerMenu
                 && container.getMenu().containerId == containerId) {
             //#if MC > 260100
             //$$ client.gui.setScreen(null);
@@ -159,13 +172,22 @@ public final class QuickShulkerRequestController {
         return true;
     }
 
+    public boolean shouldSuppressContainerScreen(Screen screen) {
+        this.containerSession.screenChanging(screen);
+        if (!(screen instanceof AbstractContainerScreen<?> container)) return false;
+        return activeContainerScreen() && client.player.containerMenu == container.getMenu()
+                && (this.containerSession.ownsCurrentMenu() || this.containerSession.defer(client, container));
+    }
+
     public boolean shouldSuppressContainerScreen(int containerId) {
-        LocalPlayer player = client.player;
+        return activeContainerScreen() && this.containerSession.owns(containerId) && this.containerSession.ownsCurrentMenu();
+    }
+
+    private boolean activeContainerScreen() {
+        LocalPlayer player = client == null ? null : client.player;
         return (Configs.Core.WORK_SWITCH.getBooleanValue() || this.externalRequestAllowed)
                 && Configs.Placement.QUICK_SHULKER.getBooleanValue()
-                && player != null
-                && !player.containerMenu.equals(player.inventoryMenu)
-                && containerId == this.automatedContainerId
+                && player != null && player.containerMenu != player.inventoryMenu
                 && (this.isOpenHandler || this.orderedStorage.isWaitingForRestoreContainer());
     }
 
@@ -190,6 +212,7 @@ public final class QuickShulkerRequestController {
 
     /** A new world/connection cannot inherit either a menu ID or a queued cleanup click. */
     public void discardForClientScopeChange() {
+        this.containerSession.discard();
         this.cancellation.reset();
         clearSwitchRequest();
     }
@@ -310,6 +333,15 @@ public final class QuickShulkerRequestController {
                 + " source=" + source + " target=" + target + " hotbar=" + hotbar
                 + " sourceStack=" + QuickShulkerDiagnostics.stack(menu.slots.get(source).getItem())
                 + " targetStack=" + QuickShulkerDiagnostics.stack(menu.slots.get(target).getItem()));
+        if (!clearingHotbar && shulkerInventoryMenuSlot >= 0) {
+            int boxInventorySlot = client.player.inventoryMenu.getSlot(shulkerInventoryMenuSlot).getContainerSlot();
+            // Vanilla broadcasts changed slots in menu order. Closing on the swap's two replies
+            // would discard a later update to the carried box and leave its cached contents stale.
+            if (findPlayerSlot(menu, boxInventorySlot) > Math.max(source, target)) {
+                QuickShulkerClicks.sendWithFullSync(menu, source, hotbar, ContainerInput.SWAP);
+                return;
+            }
+        }
         QuickShulkerClicks.send(menu, source, hotbar, ContainerInput.SWAP);
     }
 
@@ -453,7 +485,7 @@ public final class QuickShulkerRequestController {
         LocalPlayer player = this.client == null ? null : this.client.player;
         if (player != null
                 && !player.containerMenu.equals(player.inventoryMenu)
-                && player.containerMenu.containerId == this.automatedContainerId) {
+                && this.containerSession.ownsCurrentMenu()) {
             player.closeContainer();
         }
     }

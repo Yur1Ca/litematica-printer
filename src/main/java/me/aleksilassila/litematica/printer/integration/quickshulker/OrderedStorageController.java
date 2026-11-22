@@ -81,7 +81,7 @@ final class OrderedStorageController {
         if (newPlayerSlot < 0 || newPlayerSlot >= 36) {
             this.trackedItems.remove(moved);
             if (this.restoreSession.pending() == moved) {
-                clearPendingRestore();
+                this.restoreSession.clearPending();
             }
             return;
         }
@@ -207,7 +207,7 @@ final class OrderedStorageController {
         if (this.drain.active() || this.restoreSession.isWaitingForContainer()) {
             return false;
         }
-        clearPendingRestore();
+        this.restoreSession.clearPending();
         return true;
     }
 
@@ -225,6 +225,14 @@ final class OrderedStorageController {
 
     public boolean isWaitingForRestoreContainer() {
         return this.restoreSession.isWaitingForContainer();
+    }
+
+    void rejectRestoreContainer() {
+        // Retain the borrowed stack for a later return to a different box.
+        retryPendingRestore();
+        this.restoreSession.clearPending();
+        this.automatedContainerId = -1;
+        yieldToWork();
     }
 
     /**
@@ -292,8 +300,7 @@ final class OrderedStorageController {
         retryPendingRestore();
         ShulkerUtils.recoverFailedOpen();
         ModLoadUtils.closeScreen = 0;
-        if (player != null && !player.containerMenu.equals(player.inventoryMenu)
-                && player.containerMenu.containerId == automatedContainerId) {
+        if (player != null && this.containerSession.ownsCurrentMenu()) {
             player.closeContainer();
         }
     }
@@ -383,7 +390,7 @@ final class OrderedStorageController {
         }
         OrderedStorageTracking.reconcile(this.trackedItems, player);
         if (!this.trackedItems.contains(pendingRestore)) {
-            clearPendingRestore();
+            this.restoreSession.clearPending();
             return;
         }
 
@@ -407,8 +414,7 @@ final class OrderedStorageController {
     }
 
     private void finishPendingRestore(boolean success) {
-        OrderedStorageEntry completed = this.restoreSession.pending();
-        clearPendingRestore();
+        OrderedStorageEntry completed = this.restoreSession.clearPending();
         yieldToWork();
         if (completed != null) {
             this.trackedItems.remove(completed);
@@ -427,10 +433,6 @@ final class OrderedStorageController {
             pendingRestore.attemptedShulkerMenuSlots.add(pendingRestore.shulkerInventoryMenuSlot);
         }
         this.restoreSession.stopContainerWait();
-    }
-
-    private void clearPendingRestore() {
-        this.restoreSession.clearPending();
     }
 
 }

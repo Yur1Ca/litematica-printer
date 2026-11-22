@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.print;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import me.aleksilassila.litematica.printer.interaction.StrippableBlockPort;
@@ -12,8 +13,12 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.IceBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -42,6 +47,10 @@ public final class PrintWorkflowScheduler {
     private final LongSet wakeKeys = new LongOpenHashSet();
     private final LongSet materialBlockedKeys = new LongOpenHashSet();
     private final Long2LongMap materialRetryAfter = new Long2LongOpenHashMap();
+    // A manual-water decision is not pending work and must survive retries and moving the work window.
+    private final Long2ObjectOpenHashMap<BlockState> manualWaterTargets = new Long2ObjectOpenHashMap<>();
+    private WeakReference<ClientLevel> manualWaterLevel = new WeakReference<>(null);
+    private WeakReference<WorldSchematic> manualWaterSchematic = new WeakReference<>(null);
     private long lastRefreshTick = Long.MIN_VALUE;
 
     public PrintWorkflowScheduler(LongSupplier tickClock, StrippableBlockPort strippableBlocks) {
@@ -82,6 +91,14 @@ public final class PrintWorkflowScheduler {
     }
 
     public void clear() {
+        this.resetWorkflows();
+        this.manualWaterTargets.clear();
+        this.manualWaterLevel.clear();
+        this.manualWaterSchematic.clear();
+    }
+
+    /** Stop active work without turning manually supplied water back into an automatic task. */
+    public void resetWorkflows() {
         this.tasks.clear();
         this.unstartedTargets.clear();
         this.startedKeys.clear();
@@ -105,6 +122,7 @@ public final class PrintWorkflowScheduler {
     }
 
     public void tick(@Nullable ClientLevel level, @Nullable WorldSchematic schematic) {
+        this.observeManualWaterSource(level, schematic);
         long now = this.tickClock.getAsLong();
         if (this.lastRefreshTick == now && this.wakeKeys.isEmpty()) return;
         this.lastRefreshTick = now;
@@ -155,6 +173,13 @@ public final class PrintWorkflowScheduler {
     }
 
     public PrintTaskBuildResult buildAction(SchematicBlockContext context) {
+        this.observeManualWaterSource(context.level, context.schematic);
+        long key = context.blockPos.asLong();
+        BlockState manualTarget = this.manualWaterTargets.get(key);
+        if (manualTarget != null) {
+            if (manualTarget.equals(context.requiredState)) return withoutAutomaticWater(context.requiredState);
+            this.manualWaterTargets.remove(key);
+        }
         PrintTask task = this.tasks.get(context.blockPos);
         if (task == null) {
             task = PrintTasks.tryCreate(context, this.tickClock, this.strippableBlocks);
@@ -166,6 +191,13 @@ public final class PrintWorkflowScheduler {
         if (!task.shouldKeep(context.level, context.schematic)) {
             this.remove(task.pos());
             return PrintTaskBuildResult.PASS;
+        }
+        if (task instanceof WaterPrintTask water && !water.hasStarted()
+                && water.stage() == WaterTaskStage.WAIT_SUPPORT
+                && !(context.currentState.getBlock() instanceof IceBlock)) {
+            this.manualWaterTargets.put(key, context.requiredState);
+            this.remove(task.pos());
+            return withoutAutomaticWater(context.requiredState);
         }
         if (this.materialBlockedKeys.contains(task.pos().asLong())) {
             return PrintTaskBuildResult.SKIP;
@@ -183,6 +215,19 @@ public final class PrintWorkflowScheduler {
             this.updateReady(task, context.level, context.schematic);
         }
         return result;
+    }
+
+    private void observeManualWaterSource(@Nullable ClientLevel level, @Nullable WorldSchematic schematic) {
+        if (this.manualWaterLevel.get() == level && this.manualWaterSchematic.get() == schematic) return;
+        this.manualWaterTargets.clear();
+        this.manualWaterLevel = new WeakReference<>(level);
+        this.manualWaterSchematic = new WeakReference<>(schematic);
+    }
+
+    private static PrintTaskBuildResult withoutAutomaticWater(BlockState requiredState) {
+        return requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
+                && requiredState.getValue(BlockStateProperties.WATERLOGGED)
+                ? PrintTaskBuildResult.PASS : PrintTaskBuildResult.SKIP;
     }
 
     @Nullable

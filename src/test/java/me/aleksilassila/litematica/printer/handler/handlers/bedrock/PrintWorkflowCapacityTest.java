@@ -35,7 +35,7 @@ class PrintWorkflowCapacityTest {
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
-    void unstartedWaterTasksStayBoundedWhileQueuedWorkSurvives(boolean materialBlocked) throws Exception {
+    void waterBacklogPreservesQueuedWorkAndManualWaterDecisions(boolean materialBlocked) throws Exception {
         try (var f = new WaterSupportRegressionTest.WaterFixture()) {
             BlockPos queued = new BlockPos(-8, 64, 0);
             prepare(f, queued);
@@ -68,7 +68,13 @@ class PrintWorkflowCapacityTest {
 
             f.workflows.onInventoryAvailabilityChanged();
             f.level.blocks.put(first.below(), Blocks.STONE.defaultBlockState());
-            assertTrue(f.build(first).hasAction(), "A rescan can reconstruct an evicted task after inventory gain");
+            if (materialBlocked) {
+                assertTrue(f.build(first).hasAction(), "A rescan can reconstruct an evicted task after inventory gain");
+            } else {
+                assertSame(PrintTaskBuildResult.SKIP, f.build(first),
+                        "Cold-task eviction and inventory gains must not undo a manual-water decision");
+                assertFalse(f.workflows.isActiveTaskPos(first));
+            }
             assertTrue(f.workflows.isActiveTaskPos(queued));
         }
     }

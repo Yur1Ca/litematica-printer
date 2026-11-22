@@ -17,7 +17,9 @@ public final class ChestTrackerBridge {
     }
 
     public static boolean shouldSuppressContainerScreen() {
-        return RuntimeAccess.get().chestTrackerAdapter().shouldSuppressContainerScreen();
+        var runtime = RuntimeAccess.currentOrNull();
+        return runtime != null && runtime.chestTrackerAdapter() != null
+                && runtime.chestTrackerAdapter().shouldSuppressContainerScreen();
     }
 
     public static void rememberSuppressedScreen(net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen) {

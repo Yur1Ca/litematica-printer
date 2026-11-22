@@ -79,6 +79,11 @@ public final class QuickShulkerQueryFixture implements AutoCloseable {
         menu.slots.get(0).set(new ItemStack(Items.STONE, 64));
         player.containerMenu = menu;
         set(controller, controller.getClass(), "automatedContainerId", 7);
+        Object session = get(controller, controller.getClass(), "containerSession");
+        set(session, session.getClass(), "ownedId", menu.containerId);
+        Method bindMenu = session.getClass().getDeclaredMethod("bindOwnedMenu", Minecraft.class);
+        bindMenu.setAccessible(true);
+        bindMenu.invoke(session, client);
         set(controller, controller.getClass(), "shulkerInventoryMenuSlot", sourceMenuSlot);
         controller.getClass().getMethod("requestItem", Item.class).invoke(controller, Items.STONE);
         controller.getClass().getMethod("switchInv").invoke(controller);
@@ -156,8 +161,10 @@ public final class QuickShulkerQueryFixture implements AutoCloseable {
                                 call.owner = Type.getInternalName(QuickShulkerQueryFixture.class); call.name = "open";
                             } else if (call.owner.endsWith("/InventoryUtilsAccessor") && call.name.equals("canPickToSlot")) {
                                 call.owner = Type.getInternalName(QuickShulkerQueryFixture.class); call.itf = false;
-                            } else if (call.owner.endsWith("/QuickShulkerClicks") && call.name.equals("send")) {
+                            } else if (call.owner.endsWith("/QuickShulkerClicks")
+                                    && (call.name.equals("send") || call.name.equals("sendWithFullSync"))) {
                                 call.owner = Type.getInternalName(QuickShulkerQueryFixture.class);
+                                call.name = "send";
                             } else if (countDecodes && call.owner.equals("fi/dy/masa/malilib/util/InventoryUtils") && call.name.equals("getStoredItems")) {
                                 call.owner = Type.getInternalName(QuickShulkerQueryFixture.class); call.name = "readContents";
                             }

@@ -189,7 +189,7 @@ public class PrintHandler extends FeatureModuleBase {
         this.printTaskAction = null;
         this.ctx = null;
         this.iterationBox = null;
-        this.printTasks.clear();
+        this.printTasks.resetWorkflows();
         this.fallingPlacements.clear();
         this.targets.clear();
         this.observedActionConfigHash = Integer.MIN_VALUE;

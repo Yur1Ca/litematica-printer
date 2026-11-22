@@ -19,8 +19,10 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.runtime.FeatureLifecycle;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
 import me.aleksilassila.litematica.printer.handler.InventoryAvailabilityTracker;
+import me.aleksilassila.litematica.printer.handler.TickContext;
 import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTargetScheduler;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintWorkflowScheduler;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.integration.inventory.InventoryProvider;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
@@ -37,6 +39,7 @@ import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -44,9 +47,13 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.attribute.EnvironmentAttributeSystem;
+import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -247,8 +254,70 @@ class PrintReadyResidualFastPathTest {
         }
     }
 
+    @Test void unsupportedWaterloggedPrefixStillPlacesEverySlabBody() throws Exception {
+        int oldWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        boolean oldIce = Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue();
+        boolean oldSkip = Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue();
+        try (var f = new FastPathFixture(8, new PrinterBox(0, 0, 0, 7, 0, 0))) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(true);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(false);
+            f.installWaterPlayer();
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.OAK_SLAB, 64));
+            f.client.player.getInventory().setItem(1, new ItemStack(Items.ICE, 64));
+            @SuppressWarnings("unchecked")
+            var chunks = (Map<Long, ChunkSchematic>) field(f.scanFixture, f.scanFixture.getClass(), "chunks");
+            var section = chunks.get(0L).getSections()[4];
+            BlockState drySlab = Blocks.OAK_SLAB.defaultBlockState();
+            BlockState wetSlab = drySlab.setValue(BlockStateProperties.WATERLOGGED, true);
+            for (int x = 0; x < 8; x++) section.setBlockState(x, 0, 0, x < 7 ? wetSlab : drySlab);
+            WorldSchematic schematic = (WorldSchematic) field(f.scanFixture, f.scanFixture.getClass(), "schematic");
+            assertEquals(wetSlab, schematic.getBlockState(BlockPos.ZERO));
+            assertEquals(drySlab, schematic.getBlockState(new BlockPos(7, 0, 0)));
+            @SuppressWarnings("unchecked")
+            var blocks = (Map<BlockPos, BlockState>) field(f.client.level, f.client.level.getClass(), "world");
+            // Discover the mixed workset through the real cold source, without seeded ready targets.
+            f.targets.invalidateCandidates();
+            var workflows = (PrintWorkflowScheduler) get(f.handler, PrintHandler.class, "printTasks");
+            for (long now = 10; now < 42 && f.dispatch.hits.size() < 8; now++) {
+                f.scanTick.invoke(f.scanFixture, now);
+                f.tick(now);
+                f.handler.prepareIteration();
+                int sentBefore = f.dispatch.hits.size();
+                f.handler.runIteration(f.scope);
+                assertTrue(f.dispatch.hits.size() - sentBefore <= 1, "The real one-action-per-tick limit stays intact");
+                for (int index = sentBefore; index < f.dispatch.hits.size(); index++) {
+                    assertEquals(Items.OAK_SLAB, f.client.player.getMainHandItem().getItem(),
+                            "Waiting for water support must place the slab body through the ordinary guide and executor");
+                    BlockPos placed = f.dispatch.hits.get(index).getBlockPos();
+                    blocks.put(placed, drySlab);
+                    f.runtime.hudStats().confirmBlockUpdate(placed, drySlab);
+                }
+            }
+
+            assertEquals(List.of(BlockPos.ZERO, new BlockPos(1, 0, 0), new BlockPos(2, 0, 0), new BlockPos(3, 0, 0),
+                            new BlockPos(4, 0, 0), new BlockPos(5, 0, 0), new BlockPos(6, 0, 0), new BlockPos(7, 0, 0)),
+                    f.dispatch.hits.stream().map(BlockHitResult::getBlockPos).toList(),
+                    "All seven unsupported waterlogged bodies and the following dry slab must send ordinary USE");
+            assertEquals(0, workflows.pendingTaskCount(), "Manual water must not remain as pending workflow work");
+            assertFalse(workflows.hasActiveWorkflow());
+            for (int x = 0; x < 8; x++) {
+                assertEquals(drySlab, f.client.level.getBlockState(new BlockPos(x, 0, 0)));
+                assertTrue(f.client.level.getBlockState(new BlockPos(x, -1, 0)).isAir());
+            }
+            assertEquals(8, f.transport.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
+            assertTrue(f.transport.packets.stream().noneMatch(ServerboundPlayerActionPacket.class::isInstance),
+                    "Placing the dry bodies while water support is absent must not send any mining action");
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(oldWork);
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(oldIce);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(oldSkip);
+        }
+    }
+
     private static final class CachedPrintHandler extends PrintHandler {
         CachedPrintHandler(PrinterRuntime runtime) { super(runtime); }
+        void prepareIteration() { this.updateVariables(TickContext.capture()); this.preprocess(); }
         @Override protected List<PrinterBox> getScanSourceBoxes(PrinterBox box) { return List.of(box); }
         @Override protected boolean canReachIterationPosition(BlockPos pos) { return true; }
         @Override protected boolean isInSelectionRange(BlockPos pos) { return true; }
@@ -397,6 +466,24 @@ class PrintReadyResidualFastPathTest {
             assertEquals(1, transport.packets.stream().filter(ServerboundUseItemOnPacket.class::isInstance).count());
             assertTrue(runtime.hudStats().isPrintPlacementPending(this.residuals.getFirst()),
                     "Actual sent ownership must keep its original confirmation path");
+        }
+
+        void installWaterPlayer() throws Exception {
+            var previous = client.player;
+            var player = allocate(WaterSupportRegressionTest.WaterPlayer.class);
+            player.inventory = previous.getInventory();
+            set(player, Player.class, "inventory", player.inventory);
+            set(player, Player.class, "inventoryMenu", previous.inventoryMenu);
+            set(player, Player.class, "abilities", previous.getAbilities());
+            set(player, LocalPlayer.class, "connection", connection);
+            set(player, Entity.class, "level", client.level);
+            set(player, Entity.class, "position", previous.position());
+            set(player, Entity.class, "blockPosition", BlockPos.ZERO);
+            set(player, Entity.class, "eyeHeight", 1.5F);
+            player.containerMenu = player.inventoryMenu;
+            client.player = player;
+            set(client.level, ClientLevel.class, "environmentAttributes", EnvironmentAttributeSystem.builder()
+                    .addConstantLayer(EnvironmentAttributes.WATER_EVAPORATES, value -> false).build());
         }
 
         int unrelatedReads() {

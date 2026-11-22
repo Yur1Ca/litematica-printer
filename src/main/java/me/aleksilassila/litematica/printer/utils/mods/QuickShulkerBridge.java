@@ -131,8 +131,16 @@ public final class QuickShulkerBridge {
         return RuntimeAccess.get().quickShulkerAdapter().shouldPause();
     }
 
+    public static boolean shouldSuppressContainerScreen(net.minecraft.client.gui.screens.Screen screen) {
+        var runtime = RuntimeAccess.currentOrNull();
+        return runtime != null && runtime.quickShulkerAdapter() != null
+                && runtime.quickShulkerAdapter().shouldSuppressContainerScreen(screen);
+    }
+
     public static boolean shouldSuppressContainerScreen(int containerId) {
-        return RuntimeAccess.get().quickShulkerAdapter().shouldSuppressContainerScreen(containerId);
+        var runtime = RuntimeAccess.currentOrNull();
+        return runtime != null && runtime.quickShulkerAdapter() != null
+                && runtime.quickShulkerAdapter().shouldSuppressContainerScreen(containerId);
     }
 
     public static void onContainerOpen(int containerId, net.minecraft.world.inventory.MenuType<?> type) {

@@ -131,6 +131,10 @@ public final class QuickShulkerAdapter implements InventoryProvider, RuntimeComp
         return this.requests.shouldPauseForSwitchRequest();
     }
 
+    public boolean shouldSuppressContainerScreen(net.minecraft.client.gui.screens.Screen screen) {
+        return this.requests.shouldSuppressContainerScreen(screen);
+    }
+
     public boolean shouldSuppressContainerScreen(int containerId) {
         return this.requests.shouldSuppressContainerScreen(containerId);
     }

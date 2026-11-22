@@ -23,17 +23,21 @@ final class OrderedStorageStacks {
         for (int menuSlot = 0; menuSlot < player.inventoryMenu.slots.size(); menuSlot++) {
             Slot slot = player.inventoryMenu.slots.get(menuSlot);
             ItemStack shulkerStack = slot.getItem();
-            if (!(slot.container instanceof Inventory) || !isShulkerBox(shulkerStack)
+            if (slot.container != player.getInventory() || slot.getContainerSlot() == entry.playerInventorySlot
+                    || !isShulkerBox(shulkerStack)
                     || entry.attemptedShulkerMenuSlots.contains(menuSlot)) {
                 continue;
             }
             List<ItemStack> storedItems = readStoredItems(shulkerStack);
+            boolean hasCapacity = storedShulkerHasCapacity(storedItems, returningStack);
+            // A missing inventory component leaves capacity unknown until the server opens the box.
+            if (!storedItems.isEmpty() && !hasCapacity) continue;
             int score = ShulkerSelectionPolicy.score(
                     menuSlot == entry.shulkerInventoryMenuSlot,
                     entry.shulkerStack.isEmpty() || shulkerStack.getItem().equals(entry.shulkerStack.getItem()),
                     storedShulkerMatchesSnapshot(storedItems, entry),
                     storedOriginalSlotFits(storedItems, entry, returningStack),
-                    storedShulkerHasCapacity(storedItems, returningStack)
+                    hasCapacity
             );
             if (score < bestScore) {
                 bestScore = score;
@@ -149,7 +153,7 @@ final class OrderedStorageStacks {
 
     private static List<ItemStack> readStoredItems(ItemStack shulkerStack) {
         try {
-            return InventoryUtils.getStoredItems(shulkerStack, -1);
+            return InventoryUtils.getStoredItems(shulkerStack, 27);
         } catch (Exception ignored) {
             return List.of();
         }

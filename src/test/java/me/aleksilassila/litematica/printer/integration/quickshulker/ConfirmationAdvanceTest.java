@@ -9,8 +9,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.QuickShulkerModeType;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
+import me.aleksilassila.litematica.printer.integration.inventory.MaterialReservation;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.utils.InventorySwitchGuard;
+import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
@@ -206,6 +210,84 @@ public class ConfirmationAdvanceTest {
         }
     }
 
+    @Test void extractionWaitsForAnAlreadySentIdleReturnBeforeOpeningAnotherBox() throws Exception {
+        var oldMode = Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue();
+        int oldCloseScreen = ModLoadUtils.closeScreen;
+        try (var f = new Fixture(false, true)) {
+            Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(QuickShulkerModeType.CLICK_SLOT);
+            f.client.level = allocate(BedrockOrderedStorageBoundaryTest.Level.class);
+            f.player.containerMenu = f.player.inventoryMenu;
+            f.player.inventory.setItem(34, QuickShulkerQueryFixture.box(new ItemStack(Items.SEA_LANTERN, 64)));
+            var wanted = MaterialRequest.single(31, Items.SEA_LANTERN, 1, MaterialRequest.Source.PRINT);
+            var reservation = (MaterialReservation) f.adapter("request", new Class<?>[]{MaterialRequest.class}, wanted);
+            assertEquals(MaterialReservation.State.PENDING, reservation.state());
+            assertTrue(f.clicks().isEmpty(), "The idle return is already opening a different box");
+            assertFalse((boolean) f.adapter("isOpenHandler", new Class<?>[0]));
+
+            f.player.containerMenu = f.menu;
+            f.content(f.contents(), ItemStack.EMPTY);
+            assertEquals(ContainerInput.SWAP, f.clicks().getFirst().containerInput());
+            var returned = f.contents();
+            returned.set(0, new ItemStack(Items.STONE, 64));
+            returned.set(56, ItemStack.EMPTY);
+            f.menu.initializeContents(1, returned, ItemStack.EMPTY);
+            f.content(returned, ItemStack.EMPTY);
+            assertTrue(f.player.closed);
+            f.adapter("tick", new Class<?>[0]);
+            assertEquals(2, f.clicks().size());
+            assertEquals(ContainerInput.PICKUP, f.clicks().getLast().containerInput());
+            assertEquals(34, f.clicks().getLast().slotNum(), "The queued material request must resume");
+        } finally {
+            Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(oldMode);
+            ModLoadUtils.closeScreen = oldCloseScreen;
+        }
+    }
+
+    @Test void rejectingAnUnrelatedReturnMenuPreservesQueuedExtractionAndTrackedItems() throws Exception {
+        var oldMode = Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue();
+        int oldCloseScreen = ModLoadUtils.closeScreen;
+        try (var f = new Fixture(false, true)) {
+            Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(QuickShulkerModeType.CLICK_SLOT);
+            f.client.level = allocate(BedrockOrderedStorageBoundaryTest.Level.class);
+            f.player.containerMenu = f.player.inventoryMenu;
+            var otherBox = QuickShulkerQueryFixture.box(new ItemStack(Items.SEA_LANTERN, 64));
+            set(f.player, net.minecraft.world.entity.player.Player.class, "abilities",
+                    new net.minecraft.world.entity.player.Abilities());
+            f.player.inventory.setItem(34, otherBox);
+            var otherBorrowed = new ItemStack(Items.DIRT);
+            f.player.inventory.setItem(4, otherBorrowed);
+            var storage = get(f.adapter, f.adapter.getClass(), "orderedStorage");
+            invoke(storage.getClass(), storage, "newItem",
+                    new Class<?>[]{ItemStack.class, ItemStack.class, int.class, int.class, int.class},
+                    otherBorrowed, otherBox, 1, 34, 4);
+            var entries = (List<?>) get(storage, storage.getClass(), "trackedItems");
+            var original = entries.getFirst();
+            var wanted = MaterialRequest.single(42, Items.SEA_LANTERN, 1, MaterialRequest.Source.PRINT);
+            var reservation = (MaterialReservation) f.adapter("request", new Class<?>[]{MaterialRequest.class}, wanted);
+            assertEquals(MaterialReservation.State.PENDING, reservation.state());
+
+            f.player.containerMenu = f.menu;
+            f.menu.getSlot(0).set(new ItemStack(Items.GRAVEL));
+            f.content(f.contents(), ItemStack.EMPTY);
+            f.adapter("tick", new Class<?>[0]);
+            assertFalse(f.player.closed);
+            assertTrue(f.clicks().isEmpty(), "Do not click the unrelated menu");
+            assertEquals(MaterialReservation.State.PENDING,
+                    ((MaterialReservation) f.adapter("status", new Class<?>[]{MaterialRequest.class}, wanted)).state(),
+                    "Rejecting a return must not consume the waiting extraction");
+            assertEquals(2, entries.size());
+            assertTrue(((Set<?>) get(original, original.getClass(), "attemptedShulkerMenuSlots")).contains(35));
+
+            f.player.containerMenu = f.player.inventoryMenu;
+            f.adapter("tick", new Class<?>[0]);
+            assertEquals(1, f.clicks().size());
+            assertEquals(34, f.clicks().getFirst().slotNum(), "Resume extraction from the other box");
+        } finally {
+            Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(oldMode);
+            ModLoadUtils.closeScreen = oldCloseScreen;
+        }
+    }
+
     public static final class PickAccess {
         public static boolean canPickToSlot(Inventory inventory, int slot) {
             return QuickShulkerQueryFixture.canPickToSlot(inventory, slot);
@@ -235,7 +317,9 @@ public class ConfirmationAdvanceTest {
 
         Fixture(boolean clearing) throws Exception { this(clearing, false); }
 
-        Fixture(boolean clearing, boolean restoring) throws Exception {
+        Fixture(boolean clearing, boolean restoring) throws Exception { this(clearing, restoring, 35); }
+
+        Fixture(boolean clearing, boolean restoring, int sourceInventorySlot) throws Exception {
             connection.packets = new ArrayList<>(); connection.beforeSend = packet -> { };
             set(player, LocalPlayer.class, "connection", connection);
             var equipment = new PlayerEquipment(player);
@@ -245,7 +329,7 @@ public class ConfirmationAdvanceTest {
             set(player, net.minecraft.world.entity.player.Player.class, "inventoryMenu", new InventoryMenu(player.inventory, true, player));
             menu = new ShulkerBoxMenu(7, player.inventory);
             menu.slots.get(0).set(new ItemStack(Items.STONE, 64));
-            player.inventory.setItem(35, QuickShulkerQueryFixture.box(new ItemStack(Items.STONE, 64)));
+            player.inventory.setItem(sourceInventorySlot, QuickShulkerQueryFixture.box(new ItemStack(Items.STONE, 64)));
             if (clearing) player.inventory.setItem(2, new ItemStack(Items.DIRT, 32));
             player.containerMenu = menu;
             client.player = player;
@@ -272,9 +356,11 @@ public class ConfirmationAdvanceTest {
             loader.loadClass(BASE + "runtime.RuntimeAccess").getMethod("install", runtimeType).invoke(null, runtime);
             set(requests, requests.getClass(), "automatedContainerId", 7);
             set(requests, requests.getClass(), "isOpenHandler", true);
-            set(requests, requests.getClass(), "shulkerInventoryMenuSlot", 35);
+            set(requests, requests.getClass(), "shulkerInventoryMenuSlot",
+                    sourceInventorySlot < 9 ? 36 + sourceInventorySlot : sourceInventorySlot);
             Object session = get(requests, requests.getClass(), "containerSession");
             set(session, session.getClass(), "ownedId", 7);
+            declared(session, "bindOwnedMenu", new Class<?>[]{Minecraft.class}, client);
             var acquire = adapterType.getDeclaredMethod("acquireResources"); acquire.setAccessible(true); acquire.invoke(adapter);
             if (restoring) {
                 Configs.Placement.STORE_ORDERLY.setBooleanValue(true);

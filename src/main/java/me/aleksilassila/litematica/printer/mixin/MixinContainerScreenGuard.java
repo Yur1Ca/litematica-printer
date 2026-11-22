@@ -26,10 +26,7 @@ public abstract class MixinContainerScreenGuard {
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void suppressAutomatedQuickShulkerScreen(@Nullable Screen screen, CallbackInfo ci) {
         boolean containerScreen = screen instanceof AbstractContainerScreen<?>;
-        if (containerScreen
-                && QuickShulkerBridge.shouldSuppressContainerScreen(
-                        ((AbstractContainerScreen<?>) screen).getMenu().containerId
-                )) {
+        if (QuickShulkerBridge.shouldSuppressContainerScreen(screen)) {
             ModLoadUtils.closeScreen = QuickShulkerInvocationPolicy.consumeScreenToken(ModLoadUtils.closeScreen);
             ci.cancel();
             return;

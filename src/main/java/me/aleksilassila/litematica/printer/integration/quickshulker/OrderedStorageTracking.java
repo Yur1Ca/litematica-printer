@@ -13,6 +13,52 @@ final class OrderedStorageTracking {
     private OrderedStorageTracking() {
     }
 
+    static void move(List<OrderedStorageEntry> entries, RestoreSession<OrderedStorageEntry> session,
+                     int oldPlayerSlot, int newPlayerSlot) {
+        OrderedStorageEntry moved = null;
+        for (OrderedStorageEntry statistics : entries) {
+            if (statistics.playerInventorySlot == oldPlayerSlot) {
+                moved = statistics;
+                break;
+            }
+        }
+        if (moved == null) {
+            return;
+        }
+        if (newPlayerSlot < 0 || newPlayerSlot >= 36) {
+            entries.remove(moved);
+            if (session.pending() == moved) {
+                session.clearPending();
+            }
+            return;
+        }
+        OrderedStorageEntry movedRecord = moved;
+        entries.removeIf(statistics -> statistics != movedRecord
+                && statistics.playerInventorySlot == newPlayerSlot);
+        moved.playerInventorySlot = newPlayerSlot;
+    }
+
+    static void markMainHandUsed(List<OrderedStorageEntry> entries, LocalPlayer player, long currentTick) {
+        int selectedSlot = me.aleksilassila.litematica.printer.utils.InventoryUtils
+                .getSelectedSlot(player.getInventory());
+        ItemStack mainHandStack = player.getMainHandItem();
+        OrderedStorageEntry statistics = findAtSlot(
+                entries, selectedSlot, mainHandStack);
+        if (statistics == null) {
+            for (OrderedStorageEntry candidate : entries) {
+                if (!isValid(player, candidate)
+                        && OrderedStorageStacks.matches(candidate.itemStack, mainHandStack)) {
+                    candidate.playerInventorySlot = selectedSlot;
+                    statistics = candidate;
+                    break;
+                }
+            }
+        }
+        if (statistics != null) {
+            statistics.markUsed(currentTick);
+        }
+    }
+
     static void reconcile(List<OrderedStorageEntry> entries, LocalPlayer player) {
         Set<Integer> claimedSlots = new HashSet<>();
         List<OrderedStorageEntry> unresolved = new ArrayList<>();

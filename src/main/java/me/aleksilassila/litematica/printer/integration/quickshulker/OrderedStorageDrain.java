@@ -118,7 +118,8 @@ final class OrderedStorageDrain {
                 restored = transfer.completed();
                 if (current.getCarried().isEmpty()) {
                     discard();
-                    client.player.closeContainer();
+                    // On success the controller may start another confirmed return in this menu.
+                    if (!restored) client.player.closeContainer();
                 }
             }
             return;

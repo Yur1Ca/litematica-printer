@@ -32,6 +32,8 @@ final class OrderedStorageStacks {
             boolean hasCapacity = storedShulkerHasCapacity(storedItems, returningStack);
             // A missing inventory component leaves capacity unknown until the server opens the box.
             if (!storedItems.isEmpty() && !hasCapacity) continue;
+            if (entry.origin != null && menuSlot == entry.origin.inventoryMenuSlot
+                    && entry.origin.matchesBox(shulkerStack) && entry.origin.matchesContents(storedItems)) return menuSlot;
             int score = ShulkerSelectionPolicy.score(
                     menuSlot == entry.shulkerInventoryMenuSlot,
                     entry.shulkerStack.isEmpty() || shulkerStack.getItem().equals(entry.shulkerStack.getItem()),
@@ -80,6 +82,15 @@ final class OrderedStorageStacks {
             }
         }
         return -1;
+    }
+
+    static boolean canFit(AbstractContainerMenu menu, List<Integer> destinations, ItemStack stack) {
+        int remaining = stack.getCount();
+        for (int slot : destinations) {
+            remaining -= availableCapacity(menu.getSlot(slot), stack);
+            if (remaining <= 0) return true;
+        }
+        return false;
     }
 
     static int availableCapacity(Slot slot, ItemStack returningStack) {

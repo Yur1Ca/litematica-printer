@@ -13,6 +13,8 @@ final class OrderedStorageEntry {
     final List<ItemStack> shulkerSnapshot;
     final Set<Integer> attemptedShulkerMenuSlots = new HashSet<>();
     final int sourceContainerSlot;
+    final int originalBoxSlot;
+    OrderedStorageOrigin origin;
     int shulkerInventoryMenuSlot;
     int playerInventorySlot;
     long lastUseTick;
@@ -33,6 +35,7 @@ final class OrderedStorageEntry {
         }
         this.shulkerSnapshot = OrderedStorageStacks.snapshotShulker(shulkerStack);
         this.sourceContainerSlot = sourceContainerSlot;
+        this.originalBoxSlot = shulkerInventoryMenuSlot;
         this.shulkerInventoryMenuSlot = shulkerInventoryMenuSlot;
         this.playerInventorySlot = playerInventorySlot;
         this.lastUseTick = currentTick;

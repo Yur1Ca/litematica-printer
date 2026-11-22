@@ -77,7 +77,7 @@ class OrderedStorageWorkOffTest {
             f.acceptReturnMenu();
             assertEquals(1, f.connection.packets.size(), "Never start the return after the source box changed");
             f.player.containerMenu = f.player.inventoryMenu;
-            if (ShulkerUtils.isRecovering()) f.finishOpenRecovery();
+            f.finishOpenRecovery();
             assertFalse(f.broker.isResourceHeld(ResourceLease.INVENTORY));
             int sent = f.connection.packets.size();
             f.tick(120);
@@ -392,15 +392,16 @@ class OrderedStorageWorkOffTest {
         void tick(int count) {
             for (int i = 0; i < count; i++) {
                 level.tick++;
-                if (ShulkerUtils.isRecovering()) ShulkerUtils.tickRecovery();
+                ShulkerUtils.tickRecovery();
                 adapter.tick();
             }
         }
 
         void finishOpenRecovery() {
+            assertTrue(ShulkerUtils.isRecovering(), "The original open is still awaiting inventory recovery");
             tick(1);
-            int n = connection.packets.size();
-            assertEquals(-1, click(n - 2).slotNum());
+            assertEquals(3, connection.packets.size(), "Expected the original open, inventory snapshot query and marker");
+            assertEquals(-1, click(1).slotNum());
             var marker = assertInstanceOf(ServerboundClientCommandPacket.class, connection.packets.getLast());
             assertEquals(ServerboundClientCommandPacket.Action.REQUEST_STATS, marker.getAction());
             var inventory = player.inventoryMenu;

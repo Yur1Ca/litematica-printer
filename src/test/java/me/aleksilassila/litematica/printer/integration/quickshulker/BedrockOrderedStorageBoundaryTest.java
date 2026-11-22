@@ -18,7 +18,6 @@ import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.QuickShulkerBridge;
 import me.aleksilassila.litematica.printer.utils.mods.ShulkerUtils;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -43,14 +42,10 @@ class BedrockOrderedStorageBoundaryTest {
         final Level level = allocate(Level.class);
         final IConfigOptionListEntry oldMode = Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue();
         final int oldCloseScreen = ModLoadUtils.closeScreen;
-        final Object oldShulkerClient;
         final BedrockEngine bedrock;
 
         Fixture() throws Exception {
             super();
-            Class.forName(ShulkerUtils.class.getName());
-            oldShulkerClient = get(null, ShulkerUtils.class, "client");
-            staticClient(client);
             ShulkerUtils.clearOpenAttempt();
             ModLoadUtils.closeScreen = 0;
             Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(QuickShulkerModeType.CLICK_SLOT);
@@ -93,17 +88,8 @@ class BedrockOrderedStorageBoundaryTest {
             return (RestoreSession<OrderedStorageEntry>) get(storage, OrderedStorageController.class, "restoreSession");
         }
 
-        @SuppressWarnings("removal") static void staticClient(Object client) throws Exception {
-            var access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-            access.setAccessible(true);
-            var unsafe = (sun.misc.Unsafe) access.get(null);
-            var field = ShulkerUtils.class.getDeclaredField("client");
-            unsafe.putObject(unsafe.staticFieldBase(field), unsafe.staticFieldOffset(field), client);
-        }
-
         @Override public void close() throws Exception {
             ShulkerUtils.clearOpenAttempt();
-            staticClient(oldShulkerClient);
             Configs.Placement.QUICK_SHULKER_MODE.setOptionListValue(oldMode);
             ModLoadUtils.closeScreen = oldCloseScreen;
             super.close();

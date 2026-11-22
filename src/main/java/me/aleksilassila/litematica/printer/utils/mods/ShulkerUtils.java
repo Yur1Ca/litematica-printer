@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.kyrptonaught.quickshulker.client.ClientUtil;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import me.aleksilassila.litematica.printer.integration.quickshulker.QuickShulkerClicks;
@@ -17,7 +18,6 @@ import me.aleksilassila.litematica.printer.integration.quickshulker.InventoryRec
 
 @SuppressWarnings({"DataFlowIssue", "SpellCheckingInspection"})
 public class ShulkerUtils {
-    static final Minecraft client = Minecraft.getInstance();
     private static boolean apiFailureLogged;
     private static final ShulkerCursorRecovery recovery = new ShulkerCursorRecovery();
     private static net.minecraft.world.inventory.AbstractContainerMenu recoveryMenu;
@@ -26,7 +26,8 @@ public class ShulkerUtils {
     private static InventoryRecoveryFence.Ticket recoveryFence;
 
     public static boolean openShulker(ItemStack stack, int shulkerBoxSlot) {
-        if (client.player == null || client.gameMode == null || recovery.active()
+        var client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.gameMode == null || recovery.active()
                 || client.player.containerMenu != client.player.inventoryMenu
                 || !client.player.containerMenu.getCarried().isEmpty()) {
             return false;
@@ -87,7 +88,9 @@ public class ShulkerUtils {
 
     public static void tickRecovery() {
         if (!recovery.active()) return;
-        if (client == null || client.player == null || client.getConnection() != recoveryConnection
+        var client = Minecraft.getInstance();
+        var connection = client == null || client.player == null ? null : client.getConnection();
+        if (connection == null || connection != recoveryConnection
                 || client.player.inventoryMenu != recoveryMenu) { clearOpenAttempt(); return; }
         var menu = client.player.containerMenu;
         if (menu != recoveryMenu) {
@@ -100,7 +103,7 @@ public class ShulkerUtils {
         if (requestedMenu != menu || recoveryFence == null || recoveryFence.invalidated()) {
             requestedMenu = menu;
             QuickShulkerClicks.requestFullSync(menu);
-            requestRecoveryFence();
+            requestRecoveryFence(connection);
             return;
         }
         if (!recoveryFence.complete()) return;
@@ -111,12 +114,11 @@ public class ShulkerUtils {
             QuickShulkerDiagnostics.log("cursor-recovery slot=" + recovery.slot());
             recovery.markReturnSent();
             QuickShulkerClicks.sendWithFullSync(menu, recovery.slot(), 0, ContainerInput.PICKUP);
-            requestRecoveryFence();
+            requestRecoveryFence(connection);
         }
     }
 
-    private static void requestRecoveryFence() {
-        var connection = client.getConnection();
+    private static void requestRecoveryFence(ClientPacketListener connection) {
         recoveryFence = InventoryRecoveryFence.prepare(connection.getConnection());
         connection.send(recoveryFence.packet());
     }

@@ -47,10 +47,54 @@ import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.Bedro
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Runs the water workflow and scheduler against real block states, with only the client boundary replaced. */
-class WaterSupportRegressionTest {
+public class WaterSupportRegressionTest {
     private static final BlockPos POS = new BlockPos(0, 64, 0);
 
-    @BeforeAll static void bootstrapWater() { bootstrap(); }
+    @BeforeAll public static void bootstrapWater() { bootstrap(); }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void naturalSourceGetsOneFluidUpdateBeforeIce(boolean sourceAppears) throws Exception {
+        try (var f = new WaterFixture()) {
+            var source = Blocks.WATER.defaultBlockState();
+            var flow = source.setValue(BlockStateProperties.LEVEL, 1);
+            f.level.blocks.put(POS.north(), source);
+            f.level.blocks.put(POS.east(), source);
+            f.level.blocks.put(POS, flow);
+            assertSame(PrintTaskBuildResult.SKIP, f.build(POS));
+            for (long tick = 1; tick <= 5; tick++) {
+                f.observe(POS, tick, sourceAppears ? source : flow);
+                if (sourceAppears) {
+                    assertSame(PrintTaskBuildResult.PASS, f.build(POS));
+                    return;
+                }
+                assertSame(PrintTaskBuildResult.SKIP, f.build(POS));
+            }
+            for (long tick : new long[]{6, 7, 25}) {
+                f.observe(POS, tick, flow);
+                assertTrue(f.build(POS).hasAction(), "Repeated wakes must not restart the wait for natural water");
+            }
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"flowBelow", "closedFace", "diagonal"})
+    void waterThatCannotRegenerateStillGetsIceImmediately(String obstruction) throws Exception {
+        try (var f = new WaterFixture()) {
+            var source = Blocks.WATER.defaultBlockState();
+            var flow = source.setValue(BlockStateProperties.LEVEL, 1);
+            f.level.blocks.put(POS, flow);
+            f.level.blocks.put(POS.north(), source);
+            switch (obstruction) {
+                case "flowBelow" -> {
+                    f.level.blocks.put(POS.east(), source);
+                    f.level.blocks.put(POS.below(), flow);
+                }
+                case "closedFace" -> f.level.blocks.put(POS.east(),
+                        Blocks.MANGROVE_ROOTS.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true));
+                case "diagonal" -> f.level.blocks.put(POS.north().east(), source);
+            }
+            assertTrue(f.build(POS).hasAction());
+        }
+    }
 
     @Test void unsupportedWaterloggedTargetPrintsNormallyWithoutKeepingAWaterTask() throws Exception {
         try (var f = new WaterFixture()) {
@@ -221,6 +265,7 @@ class WaterSupportRegressionTest {
             var placed = f.build(POS);
             assertIceAction(placed);
             f.workflows.onActionQueued(placed.actionHandle(), f.context(POS), placed.action());
+            placed.actionHandle().onSuccess(f.context(POS), placed.action());
             f.level.blocks.put(POS, Blocks.ICE.defaultBlockState());
             f.level.blocks.put(POS.below(), Blocks.SCAFFOLDING.defaultBlockState());
             f.workflows.wake(POS);
@@ -301,6 +346,7 @@ class WaterSupportRegressionTest {
     }
 
     static class WaterPlayer extends TestPlayer {
+        @Override public double blockInteractionRange() { return 4.5D; }
         @Override public float getDestroySpeed(BlockState state) { return 1.0F; }
         @Override public boolean hasCorrectToolForDrops(BlockState state) { return true; }
         @Override public boolean blockActionRestricted(Level level, BlockPos pos, GameType mode) { return false; }
@@ -315,7 +361,7 @@ class WaterSupportRegressionTest {
         }
     }
 
-    static class WaterFixture extends Fixture {
+    public static class WaterFixture extends Fixture {
         final boolean oldIce = Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue();
         final boolean oldSkip = Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue();
         final Holder<Fluid> water = BuiltInRegistries.FLUID.wrapAsHolder(Fluids.WATER);
@@ -330,9 +376,9 @@ class WaterSupportRegressionTest {
         final WaterGameMode mining;
         final BlockState required = Blocks.OAK_SLAB.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true);
         long now;
-        final PrintWorkflowScheduler workflows = new PrintWorkflowScheduler(() -> now, block -> null);
+        public final PrintWorkflowScheduler workflows = new PrintWorkflowScheduler(() -> now, block -> null);
 
-        WaterFixture() throws Exception {
+        public WaterFixture() throws Exception {
             Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(true);
             Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(false);
             bindTags(water, List.of(FluidTags.WATER));
@@ -362,9 +408,17 @@ class WaterSupportRegressionTest {
             set(level, ClientLevel.class, "environmentAttributes", EnvironmentAttributeSystem.builder()
                     .addConstantLayer(EnvironmentAttributes.WATER_EVAPORATES, value -> evaporates).build());
         }
-        SchematicBlockContext context(BlockPos pos) { return new SchematicBlockContext(client, level, schematic, pos); }
-        PrintTaskBuildResult build(BlockPos pos) { return workflows.buildAction(context(pos)); }
-        <T> void bindTags(Holder<T> holder, Collection<TagKey<T>> tags) throws Exception {
+        public SchematicBlockContext context(BlockPos pos) { return new SchematicBlockContext(client, level, schematic, pos); }
+        public PrintTaskBuildResult build(BlockPos pos) { return workflows.buildAction(context(pos)); }
+        public void setSchematicTarget(BlockPos pos, BlockState state) { schematic.states.put(pos, state); }
+        public void setCurrentState(BlockPos pos, BlockState state) { level.blocks.put(pos, state); }
+        public void observe(BlockPos pos, long tick, BlockState state) {
+            now = tick;
+            setCurrentState(pos, state);
+            workflows.wake(pos);
+            workflows.tick(level, schematic);
+        }
+        static <T> void bindTags(Holder<T> holder, Collection<TagKey<T>> tags) throws Exception {
             var method = Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
             method.setAccessible(true);
             method.invoke(holder, tags);

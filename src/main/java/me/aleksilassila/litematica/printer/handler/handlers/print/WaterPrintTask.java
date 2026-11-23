@@ -16,13 +16,25 @@ import net.minecraft.core.Direction;
 //$$ import net.minecraft.tags.BlockTags;
 //#endif
 import net.minecraft.world.attribute.EnvironmentAttributes;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.IceBlock;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.level.block.state.properties.SlabType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 /** Owns one water/ice workflow independently from the full selection scan. */
@@ -36,9 +48,13 @@ public final class WaterPrintTask implements PrintTask {
     private WaterTaskStage stage = WaterTaskStage.RESERVED;
     private long stageSinceTick;
     private long retryAtTick;
+    private long naturalSourceDeadline = Long.MIN_VALUE;
     private long actionGeneration;
     private boolean started;
     private long queuedActionToken = -1L;
+    private @Nullable BooleanSupplier warehouseIcePending;
+    private int rejectedIceNonce;
+    private @Nullable BlockState rejectedIceGoal;
 
     private WaterPrintTask(BlockPos pos, LongSupplier tickClock) {
         this.pos = pos.immutable();
@@ -103,6 +119,10 @@ public final class WaterPrintTask implements PrintTask {
 
     @Override
     public long nextCheckTick() {
+        if (this.stage == WaterTaskStage.WAIT_NATURAL_SOURCE) return this.naturalSourceDeadline;
+        if (this.warehouseIcePending != null && !this.warehouseIcePending.getAsBoolean()) {
+            return this.tickClock.getAsLong();
+        }
         if (this.stage == WaterTaskStage.RETRY_WAIT || this.stage == WaterTaskStage.WAIT_SUPPORT
                 || this.stage == WaterTaskStage.WAIT_FINAL_CHANGE) {
             return this.retryAtTick;
@@ -120,7 +140,7 @@ public final class WaterPrintTask implements PrintTask {
             case PLACE_ICE -> this.buildIcePlacement(context);
             case BREAK_ICE -> this.breakBlockForWorkflow(context, true);
             case PLACE_FINAL_BLOCK -> PrintTaskBuildResult.PASS;
-            case RESERVED, WAIT_SUPPORT, WAIT_REMOVE_CONFIRM, WAIT_ICE_CONFIRM,
+            case RESERVED, WAIT_SUPPORT, WAIT_REMOVE_CONFIRM, WAIT_NATURAL_SOURCE, WAIT_ICE_CONFIRM,
                     WAIT_WATER_CONFIRM, WAIT_FINAL_CONFIRM, WAIT_FINAL_CHANGE, RETRY_WAIT -> PrintTaskBuildResult.SKIP;
         };
     }
@@ -131,7 +151,7 @@ public final class WaterPrintTask implements PrintTask {
         if (this.stage != WaterTaskStage.PLACE_FINAL_BLOCK) {
             return null;
         }
-        return this.newActionHandle(WaterTaskStage.PLACE_FINAL_BLOCK, WaterTaskStage.WAIT_FINAL_CONFIRM);
+        return new FinalPlacement();
     }
 
     private PrintTaskBuildResult buildIcePlacement(SchematicBlockContext context) {
@@ -139,12 +159,12 @@ public final class WaterPrintTask implements PrintTask {
                 || !canStartIceWaterWorkflow(context.level, context.blockPos)) {
             return PrintTaskBuildResult.SKIP;
         }
+        if (this.awaitNaturalSource(context.level, context.currentState, context.requiredState)) {
+            this.transition(WaterTaskStage.WAIT_NATURAL_SOURCE);
+            return PrintTaskBuildResult.SKIP;
+        }
         Action action = new Action().setItem(Items.ICE).setRequiresSupport();
-        PrintTaskAction handle = this.newActionHandle(
-                WaterTaskStage.PLACE_ICE,
-                WaterTaskStage.WAIT_ICE_CONFIRM
-        );
-        return PrintTaskBuildResult.action(action, handle);
+        return PrintTaskBuildResult.action(action, new IcePlacement());
     }
 
     private PrintTaskBuildResult breakBlockForWorkflow(SchematicBlockContext context, boolean ice) {
@@ -176,17 +196,19 @@ public final class WaterPrintTask implements PrintTask {
         return PrintTaskBuildResult.SKIP;
     }
 
-    private PrintTaskAction newActionHandle(WaterTaskStage expected, WaterTaskStage success) {
-        long token = ++this.actionGeneration;
-        return new WaterTaskAction(token, expected, success);
-    }
-
     private void reconcile(ClientLevel level, BlockState requiredState, BlockState currentState) {
-        if (this.stage == WaterTaskStage.COMPLETE) {
+        // A queued click or an outstanding warehouse request can still replace a regenerated source.
+        if (this.stage == WaterTaskStage.COMPLETE
+                || this.stage == WaterTaskStage.WAIT_ICE_CONFIRM && (this.queuedActionToken >= 0L
+                    || this.warehouseIcePending != null && this.warehouseIcePending.getAsBoolean())) {
             return;
         }
+        this.warehouseIcePending = null;
         long now = this.tickClock.getAsLong();
         WaterStageResolver.Observation observation = observe(level, requiredState, currentState);
+        if (this.stage == WaterTaskStage.WAIT_NATURAL_SOURCE
+                && observation == WaterStageResolver.Observation.REPLACEABLE_WITH_SUPPORT
+                && this.awaitNaturalSource(level, currentState, requiredState)) return;
         this.transition(WaterStageResolver.resolve(
                 this.stage,
                 observation,
@@ -228,6 +250,36 @@ public final class WaterPrintTask implements PrintTask {
         this.transition(WaterTaskStage.RETRY_WAIT);
     }
 
+    /** Give a naturally forming source one fluid update before spending ice. Server rules may disable it. */
+    @SuppressWarnings("deprecation")
+    private boolean awaitNaturalSource(ClientLevel level, BlockState current, BlockState required) {
+        long now = this.tickClock.getAsLong();
+        if ((this.naturalSourceDeadline != Long.MIN_VALUE && now >= this.naturalSourceDeadline)
+                || (!current.isAir() && !current.is(Blocks.WATER))
+                || (required.is(Blocks.WATER) && !required.getFluidState().isSource())) return false;
+        BlockState below = level.getBlockState(this.pos.below());
+        if (!below.isSolid() && !isWaterSource(below)) return false;
+        int sources = 0;
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            BlockPos neighbour = this.pos.relative(side);
+            BlockState state = level.getBlockState(neighbour);
+            if (!isWaterSource(state) || Shapes.mergedFaceOccludes(current.getCollisionShape(level, this.pos),
+                    state.getCollisionShape(level, neighbour), side)) continue;
+            if (++sources == 2) {
+                if (this.naturalSourceDeadline == Long.MIN_VALUE) {
+                    this.naturalSourceDeadline = now + Fluids.WATER.getTickDelay(level) + 1;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isWaterSource(BlockState state) {
+        var fluid = state.getFluidState();
+        return fluid.isSource() && fluid.getType().isSame(Fluids.WATER);
+    }
+
     private void transition(WaterTaskStage next) {
         if (this.stage == next) {
             return;
@@ -241,6 +293,10 @@ public final class WaterPrintTask implements PrintTask {
 
     private boolean isStageStalled(ClientLevel level, BlockState currentState) {
         long elapsed = this.tickClock.getAsLong() - this.stageSinceTick;
+        if (this.stage == WaterTaskStage.WAIT_ICE_CONFIRM) {
+            // Placing ice takes the same time in air and in flow; neither cell is being mined.
+            return elapsed > MIN_STALL_TICKS;
+        }
         return elapsed > getStallLimit(level, currentState);
     }
 
@@ -328,13 +384,51 @@ public final class WaterPrintTask implements PrintTask {
         return BlockStateUtils.isCorrectWaterLevel(requiredState, currentState);
     }
 
-    private final class WaterTaskAction implements PrintTaskAction {
-        private final long token;
+    static @Nullable BooleanSupplier collisionCheck(@Nullable PrintTaskAction handle, SchematicBlockContext context,
+            Action action, Direction side, Item[] items, @Nullable Vec3 protocolHit, boolean warehouse) {
+        if (handle instanceof IcePlacement) {
+            return () -> unobstructed(context, Blocks.ICE.defaultBlockState());
+        }
+        BlockState goal = context.requiredState;
+        if (!(handle instanceof FinalPlacement) || action.getClass() != Action.class
+                || items.length != 1 || items[0] != goal.getBlock().asItem()) return null;
+        // Only these vanilla placement shapes are determined by the click, look and immediate neighbours.
+        var block = goal.getBlock();
+        if (block.getClass() != StairBlock.class && block.getClass() != SlabBlock.class) return null;
+        if (goal.hasProperty(SlabBlock.TYPE) && goal.getValue(SlabBlock.TYPE) == SlabType.DOUBLE) return null;
+        if (warehouse && protocolHit != null) return () -> unobstructed(context, goal);
+        return () -> {
+            var player = context.client.player;
+            if (player == null) return false;
+            // A stair or slab lies within its cell. Resolve its exact shape only if an entity occupies the cell.
+            if (unobstructed(context, Blocks.ICE.defaultBlockState())) return true;
+            // Both vanilla blocks only read the face and fractional hit Y. Rotation changes horizontal offsets only.
+            Vec3 hit = protocolHit != null ? protocolHit : Vec3.atCenterOf(context.blockPos)
+                    .add(0, action.getSides().get(side).y * 0.5, 0);
+            var placement = new BlockPlaceContext(player, InteractionHand.MAIN_HAND, items[0].getDefaultInstance(),
+                    new BlockHitResult(hit, side.getOpposite(), context.blockPos, false)) {
+                @Override public Direction getHorizontalDirection() {
+                    return action.getPlayerLook() == null ? super.getHorizontalDirection()
+                            : Direction.fromYRot(action.getPlayerLook().yaw);
+                }
+            };
+            if (!context.blockPos.equals(placement.getClickedPos())) return true;
+            BlockState actual = block.getStateForPlacement(placement);
+            // An ordinary server may or may not decode the precision hit. Leave ambiguous states to it.
+            return actual == null || protocolHit != null && actual != goal || unobstructed(context, actual);
+        };
+    }
+
+    private static boolean unobstructed(SchematicBlockContext context, BlockState state) {
+        return context.level.isUnobstructed(state, context.blockPos, CollisionContext.placementContext(context.client.player));
+    }
+
+    private class WaterTaskAction implements PrintTaskAction {
+        final long token = ++actionGeneration;
         private final WaterTaskStage expected;
         private final WaterTaskStage success;
 
-        private WaterTaskAction(long token, WaterTaskStage expected, WaterTaskStage success) {
-            this.token = token;
+        private WaterTaskAction(WaterTaskStage expected, WaterTaskStage success) {
             this.expected = expected;
             this.success = success;
         }
@@ -379,7 +473,7 @@ public final class WaterPrintTask implements PrintTask {
             this.retryAfterFailure(context);
         }
 
-        private void retryAfterFailure(SchematicBlockContext context) {
+        final void retryAfterFailure(SchematicBlockContext context) {
             if (queuedActionToken == this.token) queuedActionToken = -1L;
             if (this.token != actionGeneration) return;
             // Deferred callbacks hold an old context; preserve a final block already present in the world.
@@ -389,6 +483,80 @@ public final class WaterPrintTask implements PrintTask {
                 return;
             }
             retrySoon();
+        }
+    }
+
+    final class FinalPlacement extends WaterTaskAction {
+        private FinalPlacement() {
+            super(WaterTaskStage.PLACE_FINAL_BLOCK, WaterTaskStage.WAIT_FINAL_CONFIRM);
+        }
+
+        int rejectedIceNonce(SchematicBlockContext context) {
+            return rejectedIceNonce > 0 && context.requiredState.equals(rejectedIceGoal) && canSend(context)
+                    ? rejectedIceNonce : 0;
+        }
+
+        boolean canSend(SchematicBlockContext context) {
+            return this.token == actionGeneration && context.client.level == context.level
+                    && Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()
+                    && (stage == WaterTaskStage.PLACE_FINAL_BLOCK || stage == WaterTaskStage.WAIT_FINAL_CONFIRM)
+                    && isWaterloggedTarget(context.requiredState)
+                    && !shouldSkipWaterloggedTarget(context.requiredState)
+                    && context.schematic.getBlockState(pos).equals(context.requiredState)
+                    && BlockStateUtils.isCorrectWaterLevel(context.requiredState, context.level.getBlockState(pos));
+        }
+
+        @Override
+        public void onSuccess(SchematicBlockContext context, Action action) {
+            super.onSuccess(context, action);
+            if (this.token == actionGeneration) rejectedIceNonce = 0;
+        }
+
+        void onRejected(SchematicBlockContext context) {
+            if (this.token == actionGeneration && stage == WaterTaskStage.WAIT_FINAL_CONFIRM) {
+                this.retryAfterFailure(context);
+                reconcile(context.level, context.requiredState, context.level.getBlockState(pos));
+            }
+        }
+    }
+
+    final class IcePlacement extends WaterTaskAction {
+        private IcePlacement() {
+            super(WaterTaskStage.PLACE_ICE, WaterTaskStage.WAIT_ICE_CONFIRM);
+        }
+
+        boolean canSend(SchematicBlockContext context) {
+            return this.token == actionGeneration && context.client.level == context.level
+                    && Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()
+                    && (stage == WaterTaskStage.PLACE_ICE || stage == WaterTaskStage.WAIT_ICE_CONFIRM)
+                    && !shouldSkipWaterloggedTarget(context.requiredState)
+                    && context.schematic.getBlockState(pos).equals(context.requiredState)
+                    && observe(context.level, context.requiredState, context.level.getBlockState(pos))
+                            == WaterStageResolver.Observation.REPLACEABLE_WITH_SUPPORT
+                    && !awaitNaturalSource(context.level, context.level.getBlockState(pos), context.requiredState);
+        }
+
+        @Override
+        public void onSuccess(SchematicBlockContext context, Action action) {
+            super.onSuccess(context, action);
+            if (this.token == actionGeneration && stage == WaterTaskStage.WAIT_ICE_CONFIRM) {
+                rejectedIceNonce = 0;
+                stageSinceTick = tickClock.getAsLong();
+                reconcile(context.level, context.requiredState, context.level.getBlockState(pos));
+            }
+        }
+
+        void onRejected(SchematicBlockContext context, int nonce) {
+            if (this.token == actionGeneration && stage == WaterTaskStage.WAIT_ICE_CONFIRM) {
+                warehouseIcePending = null;
+                rejectedIceNonce = nonce;
+                rejectedIceGoal = context.requiredState;
+                retrySoon();
+            }
+        }
+
+        void awaitWarehouseResult(@Nullable BooleanSupplier pendingRequest) {
+            if (this.token == actionGeneration) warehouseIcePending = pendingRequest;
         }
     }
 }

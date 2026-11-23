@@ -6,12 +6,17 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Predicate;
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.core.runtime.FeatureLifecycle;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
 import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.handlers.print.FallingPlacementTracker;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskBuildResult;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintWorkflowScheduler;
 import me.aleksilassila.litematica.printer.integration.inventory.InventoryProvider;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequest;
 import me.aleksilassila.litematica.printer.integration.inventory.MaterialRequestCoordinator;
@@ -21,6 +26,7 @@ import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
+import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -30,6 +36,8 @@ import net.minecraft.client.player.ClientInput;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.InteractionHand;
@@ -44,6 +52,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeAll;
@@ -106,6 +116,60 @@ class WarehouseInventoryFallbackRegressionTest {
             assertEquals(1, f.manager.warehouseSends);
             assertTrue(f.dispatch.hits.isEmpty());
             assertEquals(0, f.legacyRequests);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"unchanged", "schematicReplaced", "sourceLost"})
+    void queuedWarehouseStairRequiresTheSameSchematicAndSourceAtDispatch(String change) throws Exception {
+        var holder = SchematicWorldHandler.INSTANCE;
+        var previousWorld = get(holder, SchematicWorldHandler.class, "world");
+        var water = BuiltInRegistries.FLUID.wrapAsHolder(Fluids.WATER);
+        var previousTags = water.tags().toList();
+        boolean oldIce = Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue();
+        boolean oldSkip = Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue();
+        var stair = Blocks.QUARTZ_STAIRS.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true)
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST);
+        try (var f = new ClickFixture(stair)) {
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(true);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(false);
+            WaterSupportRegressionTest.WaterFixture.bindTags(water, List.of(FluidTags.WATER));
+            set(holder, SchematicWorldHandler.class, "world", f.schematic);
+            f.level.blocks.put(TARGET, Blocks.WATER.defaultBlockState());
+            var context = new SchematicBlockContext(f.client, f.level, f.schematic, TARGET);
+            var workflows = new PrintWorkflowScheduler(() -> 1L, block -> null);
+            assertSame(PrintTaskBuildResult.PASS, workflows.buildAction(context));
+            var action = new Guides().buildAction(context).orElseThrow().setNeedWaitModifyLook();
+            var handle = workflows.createActionHandle(context, action);
+            assertNotNull(handle);
+            var life = new FeatureLifecycle();
+            life.observe("print", true);
+            var broker = new ActionBroker(() -> RuntimeEpoch.INITIAL, () -> life, f.manager);
+            assertEquals(PrintPlacementResult.TaskEvent.QUEUED, f.executorFor(broker).execute(context, action, handle).taskEvent());
+            workflows.onActionQueued(handle, context, action);
+            assertEquals(0, f.manager.warehouseSends);
+
+            if (change.equals("schematicReplaced")) {
+                var replacement = f.allocate(WaterSupportRegressionTest.Schematic.class);
+                replacement.states = Map.of(TARGET, stair);
+                set(holder, SchematicWorldHandler.class, "world", replacement);
+            } else if (change.equals("sourceLost")) {
+                f.level.blocks.put(TARGET, Blocks.AIR.defaultBlockState());
+            }
+            PlayerLook look = broker.getLook();
+            assertNotNull(look);
+            f.client.player.setYRot(look.yaw);
+            f.client.player.setXRot(look.pitch);
+            boolean expectedSend = change.equals("unchanged");
+            assertEquals(expectedSend ? ActionPort.SendResult.SENT : ActionPort.SendResult.NO_QUEUED_ACTION,
+                    broker.sendQueue(f.client.player));
+            assertEquals(expectedSend ? 1 : 0, f.manager.warehouseSends);
+            assertEquals(expectedSend, f.runtime.hudStats().isPrintPlacementPending(TARGET));
+            assertTrue(f.dispatch.hits.isEmpty());
+        } finally {
+            set(holder, SchematicWorldHandler.class, "world", previousWorld);
+            WaterSupportRegressionTest.WaterFixture.bindTags(water, previousTags);
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(oldIce);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(oldSkip);
         }
     }
 
@@ -237,7 +301,7 @@ class WarehouseInventoryFallbackRegressionTest {
             return true;
         }
     }
-    private static class SneakPlayer extends TestPlayer {
+    private static class SneakPlayer extends WaterSupportRegressionTest.WaterPlayer {
         boolean shift;
         @Override public boolean isShiftKeyDown() { return this.shift; }
         @Override public void setShiftKeyDown(boolean shift) { this.shift = shift; }
@@ -337,8 +401,12 @@ class WarehouseInventoryFallbackRegressionTest {
                             () -> me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL,
                             () -> level, new me.aleksilassila.litematica.printer.handler.scan.ScanCache()));
             setupWarehouse();
-            executor = new PrintPlacementExecutor(port, new CooldownUtils(), runtime.inventorySwitchGuard(),
-                    runtime.hudStats(), new MissingMaterialTracker(), new LitematicaAdapter(), new FallingPlacementTracker(), requests);
+            executor = executorFor(port);
+        }
+
+        PrintPlacementExecutor executorFor(ActionPort port) {
+            return new PrintPlacementExecutor(port, new CooldownUtils(), runtime.inventorySwitchGuard(), runtime.hudStats(),
+                    new MissingMaterialTracker(), new LitematicaAdapter(), new FallingPlacementTracker(), runtime.materialRequests());
         }
 
         PrintPlacementResult execute() {

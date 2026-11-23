@@ -1,7 +1,11 @@
 //#if MC == 260100
 package me.aleksilassila.litematica.printer.integration.quickshulker;
 
+import me.aleksilassila.litematica.printer.core.runtime.FeatureLifecycle;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
+import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.printer.action.PlacementPolicy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -27,6 +31,7 @@ class VoidWarehousePlacementQueueTest {
         BlockPos sentTarget;
         BlockHitResult sentHit;
         int sentBeforeState;
+        int sentRejectedIceNonce;
         int stateSends;
         BlockState sentDesiredState;
         Item expectedItem = Items.STONE;
@@ -39,6 +44,7 @@ class VoidWarehousePlacementQueueTest {
             sentTarget = target;
             sentHit = hit;
             sentBeforeState = state;
+            sentRejectedIceNonce = this.queuedWarehouseRejectedIceNonce();
             return accepted;
         }
 
@@ -50,6 +56,7 @@ class VoidWarehousePlacementQueueTest {
             sentHit = physicalHit;
             sentBeforeState = state;
             sentDesiredState = desiredState;
+            sentRejectedIceNonce = this.queuedWarehouseRejectedIceNonce();
             return accepted;
         }
     }
@@ -154,12 +161,50 @@ class VoidWarehousePlacementQueueTest {
         }
     }
 
+    @Test void rejectedIceNonceBelongsOnlyToTheMarkedWarehouseClick() throws Exception {
+        try (var fixture = new MaterialSelectionFixture()) {
+            fixture.player.input = new net.minecraft.client.player.ClientInput();
+            var queue = new Queue();
+            var lifecycle = new FeatureLifecycle();
+            lifecycle.observe("print", true);
+            var broker = new ActionBroker(() -> RuntimeEpoch.INITIAL, () -> lifecycle, queue);
+            var target = BlockPos.ZERO.above();
+            var items = new Item[]{Items.STONE};
+            var source = ActionPort.ActionSource.PRINT;
+
+            assertFalse(broker.setWarehouseRejectedIceNonce(17));
+            assertTrue(broker.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 1, items, source));
+            assertFalse(broker.setWarehouseRejectedIceNonce(17));
+            assertTrue(broker.setWarehouseStatePlacement(target, 0, Blocks.STONE.defaultBlockState()));
+            assertFalse(broker.setWarehouseRejectedIceNonce(0));
+            assertTrue(broker.setWarehouseRejectedIceNonce(17));
+            assertFalse(broker.setWarehouseRejectedIceNonce(18));
+            assertEquals(ActionPort.SendResult.SENT, broker.sendQueue(fixture.player));
+            assertEquals(17, queue.sentRejectedIceNonce);
+
+            assertTrue(broker.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 1, items, source));
+            assertTrue(broker.setWarehousePlacement(target, 0));
+            assertEquals(ActionPort.SendResult.SENT, broker.sendQueue(fixture.player));
+            assertEquals(0, queue.sentRejectedIceNonce);
+
+            assertTrue(broker.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 1, items, source));
+            assertTrue(broker.setWarehousePlacement(target, 0));
+            assertTrue(broker.setWarehouseRejectedIceNonce(19));
+            broker.cancelQueue();
+            assertTrue(broker.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 1, items, source));
+            assertTrue(broker.setWarehouseStatePlacement(target, 0, Blocks.STONE.defaultBlockState()));
+            assertEquals(ActionPort.SendResult.SENT, broker.sendQueue(fixture.player));
+            assertEquals(0, queue.sentRejectedIceNonce);
+        }
+    }
+
     @Test void incompatibleQueuedActionsCannotBeMarkedForWarehouseDispatch() throws Exception {
         try (var fixture = new MaterialSelectionFixture()) {
             var queue = new Queue();
             assertFalse(queue.setWarehousePlacement(BlockPos.ZERO, 0));
             queue.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 2, new Item[]{Items.STONE});
             assertFalse(queue.setWarehousePlacement(BlockPos.ZERO.above(), 0));
+            assertFalse(queue.setWarehouseRejectedIceNonce(17));
             queue.cancelQueue();
             queue.queueClick(BlockPos.ZERO, Direction.UP, Vec3.ZERO, false, 1, new Item[]{Items.WATER_BUCKET});
             assertFalse(queue.setWarehousePlacement(BlockPos.ZERO.above(), 0));

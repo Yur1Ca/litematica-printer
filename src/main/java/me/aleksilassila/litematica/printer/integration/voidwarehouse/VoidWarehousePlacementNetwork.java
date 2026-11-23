@@ -35,6 +35,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -119,20 +122,33 @@ public final class VoidWarehousePlacementNetwork {
     }
 
     public static boolean canRequest(Item[] candidates, BlockPos target) {
-        return isAvailable() && STATE.canRequest(candidateIds(candidates), target, tick);
+        return canRequest(candidates, target, 0);
+    }
+
+    public static boolean canRequest(Item[] candidates, BlockPos target, int rejectedIceNonce) {
+        return isAvailable() && STATE.canRequest(candidateIds(candidates), target, tick, rejectedIceNonce);
     }
 
     /** Temporary target rejection pauses direct placement without authorizing inventory restocking. */
     public static boolean isTargetAvailable(BlockPos target) {
-        return STATE.isTargetAvailable(target, tick);
+        return isTargetAvailable(target, 0);
+    }
+
+    public static boolean isTargetAvailable(BlockPos target, int rejectedIceNonce) {
+        return STATE.isTargetAvailable(target, tick, rejectedIceNonce);
     }
 
     /** target is the position that will change; hit is the vanilla support-block click. */
     public static boolean requestPlace(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) {
+        return requestPlace(candidates, target, hit, expectedStateId, 0);
+    }
+
+    public static boolean requestPlace(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId,
+                                       int rejectedIceNonce) {
         if (hit == null || expectedStateId < 0 || !isAvailable() || target == null) return false;
         List<String> ids = STATE.eligibleCandidates(candidateIds(candidates), tick);
         BlockPos immutableTarget = target.immutable();
-        int nonce = STATE.beginRequest(ids, immutableTarget, tick);
+        int nonce = STATE.beginRequest(ids, immutableTarget, tick, rejectedIceNonce);
         if (nonce == 0) return false;
         try {
             String dimensionId = Minecraft.getInstance().level.dimension().identifier().toString();
@@ -150,12 +166,17 @@ public final class VoidWarehousePlacementNetwork {
     /** Physical hit remains geometry; required properties are only a server-validated request. */
     public static boolean requestStatePlace(Item[] candidates, BlockPos target, BlockHitResult physicalHit,
                                            int expectedStateId, BlockState requiredState) {
+        return requestStatePlace(candidates, target, physicalHit, expectedStateId, requiredState, 0);
+    }
+
+    public static boolean requestStatePlace(Item[] candidates, BlockPos target, BlockHitResult physicalHit,
+                                           int expectedStateId, BlockState requiredState, int rejectedIceNonce) {
         if (physicalHit == null || target == null || expectedStateId < 0 || requiredState == null
                 || !isFinite(physicalHit.getLocation()) || !isStatePlacementSupported()) return false;
         StateRequestPlan plan = planStateRequest(STATE.eligibleCandidates(candidateIds(candidates), tick), requiredState);
         if (plan == null) return false;
         BlockPos immutableTarget = target.immutable();
-        int nonce = STATE.beginRequest(plan.candidates(), immutableTarget, tick);
+        int nonce = STATE.beginRequest(plan.candidates(), immutableTarget, tick, rejectedIceNonce);
         if (nonce == 0) return false;
         Minecraft client = Minecraft.getInstance();
         Object requestConnection = connection;
@@ -271,6 +292,15 @@ public final class VoidWarehousePlacementNetwork {
         return ensureSession() && STATE.isPending(target);
     }
 
+    /** Binds a rejection listener just after send and returns a client-thread check for that exact request. */
+    public static @Nullable BooleanSupplier onCurrentRequestRejected(BlockPos target, Runnable onRejected) {
+        return ensureSession() ? STATE.onCurrentRequestRejected(target, onRejected) : null;
+    }
+
+    public static @Nullable BooleanSupplier onIceRequestRejected(BlockPos target, IntConsumer onRejected) {
+        return ensureSession() ? STATE.onIceRequestRejected(target, onRejected) : null;
+    }
+
     /** A local stock fallback must not overtake an outstanding request or server backoff. */
     public static boolean canUseInventoryFallback(BlockPos target) {
         return isAvailable() && STATE.canUseInventoryFallback(target, tick);
@@ -347,16 +377,16 @@ public final class VoidWarehousePlacementNetwork {
         STATE.tick(tick);
         var request = STATE.pendingRequest(payload.nonce());
         if (request != null) {
-            DIAGNOSTICS.recordResult(payload.status(), request.sentAt(), tick);
-            trace("result:" + statusName(payload.status()), request.candidates(), request.target(),
+            DIAGNOSTICS.recordResult(payload.status(), request.sentAt, tick);
+            trace("result:" + statusName(payload.status()), request.candidates, request.target,
                     "nonce=" + payload.nonce());
         }
         STATE.receiveResult(payload.nonce(), payload.status(), tick);
         if (request != null && payload.status() == PrinterPlaceResultPayload.OK) {
-            BlockState placed = level.getBlockState(request.target());
+            BlockState placed = level.getBlockState(request.target);
             if (!placed.isAir()) {
                 var sound = placed.getSoundType();
-                level.playLocalSound(request.target(), sound.getPlaceSound(), SoundSource.BLOCKS,
+                level.playLocalSound(request.target, sound.getPlaceSound(), SoundSource.BLOCKS,
                         (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false);
             }
         }

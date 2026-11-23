@@ -141,6 +141,11 @@ public final class ActionBroker implements RuntimeComponent, ActionPort {
         return this.delegate.setWarehouseStatePlacement(target, expectedStateId, desiredState);
     }
 
+    @Override
+    public boolean setWarehouseRejectedIceNonce(int nonce) {
+        return this.activeTicket != null && this.delegate.setWarehouseRejectedIceNonce(nonce);
+    }
+
     public SendResult sendQueue(@Nullable LocalPlayer player) {
         if (this.activeTicket != null) {
             if (!this.activeTicket.canSend(this.epoch.get(), System.nanoTime())

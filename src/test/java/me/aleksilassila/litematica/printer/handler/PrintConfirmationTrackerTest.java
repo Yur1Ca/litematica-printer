@@ -25,6 +25,26 @@ class PrintConfirmationTrackerTest {
     }
 
     @Test
+    void aRejectionOnlyReleasesTheExactPendingAction() {
+        record Owner(long token) {}
+        var first = new Owner(1);
+        var second = new Owner(1);
+        var ice = Blocks.ICE.defaultBlockState();
+        this.tracker.track(POS, ice, 2L, 10, first);
+        this.tracker.track(POS, ice, 2L, 10, second);
+        this.tracker.discard(POS, first);
+        assertTrue(this.tracker.isPending(POS));
+        this.tracker.discard(POS, second);
+        assertFalse(this.tracker.isPending(POS));
+        assertEquals(PrintConfirmationTracker.Resolution.NOT_TRACKED, this.tracker.resolve(POS, ice));
+
+        this.tracker.track(POS, ice, 4L, 10);
+        this.tracker.discard(POS, second);
+        this.tracker.discard(POS, null);
+        assertTrue(this.tracker.isPending(POS));
+    }
+
+    @Test
     void localObservationCannotResolvePendingPlacement() {
         this.tracker.track(POS, Blocks.STONE.defaultBlockState(), 10L, 80);
 

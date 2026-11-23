@@ -39,13 +39,13 @@ final class WaterStageResolver {
         if (stage == WaterTaskStage.WAIT_FINAL_CONFIRM && !stalled) {
             return stage;
         }
+        if (observation == Observation.WATER_READY) {
+            return finalBlockRequired ? WaterTaskStage.PLACE_FINAL_BLOCK : WaterTaskStage.COMPLETE;
+        }
         if (stage == WaterTaskStage.WAIT_ICE_CONFIRM
                 && observation != Observation.ICE
                 && !stalled) {
             return stage;
-        }
-        if (observation == Observation.WATER_READY) {
-            return finalBlockRequired ? WaterTaskStage.PLACE_FINAL_BLOCK : WaterTaskStage.COMPLETE;
         }
         if (stage == WaterTaskStage.WAIT_WATER_CONFIRM && !stalled) {
             return stage;

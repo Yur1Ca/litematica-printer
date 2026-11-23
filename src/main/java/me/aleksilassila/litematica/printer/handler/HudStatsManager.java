@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
 import java.util.Iterator;
@@ -90,11 +91,20 @@ public final class HudStatsManager implements RuntimeComponent {
     }
 
     public void trackExpectedBlockState(Mode mode, BlockPos pos, BlockState expectedState) {
+        this.trackExpectedBlockState(mode, pos, expectedState, null);
+    }
+
+    public void trackExpectedBlockState(Mode mode, BlockPos pos, BlockState expectedState, @Nullable Object owner) {
         if (mode != Mode.PRINT || pos == null || expectedState == null) {
             return;
         }
         long now = this.tickClock.getAsLong();
-        this.printConfirmationTracker.track(pos, expectedState, now, DEFAULT_CONFIRM_TIMEOUT_TICKS);
+        this.printConfirmationTracker.track(pos, expectedState, now, DEFAULT_CONFIRM_TIMEOUT_TICKS, owner);
+    }
+
+    /** A late rejection must not discard another placement at the same coordinate. */
+    public void discardPrintPlacement(BlockPos pos, Object owner) {
+        this.printConfirmationTracker.discard(pos, owner);
     }
 
     public boolean isPrintPlacementPending(BlockPos pos) {

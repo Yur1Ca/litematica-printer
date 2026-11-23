@@ -3,11 +3,153 @@ package me.aleksilassila.litematica.printer.integration.voidwarehouse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class VoidWarehousePlacementStateTest {
     private static final List<String> STONE = List.of("minecraft:stone");
+
+    @Test
+    void onlyTheRejectedIceRequestAllowsOneFinalPlacementDuringItsBackoff() {
+        var state = new VoidWarehousePlacementState<String>();
+        enable(state);
+        var ice = List.of("minecraft:ice");
+        var stairs = List.of("minecraft:quartz_stairs");
+        var first = state.beginRequest(ice, "a", 0);
+        var other = state.beginRequest(ice, "b", 0);
+        var token = new AtomicInteger();
+        state.onIceRequestRejected("a", token::set);
+        state.receiveResult(first, 3, 1);
+        state.receiveResult(other, 3, 1);
+        assertEquals(first, token.get());
+        assertFalse(state.isTargetAvailable("a", 2));
+        assertTrue(state.isTargetAvailable("a", 2, first));
+        assertFalse(state.canUseInventoryFallback("a", 2));
+        assertEquals(0, state.beginRequest(stairs, "b", 2, first));
+        assertEquals(0, state.beginRequest(stairs, "a", 2, other));
+        assertEquals(0, state.beginRequest(ice, "a", 2));
+
+        int throttle = state.beginRequest(STONE, "c", 2);
+        state.receiveResult(throttle, 4, 3);
+        assertEquals(0, state.beginRequest(stairs, "a", 7, first));
+        int finish = state.beginRequest(stairs, "a", 8, first);
+        assertNotEquals(0, finish);
+        assertEquals(0, state.beginRequest(stairs, "a", 8, first));
+        state.receiveResult(finish, 3, 9);
+        assertFalse(state.canRequest(stairs, "a", 28, first));
+        assertFalse(state.canRequest(stairs, "a", 28, finish));
+        assertTrue(state.canRequest(stairs, "a", 29));
+    }
+
+    @Test
+    void aSourceThatReturnsToFlowDuringTheFinalRequestKeepsTheOriginalIceDelay() {
+        var state = new VoidWarehousePlacementState<String>();
+        enable(state);
+        var ice = List.of("minecraft:ice");
+        int rejected = state.beginRequest(ice, "a", 0);
+        state.onIceRequestRejected("a", nonce -> assertEquals(rejected, nonce));
+        state.receiveResult(rejected, 3, 1);
+        int finish = state.beginRequest(List.of("minecraft:quartz_stairs"), "a", 4, rejected);
+        assertNotEquals(0, finish);
+        state.receiveResult(finish, 6, 5);
+        assertFalse(state.isTargetAvailable("a", 6));
+        assertFalse(state.canUseInventoryFallback("a", 6));
+        assertFalse(state.canRequest(ice, "a", 20, rejected));
+        assertTrue(state.canRequest(ice, "a", 21));
+    }
+
+    @Test
+    void staleIceAndReusedCoordinatesNeverInheritAnEarlierRejection() {
+        var state = new VoidWarehousePlacementState<String>();
+        enable(state);
+        var ice = List.of("minecraft:ice");
+        int first = state.beginRequest(ice, "a", 0);
+        var token = new AtomicInteger(-1);
+        state.onIceRequestRejected("a", token::set);
+        state.receiveResult(first, 6, 1);
+        assertEquals(0, token.get());
+        assertEquals(0, state.beginRequest(STONE, "a", 1, first));
+        int second = state.beginRequest(ice, "a", 2);
+        state.onIceRequestRejected("a", token::set);
+        state.receiveResult(second, 3, 3);
+        assertEquals(second, token.get());
+        state.reset();
+        enable(state);
+        int replacement = state.beginRequest(STONE, "a", 0);
+        state.receiveResult(replacement, 3, 1);
+        assertFalse(state.canRequest(STONE, "a", 2, second));
+    }
+
+    @Test
+    void onlyTheRejectedRequestIsNotifiedOnceAndAfterItsBackoffStarts() {
+        for (int status : List.of(3, 6)) {
+            var state = new VoidWarehousePlacementState<String>();
+            enable(state);
+            var notified = new AtomicInteger();
+            int nonce = state.beginRequest(STONE, "a", 0);
+            int other = state.beginRequest(STONE, "b", 0);
+            var first = state.onCurrentRequestRejected("a", () -> {
+                assertFalse(state.isPending("a"));
+                assertFalse(state.canRequest(STONE, "a", 1));
+                notified.incrementAndGet();
+            });
+            assertNotNull(first);
+            assertTrue(first.getAsBoolean());
+            assertNull(state.onCurrentRequestRejected("a", () -> fail("replaced first listener")));
+            var second = state.onCurrentRequestRejected("b", () -> fail("OK called rejection listener"));
+            assertNotNull(second);
+            assertTrue(second.getAsBoolean());
+            state.receiveResult(other, 0, 1);
+            assertFalse(second.getAsBoolean());
+            assertTrue(first.getAsBoolean());
+            state.receiveResult(nonce, status, 1);
+            assertFalse(first.getAsBoolean());
+            state.receiveResult(nonce, status, 1);
+            assertEquals(1, notified.get());
+            assertTrue(state.canRequest(STONE, "a", status == 6 ? 2 : 21));
+        }
+    }
+
+    @Test
+    void cancellationExpiryAndResetNeverNotifyAnOldRequestOrItsReplacement() {
+        var state = new VoidWarehousePlacementState<String>();
+        enable(state);
+        Runnable unexpected = () -> fail("abandoned or replacement request was notified");
+        assertNull(state.onCurrentRequestRejected("a", unexpected));
+        int cancelled = state.beginRequest(STONE, "a", 0);
+        var first = state.onCurrentRequestRejected("a", unexpected);
+        assertNotNull(first);
+        assertTrue(first.getAsBoolean());
+        state.cancel(cancelled);
+        assertFalse(first.getAsBoolean());
+        int expired = state.beginRequest(STONE, "a", 0);
+        var second = state.onCurrentRequestRejected("a", unexpected);
+        assertNotNull(second);
+        assertFalse(first.getAsBoolean());
+        state.tick(99);
+        assertTrue(second.getAsBoolean());
+        state.tick(100);
+        assertFalse(second.getAsBoolean());
+        int beforeReset = state.beginRequest(STONE, "a", 100);
+        var oldWorld = state.onCurrentRequestRejected("a", unexpected);
+        assertNotNull(oldWorld);
+        assertTrue(oldWorld.getAsBoolean());
+        state.reset();
+        assertFalse(oldWorld.getAsBoolean());
+        enable(state);
+        int current = state.beginRequest(STONE, "a", 0);
+        var replacement = state.onCurrentRequestRejected("a", unexpected);
+        assertNotNull(replacement);
+        for (int abandoned : List.of(cancelled, expired, beforeReset)) {
+            state.receiveResult(abandoned, 3, 1);
+        }
+        assertFalse(oldWorld.getAsBoolean());
+        assertTrue(replacement.getAsBoolean());
+        state.receiveResult(current, 0, 1);
+        assertFalse(replacement.getAsBoolean());
+        assertTrue(state.canRequest(STONE, "a", 1));
+    }
 
     @Test
     void enablingCapabilityWakesBlockedMaterialsOnceWhileTrueRefreshesStayQuiet() {

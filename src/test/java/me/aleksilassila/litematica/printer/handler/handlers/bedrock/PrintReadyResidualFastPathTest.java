@@ -32,6 +32,7 @@ import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdap
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.MissingMaterialTracker;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.ActionBroker;
 import me.aleksilassila.litematica.printer.printer.action.PlacementPolicy;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
@@ -68,6 +69,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -323,6 +325,138 @@ class PrintReadyResidualFastPathTest {
                     "Placing the dry bodies while water support is absent must not send any mining action");
         } finally {
             Configs.Core.WORK_PER_TICK.setIntegerValue(oldWork);
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(oldIce);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(oldSkip);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void waterWithoutClickableFaceYieldsUntilANeighbourBecomesClickable(boolean nextNeedsIce) throws Exception {
+        boolean oldIce = Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue();
+        boolean oldSkip = Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue();
+        BlockPos first = BlockPos.ZERO, next = first.east(3);
+        try (var f = new FastPathFixture(8, new PrinterBox(first, next))) {
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(true);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(false);
+            f.installWaterPlayer();
+            f.client.player.getInventory().setItem(0, new ItemStack(nextNeedsIce ? Items.ICE : Items.OAK_SLAB, 64));
+            @SuppressWarnings("unchecked")
+            var chunks = (Map<Long, ChunkSchematic>) field(f.scanFixture, f.scanFixture.getClass(), "chunks");
+            var section = chunks.get(0L).getSections()[4];
+            var dry = Blocks.OAK_SLAB.defaultBlockState();
+            var wet = dry.setValue(BlockStateProperties.WATERLOGGED, true);
+            section.setBlockState(0, 0, 0, wet);
+            section.setBlockState(3, 0, 0, nextNeedsIce ? wet : dry);
+            @SuppressWarnings("unchecked")
+            var blocks = (Map<BlockPos, BlockState>) field(f.client.level, f.client.level.getClass(), "world");
+            // Water underneath permits breaking ice into a source but offers no face for placing the ice.
+            for (Direction side : Direction.values()) blocks.put(first.relative(side), Blocks.AIR.defaultBlockState());
+            blocks.put(first, Blocks.WATER.defaultBlockState().setValue(BlockStateProperties.LEVEL, 1));
+            blocks.put(first.below(), Blocks.WATER.defaultBlockState());
+            blocks.put(next, Blocks.AIR.defaultBlockState());
+            blocks.put(next.below(), Blocks.STONE.defaultBlockState());
+            WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+            var tasks = (PrintWorkflowScheduler) get(f.handler, PrintHandler.class, "printTasks");
+            f.scanTick.invoke(f.scanFixture, 10L);
+            f.tick(10L);
+            f.handler.prepareIteration();
+            f.targets.invalidateCandidates();
+            var head = new SchematicBlockContext(f.client, f.client.level, schematic, first);
+            var ice = tasks.buildAction(head);
+            assertTrue(ice.hasAction());
+            assertNull(ice.action().getValidSide(f.client.level, first));
+            tasks.onActionDeferred(head);
+            if (nextNeedsIce) {
+                var tail = new SchematicBlockContext(f.client, f.client.level, schematic, next);
+                assertTrue(tasks.buildAction(tail).hasAction());
+                tasks.onActionDeferred(tail);
+            } else {
+                f.targets.deferUntil(next, 0);
+            }
+            f.scanTick.invoke(f.scanFixture, 11L);
+            f.tick(11L);
+            f.handler.prepareIteration();
+            f.handler.runIteration(f.scope);
+            assertEquals(List.of(nextNeedsIce ? next.below() : next),
+                    f.dispatch.hits.stream().map(BlockHitResult::getBlockPos).toList());
+
+            BlockPos support = first.west();
+            blocks.put(support, Blocks.STONE.defaultBlockState());
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.ICE, 64));
+            f.runtime.events().publish(new me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent.BlockUpdated(
+                    support.getX(), support.getY(), support.getZ()));
+            f.scanTick.invoke(f.scanFixture, 12L);
+            f.tick(12L);
+            f.handler.prepareIteration();
+            f.handler.runIteration(f.scope);
+            assertEquals(2, f.dispatch.hits.size());
+            assertEquals(support, f.dispatch.hits.getLast().getBlockPos());
+        } finally {
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(oldIce);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(oldSkip);
+        }
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void occupiedWaterCellYieldsToNeighbourAndRetriesWhenThePlacementShapeIsClear(boolean finalStair) throws Exception {
+        boolean oldIce = Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue();
+        boolean oldSkip = Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue();
+        var water = BuiltInRegistries.FLUID.wrapAsHolder(net.minecraft.world.level.material.Fluids.WATER);
+        var originalTags = water.tags().toList();
+        var first = BlockPos.ZERO;
+        var next = first.east(3);
+        try (var f = new FastPathFixture(8, new PrinterBox(first, next))) {
+            WaterSupportRegressionTest.WaterFixture.bindTags(water, List.of(net.minecraft.tags.FluidTags.WATER));
+            Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(true);
+            Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(false);
+            f.installWaterPlayer();
+            var wet = Blocks.QUARTZ_STAIRS.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true)
+                    .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH);
+            var item = finalStair ? Items.QUARTZ_STAIRS : Items.ICE;
+            f.client.player.getInventory().setItem(0, new ItemStack(item, 8));
+            @SuppressWarnings("unchecked")
+            var chunks = (Map<Long, ChunkSchematic>) field(f.scanFixture, f.scanFixture.getClass(), "chunks");
+            var section = chunks.get(0L).getSections()[4];
+            section.setBlockState(0, 0, 0, wet);
+            section.setBlockState(3, 0, 0, wet);
+            var world = f.client.level;
+            @SuppressWarnings("unchecked")
+            var blocks = (Map<BlockPos, BlockState>) field(world, world.getClass(), "world");
+            var current = Blocks.WATER.defaultBlockState().setValue(BlockStateProperties.LEVEL, finalStair ? 0 : 1);
+            for (var pos : List.of(first, next)) {
+                blocks.put(pos, current);
+                blocks.put(pos.below(), Blocks.STONE.defaultBlockState());
+            }
+            var body = f.allocate(net.minecraft.world.entity.decoration.ArmorStand.class);
+            body.blocksBuilding = true;
+            body.setBoundingBox(new net.minecraft.world.phys.AABB(.2, .1, .65, .8, .9, .95));
+            set(world, world.getClass(), "occupant", body);
+            var tasks = (PrintWorkflowScheduler) get(f.handler, PrintHandler.class, "printTasks");
+            for (var pos : List.of(first, next)) {
+                var ctx = new SchematicBlockContext(f.client, world, SchematicWorldHandler.getSchematicWorld(), pos);
+                tasks.buildAction(ctx);
+                tasks.onActionDeferred(ctx);
+            }
+            f.scanTick.invoke(f.scanFixture, 11L);
+            f.tick(11L);
+            f.handler.prepareIteration();
+            f.handler.runIteration(f.scope);
+            assertEquals(1, f.dispatch.hits.size());
+            assertEquals(next, f.dispatch.hits.getFirst().getBlockPos().atY(0));
+            assertFalse(f.runtime.hudStats().isPrintPlacementPending(first));
+
+            // North-facing bottom stairs leave the upper south half empty; ice requires the whole cell clear.
+            body.setBoundingBox(finalStair ? new net.minecraft.world.phys.AABB(.2, .65, .65, .8, .95, .95)
+                    : new net.minecraft.world.phys.AABB(5, .1, 0, 5.6, 1.9, .6));
+            f.scanTick.invoke(f.scanFixture, 12L);
+            f.tick(12L);
+            f.handler.prepareIteration();
+            f.handler.runIteration(f.scope);
+            assertEquals(2, f.dispatch.hits.size());
+            assertEquals(first, f.dispatch.hits.getLast().getBlockPos().atY(0));
+            assertTrue(f.runtime.hudStats().isPrintPlacementPending(first));
+        } finally {
+            WaterSupportRegressionTest.WaterFixture.bindTags(water, originalTags);
             Configs.Print.PRINT_ICE_FOR_WATER.setBooleanValue(oldIce);
             Configs.Print.SKIP_WATERLOGGED_BLOCK.setBooleanValue(oldSkip);
         }

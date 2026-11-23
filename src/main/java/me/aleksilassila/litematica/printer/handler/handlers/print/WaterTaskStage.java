@@ -7,6 +7,7 @@ public enum WaterTaskStage {
     REMOVE_EXISTING,
     WAIT_REMOVE_CONFIRM,
     PLACE_ICE,
+    WAIT_NATURAL_SOURCE,
     WAIT_ICE_CONFIRM,
     BREAK_ICE,
     WAIT_WATER_CONFIRM,
@@ -18,6 +19,7 @@ public enum WaterTaskStage {
 
     boolean waitsForWorldUpdate() {
         return this == WAIT_SUPPORT
+                || this == WAIT_NATURAL_SOURCE
                 || this == WAIT_REMOVE_CONFIRM
                 || this == WAIT_ICE_CONFIRM
                 || this == WAIT_WATER_CONFIRM

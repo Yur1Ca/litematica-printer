@@ -17,6 +17,7 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Blocks;
@@ -119,8 +120,17 @@ final class ScanIntegrationFixture implements AutoCloseable {
         boolean allChunksLoaded;
         Map<BlockPos, BlockState> world;
         Map<BlockPos, Integer> reads;
+        Entity occupant;
         private TestLevel() { super(null, null, null, null, 0, 0, null, false, 0L, 0); }
         @Override public long getGameTime() { return this.tick; }
+        @Override public List<Entity> getEntities(Entity except, net.minecraft.world.phys.AABB bounds,
+                                                  java.util.function.Predicate<? super Entity> filter) {
+            return occupant != null && occupant != except && bounds.intersects(occupant.getBoundingBox())
+                    && filter.test(occupant) ? List.of(occupant) : List.of();
+        }
+        @Override public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+            return getBlockState(pos).getFluidState();
+        }
         @Override public boolean hasChunk(int x, int z) { return this.allChunksLoaded || x == 0 && z == 0; }
         @Override public BlockState getBlockState(BlockPos pos) {
             this.reads.merge(pos.immutable(), 1, Integer::sum);

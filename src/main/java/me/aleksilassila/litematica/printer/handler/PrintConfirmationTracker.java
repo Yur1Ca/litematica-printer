@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -13,10 +14,19 @@ final class PrintConfirmationTracker {
     private final Map<BlockPos, PendingBlockState> pendingStates = new LinkedHashMap<>();
 
     void track(BlockPos pos, BlockState expectedState, long sentTick, int timeoutTicks) {
+        this.track(pos, expectedState, sentTick, timeoutTicks, null);
+    }
+
+    void track(BlockPos pos, BlockState expectedState, long sentTick, int timeoutTicks, @Nullable Object owner) {
         this.pendingStates.put(
                 pos.immutable(),
-                new PendingBlockState(expectedState, sentTick + timeoutTicks)
+                new PendingBlockState(expectedState, sentTick + timeoutTicks, owner)
         );
+    }
+
+    void discard(BlockPos pos, Object owner) {
+        PendingBlockState pending = this.pendingStates.get(pos);
+        if (owner != null && pending != null && pending.owner() == owner) this.pendingStates.remove(pos);
     }
 
     boolean isPending(BlockPos pos) {
@@ -59,6 +69,6 @@ final class PrintConfirmationTracker {
         MISMATCHED
     }
 
-    private record PendingBlockState(BlockState expectedState, long expireTick) {
+    private record PendingBlockState(BlockState expectedState, long expireTick, @Nullable Object owner) {
     }
 }

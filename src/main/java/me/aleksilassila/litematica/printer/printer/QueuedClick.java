@@ -36,6 +36,7 @@ final class QueuedClick {
     @Nullable
     BlockPos warehouseTarget;
     int warehouseExpectedStateId;
+    int warehouseRejectedIceNonce;
     @Nullable
     BlockState warehouseDesiredState;
 

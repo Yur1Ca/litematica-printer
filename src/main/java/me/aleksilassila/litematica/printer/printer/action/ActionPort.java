@@ -64,6 +64,8 @@ public interface ActionPort {
 
     default boolean setWarehouseStatePlacement(BlockPos target, int expectedStateId, BlockState desiredState) { return false; }
 
+    default boolean setWarehouseRejectedIceNonce(int nonce) { return false; }
+
     SendResult sendQueue(@Nullable LocalPlayer player);
 
     void cancelQueue();

@@ -170,6 +170,14 @@ public class ActionManager {
         return desiredState != null && this.markWarehousePlacement(target, expectedStateId, desiredState);
     }
 
+    public boolean setWarehouseRejectedIceNonce(int nonce) {
+        QueuedClick click = this.queuedClick;
+        if (nonce <= 0 || click == null || click.warehouseTarget == null || click.repeatCount != 1
+                || click.warehouseRejectedIceNonce != 0) return false;
+        click.warehouseRejectedIceNonce = nonce;
+        return true;
+    }
+
     private boolean markWarehousePlacement(BlockPos target, int expectedStateId, @Nullable BlockState desiredState) {
         QueuedClick click = this.queuedClick;
         if (click == null || click.repeatCount != 1 || expectedStateId < 0
@@ -178,6 +186,7 @@ public class ActionManager {
         click.warehouseTarget = target.immutable();
         click.warehouseExpectedStateId = expectedStateId;
         click.warehouseDesiredState = desiredState;
+        click.warehouseRejectedIceNonce = 0;
         return true;
     }
 
@@ -309,13 +318,18 @@ public class ActionManager {
     }
 
     protected boolean sendWarehousePlacement(Item[] candidates, BlockPos target, BlockHitResult hit, int expectedStateId) {
-        return VoidWarehousePlacementNetwork.requestPlace(candidates, target, hit, expectedStateId);
+        return VoidWarehousePlacementNetwork.requestPlace(candidates, target, hit, expectedStateId,
+                this.queuedWarehouseRejectedIceNonce());
     }
 
     protected boolean sendWarehouseStatePlacement(Item[] candidates, BlockPos target,
             BlockHitResult physicalHit, int expectedStateId, BlockState desiredState) {
         return VoidWarehousePlacementNetwork.requestStatePlace(
-                candidates, target, physicalHit, expectedStateId, desiredState);
+                candidates, target, physicalHit, expectedStateId, desiredState, this.queuedWarehouseRejectedIceNonce());
+    }
+
+    protected final int queuedWarehouseRejectedIceNonce() {
+        return this.queuedClick == null ? 0 : this.queuedClick.warehouseRejectedIceNonce;
     }
 
     private void armTaskAnvilScreenSuppression(QueuedClick click) {

@@ -37,45 +37,49 @@ class PrintWorkflowCapacityTest {
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void waterBacklogPreservesQueuedWorkAndManualWaterDecisions(boolean materialBlocked) throws Exception {
         try (var f = new WaterSupportRegressionTest.WaterFixture()) {
+            var reoffered = new java.util.LinkedHashSet<BlockPos>();
+            var workflows = new PrintWorkflowScheduler(() -> f.now, block -> null, reoffered::add);
             BlockPos queued = new BlockPos(-8, 64, 0);
             prepare(f, queued);
-            var started = f.build(queued);
+            var started = workflows.buildAction(f.context(queued));
             assertTrue(started.hasAction());
-            f.workflows.onActionQueued(started.actionHandle(), f.context(queued), started.action());
+            workflows.onActionQueued(started.actionHandle(), f.context(queued), started.action());
             for (int batch = 0; batch < 4; batch++) {
                 for (int offset = 0; offset < 512; offset++) {
                     int index = batch * 512 + offset;
                     BlockPos pos = new BlockPos(index & 31, 64, index >>> 5);
                     prepare(f, pos);
                     if (materialBlocked) {
-                        assertTrue(f.build(pos).hasAction());
-                        f.workflows.onMaterialUnavailable(f.context(pos));
+                        assertTrue(workflows.buildAction(f.context(pos)).hasAction());
+                        workflows.onMaterialUnavailable(f.context(pos));
                     } else {
                         f.level.blocks.put(pos.below(), Blocks.AIR.defaultBlockState());
-                        assertSame(PrintTaskBuildResult.SKIP, f.build(pos));
+                        assertSame(PrintTaskBuildResult.SKIP, workflows.buildAction(f.context(pos)));
                     }
                 }
                 f.now++;
-                f.workflows.tick(f.level, f.schematic);
+                workflows.tick(f.level, f.schematic);
                 @SuppressWarnings("unchecked")
-                var tasks = (Map<BlockPos, ?>) get(f.workflows, PrintWorkflowScheduler.class, "tasks");
+                var tasks = (Map<BlockPos, ?>) get(workflows, PrintWorkflowScheduler.class, "tasks");
                 assertTrue(tasks.size() <= 1025, "Retain at most 1024 cold tasks plus the real queued workflow");
-                assertTrue(f.workflows.isActiveTaskPos(queued), "A queued workflow cannot be evicted with cold tasks");
+                assertTrue(workflows.isActiveTaskPos(queued), "A queued workflow cannot be evicted with cold tasks");
             }
             BlockPos first = new BlockPos(0, 64, 0);
-            assertFalse(f.workflows.isActiveTaskPos(first), "The oldest unstarted task yields temporary delivery ownership");
+            assertFalse(workflows.isActiveTaskPos(first), "The oldest unstarted task yields temporary delivery ownership");
             assertTrue(f.level.getBlockState(first).isAir());
+            assertEquals(materialBlocked, reoffered.contains(first), "Only evicted automatic tasks return to the scanner");
+            assertFalse(reoffered.contains(queued));
 
-            f.workflows.onInventoryAvailabilityChanged();
+            workflows.onInventoryAvailabilityChanged();
             f.level.blocks.put(first.below(), Blocks.STONE.defaultBlockState());
             if (materialBlocked) {
-                assertTrue(f.build(first).hasAction(), "A rescan can reconstruct an evicted task after inventory gain");
+                assertTrue(workflows.buildAction(f.context(first)).hasAction(), "A reoffer can reconstruct an evicted task");
             } else {
-                assertSame(PrintTaskBuildResult.SKIP, f.build(first),
+                assertSame(PrintTaskBuildResult.SKIP, workflows.buildAction(f.context(first)),
                         "Cold-task eviction and inventory gains must not undo a manual-water decision");
-                assertFalse(f.workflows.isActiveTaskPos(first));
+                assertFalse(workflows.isActiveTaskPos(first));
             }
-            assertTrue(f.workflows.isActiveTaskPos(queued));
+            assertTrue(workflows.isActiveTaskPos(queued));
         }
     }
 

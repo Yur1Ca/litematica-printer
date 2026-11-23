@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -105,9 +104,8 @@ class ScanChunkReloadTest {
         fixture.cache.invalidateChunk(0, 0, -64, 319);
         fixture.cache.beginTick(fixture.level, fixture.schematic, 11L, RuntimeEpoch.INITIAL);
 
-        assertFalse(previous.canScan(11L), "The previous iterator must not survive its chunk replacement");
         SectionScanSession current = fixture.session("print", target, ScanIntent.PRINT);
-        assertNotSame(previous, current);
+        assertSame(previous, current, "Refresh local coverage without losing the session's current traversal");
         SectionScanSession.Candidate candidate = fixture.next(current, 11L);
         assertNotNull(candidate, "The previous zero classification must be observed again");
         assertEquals(target, candidate.pos());
@@ -234,10 +232,10 @@ class ScanChunkReloadTest {
 
         fixture.cache.invalidateChunk(0, 0, -64, 319);
 
-        assertFalse(changed.canScan(10L));
-        assertFalse(neighbor.canScan(10L));
-        assertNotSame(changed, fixture.session("changed", target, ScanIntent.PRINT));
-        assertNotSame(neighbor, fixture.session("neighbor", boundary, ScanIntent.FILL));
+        assertTrue(changed.canScan(10L));
+        assertTrue(neighbor.canScan(10L));
+        assertSame(changed, fixture.session("changed", target, ScanIntent.PRINT));
+        assertSame(neighbor, fixture.session("neighbor", boundary, ScanIntent.FILL));
         assertSame(untouched, fixture.session("untouched", distant, ScanIntent.PRINT));
         assertFalse(untouched.canScan(10L), "Unrelated sessions must retain their completed-pass timing");
 

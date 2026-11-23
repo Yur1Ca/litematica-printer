@@ -28,12 +28,14 @@ import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.runtime.RuntimeAccess;
 import me.aleksilassila.litematica.printer.utils.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;
 
 public class PrintHandler extends FeatureModuleBase {
@@ -57,7 +59,8 @@ public class PrintHandler extends FeatureModuleBase {
 
     public PrintHandler(PrinterRuntime runtime) {
         super(runtime, NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
-        this.printTasks = new PrintWorkflowScheduler(runtime::currentTick, runtime.strippableBlocks());
+        this.printTasks = new PrintWorkflowScheduler(runtime::currentTick, runtime.strippableBlocks(),
+                pos -> this.scanEngine.reoffer(this.getPreviewScanOwner(), pos));
         this.targets = new PrintTargetScheduler(new SortedSchematicTargetQueue(this.scanEngine), () -> {
             this.scanEngine.resetOwner(NAME);
             this.scanEngine.resetOwner("print_sorted");
@@ -152,12 +155,14 @@ public class PrintHandler extends FeatureModuleBase {
 
     @Override
     protected void onInventoryAvailabilityChanged() {
-        // A completed PRINT scan is invalidation-only, and inventory changes do not dirty world
-        // positions. Rebuild the candidate source so targets skipped for missing material become
-        // eligible again when the player receives any item.
-        this.printTasks.onInventoryAvailabilityChanged();
-        this.targets.invalidateCandidates();
-        this.requestFullScan();
+        // Warehouse stock notifications carry no item identity.
+        this.onInventoryAvailabilityChanged(items -> true);
+    }
+
+    @Override
+    protected void onInventoryAvailabilityChanged(Predicate<Item[]> gained) {
+        this.targets.wakeMaterials(gained);
+        this.printTasks.wakeMaterials(gained);
     }
 
     @Override
@@ -207,9 +212,15 @@ public class PrintHandler extends FeatureModuleBase {
                 pos -> this.canReachIterationPosition(pos) && this.isInSelectionRange(pos));
         List<BlockPos> runnableTasks = this.printTasks.readyTargetPositions();
         ScanCandidateIterable ready = this.targets.readyOrdinaryTargets(this.level.getGameTime());
-        Iterable<BlockPos> normalPositions = ready.availability() == ScanAvailability.READY
-                ? ready : this.targets.mergeOrdinaryTargets(
-                        this.getNormalIterationPositions(playerInteractionBox, schematic), this.level.getGameTime());
+        boolean hasReady = ready.availability() == ScanAvailability.READY;
+        Iterable<BlockPos> normalPositions = ready;
+        if (!hasReady || !Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
+            // Only sorted mode replenishes after execution. In unsorted mode, spend any
+            // remaining work slice on fresh positions after the existing retry round.
+            Iterable<BlockPos> source = this.getNormalIterationPositions(playerInteractionBox, schematic);
+            normalPositions = hasReady ? ScanCandidateIterable.prepend(ready, source)
+                    : this.targets.mergeOrdinaryTargets(source, this.level.getGameTime());
+        }
         BlockPos miningPos = this.activeWaterMiningPos();
         if (runnableTasks.isEmpty() && miningPos == null) return normalPositions;
         List<BlockPos> priority = new ArrayList<>();
@@ -380,7 +391,8 @@ public class PrintHandler extends FeatureModuleBase {
         this.targets.onResult(blockPos, result, taskAction != null);
         if (taskAction == null) {
             if (result.taskEvent() == PrintPlacementResult.TaskEvent.MATERIAL_UNAVAILABLE) {
-                this.targets.waitForMaterial(blockPos, this.level.getGameTime(), result.skipIteration());
+                this.targets.waitForMaterial(blockPos, this.level.getGameTime(), result.skipIteration(),
+                        this.action.getRequiredItems(this.ctx.requiredState.getBlock()));
             } else if (result.taskEvent() == PrintPlacementResult.TaskEvent.WORLD_BLOCKED) {
                 this.targets.deferUntil(blockPos, this.level.getGameTime() + 4L);
             }
@@ -405,7 +417,8 @@ public class PrintHandler extends FeatureModuleBase {
             case QUEUED -> this.printTasks.onActionQueued(taskAction, this.ctx, this.action);
             case DEFERRED -> this.printTasks.onActionDeferred(this.ctx);
             case CANCELLED -> this.printTasks.onActionCancelled(taskAction, this.ctx, this.action);
-            case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx, result.skipIteration());
+            case MATERIAL_UNAVAILABLE -> this.printTasks.onMaterialUnavailable(this.ctx, result.skipIteration(),
+                    this.action.getRequiredItems(this.ctx.requiredState.getBlock()));
             case WORLD_BLOCKED -> {
                 // Falling blocks are ordinary targets, not multi-stage workflow actions.
             }

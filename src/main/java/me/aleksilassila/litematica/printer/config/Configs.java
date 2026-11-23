@@ -28,7 +28,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     private static final String FILE_PATH = "./config/" + Reference.MOD_ID + ".json";
     private static final File CONFIG_DIR = new File("./config");
-    private static final int CONFIG_SCHEMA_VERSION = 3;
+    private static final int CONFIG_SCHEMA_VERSION = 4;
     private static final List<String> DEFAULT_COVER_BLOCK_FILTERS = List.of(
             "#minecraft:carpets",
             "#minecraft:slabs",
@@ -69,7 +69,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     /** Operation colors/styles adapted from BiliXWhite/litematica-printer@6cef6d31. */
     public static class Highlight {
         public static final ConfigBoolean ENABLED = bool("highlightEnabled").defaultValue(false).build();
-        public static final ConfigBoolean NEXT_ENABLED = bool("highlightNextEnabled").defaultValue(true).build();
+        public static final ConfigBoolean NEXT_ENABLED = bool("highlightNextEnabled").defaultValue(false).build();
         public static final ConfigColor PLACE = color("highlightColorPlace").defaultValue("#80FFFFFF").build();
         public static final ConfigColor ADJUST = color("highlightColorAdjust").defaultValue("#8000FF00").build();
         public static final ConfigColor BREAK = color("highlightColorBreak").defaultValue("#80FF0000").build();
@@ -841,26 +841,29 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             if (jsonElement != null && jsonElement.isJsonObject()) {
                 JsonObject obj = jsonElement.getAsJsonObject();
                 boolean performanceMigrated = readOptions(obj);
-                int schemaVersion = obj.has("configSchemaVersion")
-                        && obj.get("configSchemaVersion").isJsonPrimitive()
-                        && obj.get("configSchemaVersion").getAsJsonPrimitive().isNumber()
-                        ? obj.get("configSchemaVersion").getAsInt() : 0;
-                if (schemaVersion < CONFIG_SCHEMA_VERSION) {
-                    if (schemaVersion < 3 && isLegacyCoverBlockList(Cover.COVER_BLOCK_LIST.getStrings())) {
+                int schemaVersion = schemaVersion(obj);
+                if (schemaVersion < 3) {
+                    if (isLegacyCoverBlockList(Cover.COVER_BLOCK_LIST.getStrings())) {
                         Cover.COVER_BLOCK_LIST.setStrings(DEFAULT_COVER_BLOCK_FILTERS);
                     }
                     // The old field defaulted to true but was a no-op. Do not turn that
                     // persisted compatibility value into a new runtime behavior on upgrade.
                     Break.BREAK_USE_DELAYED_DESTROY.setBooleanValue(false);
-                    this.save();
-                } else if (performanceMigrated) {
+                }
+                if (schemaVersion < CONFIG_SCHEMA_VERSION || performanceMigrated) {
                     this.save();
                 }
             }
         }
     }
 
-    /** Reads saved options while consolidating obsolete performance controls into one workload. */
+    private static int schemaVersion(JsonObject root) {
+        JsonElement version = root.get("configSchemaVersion");
+        return version != null && version.isJsonPrimitive() && version.getAsJsonPrimitive().isNumber()
+                ? version.getAsInt() : 0;
+    }
+
+    /** Reads the saved options and reports whether obsolete performance controls need rewriting. */
     public static boolean readOptions(JsonObject root) {
         boolean migrated = false;
         JsonElement section = root.get(Reference.MOD_ID);
@@ -882,6 +885,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             legacyKeys.forEach(values::remove);
         }
         ConfigUtils.readConfigBase(root, Reference.MOD_ID, OPTIONS);
+        if (schemaVersion(root) < 4 && section != null && section.isJsonObject()) {
+            // Preview previously defaulted on behind the operation-history switch.
+            var values = section.getAsJsonObject();
+            boolean historyWasOn = values.has(Highlight.ENABLED.getName()) && Highlight.ENABLED.getBooleanValue();
+            boolean previewWasOn = !values.has(Highlight.NEXT_ENABLED.getName()) || Highlight.NEXT_ENABLED.getBooleanValue();
+            Highlight.NEXT_ENABLED.setBooleanValue(historyWasOn && previewWasOn);
+        }
         return migrated;
     }
 

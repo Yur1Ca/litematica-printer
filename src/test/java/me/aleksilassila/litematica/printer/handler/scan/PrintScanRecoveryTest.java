@@ -223,6 +223,47 @@ class PrintScanRecoveryTest {
         }
     }
 
+    @Test void anUnsortedRetryUsesItsTurnBeforeContinuingIntoFreshWork() throws Exception {
+        try (var f = new Fixture(false)) {
+            var retry = BlockPos.ZERO;
+            var fresh = retry.east();
+            var tail = new CountingRawSource(List.of(retry, fresh, fresh));
+            var attempted = new java.util.ArrayList<BlockPos>();
+            f.handler.normalPositions = tail;
+            f.handler.simpleExecution = true;
+            f.handler.sourceBoxes = f.world.boxes;
+            f.handler.execute = pos -> {
+                attempted.add(pos);
+                if (pos.equals(retry)) {
+                    assertEquals(0, tail.probes, "A ready retry must execute before probing the cold source");
+                    f.targets.deferUntil(pos, 9L);
+                    f.handler.unusedAction();
+                }
+            };
+            f.targets.deferUntil(retry, 4L);
+            f.world.tick(5L);
+            f.handler.runIteration(f.world.boxes.getFirst());
+            assertEquals(List.of(retry, fresh), attempted);
+        }
+    }
+
+    @Test void adjacentUpdatesCannotReofferAnUnsortedTargetDuringItsMaterialWait() throws Exception {
+        try (var f = new Fixture(false)) {
+            var target = BlockPos.ZERO;
+            f.handler.liveSource = true;
+            f.world.tick(1L);
+            assertEquals(List.of(target), ScanIntegrationFixture.drain(f.handler.positions()));
+            f.targets.waitForMaterial(target, 1L, false);
+            f.world.tick(2L);
+            f.world.cache.invalidate(target.east());
+            f.targets.wake(target.east());
+            assertTrue(ScanIntegrationFixture.drain(f.handler.positions()).isEmpty());
+            assertEquals(List.of(target), f.targets.retainedTargets());
+            f.world.tick(21L);
+            assertEquals(List.of(target), ScanIntegrationFixture.drain(f.handler.positions()));
+        }
+    }
+
     @Test void realIterationExecutesItsReadyTargetBeforeTheStopHookReplenishes() throws Exception {
         try (var f = new Fixture(true, 513)) {
             Configs.Print.PRINT_SORT_TARGETS.setBooleanValue(true);
@@ -258,12 +299,16 @@ class PrintScanRecoveryTest {
     private static final class TestPrintHandler extends PrintHandler {
         boolean unreachable;
         boolean simpleExecution;
+        boolean liveSource;
         List<PrinterBox> sourceBoxes;
         Consumer<BlockPos> execute;
         Iterable<BlockPos> normalPositions;
         private TestPrintHandler() { super(null); }
         Iterable<BlockPos> positions() { return super.getIterationPositions(new PrinterBox(BlockPos.ZERO)); }
         void runtimeReset() { super.onRuntimeReset(); }
+        void unusedAction() { setIterationConsumedEffectiveExecution(false); }
+        @Override protected Predicate<BlockPos> createSelectionRangePredicate() { return pos -> true; }
+        @Override protected Predicate<BlockPos> createScanReachPredicate() { return pos -> !this.unreachable; }
         @Override protected List<PrinterBox> getScanSourceBoxes(PrinterBox box) {
             return this.sourceBoxes == null ? List.of(box) : this.sourceBoxes;
         }
@@ -283,6 +328,7 @@ class PrintScanRecoveryTest {
         }
         @Override protected Iterable<BlockPos> getCachedFilteredIterationPositions(
                 PrinterBox box, ScanIntent intent, Predicate<BlockPos> predicate) {
+            if (this.liveSource) return super.getCachedFilteredIterationPositions(box, intent, predicate);
             return this.normalPositions == null ? List.of() : this.normalPositions;
         }
     }

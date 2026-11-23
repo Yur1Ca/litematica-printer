@@ -51,14 +51,18 @@ public final class OperationHighlights implements RuntimeComponent {
     }
 
     public synchronized void setPreviews(List<Preview> next) {
-        this.previews = next.stream().limit(8)
+        this.previews = next.isEmpty() ? List.of() : next.stream().limit(8)
                 .map(preview -> new Preview(preview.pos().immutable(), preview.knownTarget())).toList();
     }
 
     public synchronized List<Preview> previews() { return this.previews; }
 
-    public synchronized void clear() {
+    public synchronized void clearHistory() {
         this.history.clear();
+    }
+
+    public synchronized void clear() {
+        this.clearHistory();
         this.previews = List.of();
     }
 
@@ -66,4 +70,5 @@ public final class OperationHighlights implements RuntimeComponent {
 
     public record Entry(BlockPos pos, HighlightType type, long time) { }
     public record Preview(BlockPos pos, boolean knownTarget) { }
+
 }

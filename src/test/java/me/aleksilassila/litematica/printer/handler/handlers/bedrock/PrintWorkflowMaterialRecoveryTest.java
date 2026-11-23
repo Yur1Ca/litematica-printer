@@ -4,6 +4,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 import java.util.List;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskBuildResult;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Items;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -60,6 +61,22 @@ class PrintWorkflowMaterialRecoveryTest {
 
             assertEquals(List.of(TARGET), f.workflows.readyTargetPositions());
             assertTrue(f.build(TARGET).hasAction());
+        }
+    }
+
+    @Test void materialGainMatchesTheStageItemInsteadOfTheSchematicWaterBlock() throws Exception {
+        try (var f = new WaterSupportRegressionTest.WaterFixture()) {
+            f.now = 1;
+            var stage = f.build(TARGET);
+            assertTrue(stage.hasAction());
+            var context = f.context(TARGET);
+            f.workflows.onMaterialUnavailable(context, false, stage.action().getRequiredItems(context.requiredState.getBlock()));
+            f.workflows.wakeMaterials(items -> java.util.Arrays.asList(items).contains(Items.DIRT));
+            f.workflows.tick(f.level, f.schematic);
+            assertFalse(f.workflows.hasReadyWorkflow());
+            f.workflows.wakeMaterials(items -> java.util.Arrays.asList(items).contains(Items.ICE));
+            f.workflows.tick(f.level, f.schematic);
+            assertEquals(List.of(TARGET), f.workflows.readyTargetPositions());
         }
     }
 }

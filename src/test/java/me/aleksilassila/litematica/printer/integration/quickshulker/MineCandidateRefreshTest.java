@@ -16,6 +16,25 @@ import static org.junit.jupiter.api.Assertions.*;
 class MineCandidateRefreshTest {
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 
+    @Test void eachQueuedCoordinateUsesOneLiveStateReadBeforeDispatch() throws Exception {
+        try (var fixture = new MineCandidateRefreshFixture(false)) {
+            fixture.seed(32, true);
+            fixture.level.trenchReads = 0;
+            assertEquals(32, fixture.refresh().size());
+            assertEquals(32, fixture.level.trenchReads);
+        }
+    }
+
+    @Test void sameStateTargetsShareOneToolSearchInASurvivalBatch() throws Exception {
+        try (var fixture = new MineCandidateRefreshFixture(false)) {
+            fixture.seed(32, false);
+            fixture.beginTick();
+            fixture.inventory.mainListReads = 0;
+            assertEquals(32, fixture.refresh().size());
+            assertEquals(1, fixture.inventory.mainListReads);
+        }
+    }
+
     @Test void refreshReplacesQueuedStateAndDropsRemovedOrUnbreakableTargets() throws Exception {
         try (var fixture = new MineCandidateRefreshFixture(true)) {
             fixture.seed(4, false);
@@ -70,6 +89,22 @@ class MineCandidateRefreshTest {
             var diamond = fixture.views(fixture.refresh()).get(0);
             assertSame(Items.DIAMOND_PICKAXE, diamond.tool());
             assertTrue(diamond.currentProgress() > iron.currentProgress());
+        }
+    }
+
+    @Test void eachFollowingTargetSeesHandAndInventoryChangesInsideTheSameBatch() throws Exception {
+        try (var fixture = new MineCandidateRefreshFixture(false)) {
+            fixture.seed(3, false);
+            var remaining = fixture.refreshIterator();
+            var wooden = fixture.views(List.of(remaining.next())).get(0);
+            fixture.selectSlot(1);
+            var iron = fixture.views(List.of(remaining.next())).get(0);
+            assertTrue(iron.currentProgress() > wooden.currentProgress());
+            fixture.setSlot(2, new ItemStack(Items.DIAMOND_PICKAXE));
+            fixture.inventory.setChanged();
+            var diamond = fixture.views(List.of(remaining.next())).get(0);
+            assertSame(Items.DIAMOND_PICKAXE, diamond.tool());
+            assertEquals(iron.currentProgress(), diamond.currentProgress());
         }
     }
 }

@@ -28,12 +28,15 @@ final class ConstructionPositionCursor implements PositionCursor {
         this.order = order;
         this.heads = new PriorityQueue<>((first, second) -> order.compare(
                 first.cursor.packed(), second.cursor.packed()));
-        for (PrinterBox box : boxes) {
-            SourceBounds bounds = SourceBounds.clip(box, region);
-            if (bounds == null) continue;
-            if (order.hasStartPosition()) this.offerRotatedBounds(bounds);
-            else this.offerBounds(bounds);
-        }
+        for (PrinterBox box : boxes) this.addBox(box);
+    }
+
+    /** Merge a changed region with the remaining, already ordered coverage. */
+    void addBox(PrinterBox box) {
+        SourceBounds bounds = SourceBounds.clip(box, this.region);
+        if (bounds == null) return;
+        if (this.order.hasStartPosition()) this.offerRotatedBounds(bounds);
+        else this.offerBounds(bounds);
     }
 
     /** Select one geometric start in O(boxes), without reading or expanding selected blocks. */

@@ -12,8 +12,11 @@ public interface ScanWorkSlice {
     /** Reserves one candidate from the tick's shared iteration quota before advancing. */
     boolean tryAdvance();
 
-    /** Checks iteration time, excluding actual actions and nested discovery work. */
+    /** Checks both iteration allowances before reserving another candidate. */
     boolean isExceeded(long excludedNanos);
+
+    /** Checks planning time for a candidate whose numeric permit may already be reserved. */
+    boolean isTimeExceeded(long excludedNanos);
 
     /** Records iteration time separately from discovery. Finishing is idempotent. */
     void finish(long excludedNanos);

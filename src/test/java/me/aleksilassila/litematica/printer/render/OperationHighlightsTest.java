@@ -9,6 +9,22 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OperationHighlightsTest {
+    @Test void clearingEitherLayerPreservesTheOtherAndMovingThePreviewLeavesNoTrail() {
+        var trace = new OperationHighlights(32, () -> 0L);
+        var first = new OperationHighlights.Preview(BlockPos.ZERO, true);
+        var second = new OperationHighlights.Preview(BlockPos.ZERO.above(), true);
+        trace.record(first.pos(), HighlightType.BREAK);
+        trace.setPreviews(java.util.List.of(first));
+        trace.setPreviews(java.util.List.of(second));
+        trace.clearHistory();
+        assertEquals(java.util.List.of(second), trace.previews());
+        assertTrue(trace.snapshot(500).isEmpty());
+        trace.record(second.pos(), HighlightType.BREAK);
+        trace.setPreviews(java.util.List.of());
+        assertTrue(trace.previews().isEmpty());
+        assertEquals(second.pos(), trace.snapshot(500).getFirst().pos());
+    }
+
     @Test void previewSnapshotsAreBoundedImmutableAndResetWithTheWorldEpoch() {
         var trace = new OperationHighlights(4, () -> 0L);
         var mutable = new BlockPos.MutableBlockPos(1, 2, 3);

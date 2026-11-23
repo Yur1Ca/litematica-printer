@@ -1,8 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers.print;
 
 import fi.dy.masa.litematica.world.WorldSchematic;
-import it.unimi.dsi.fastutil.longs.Long2LongMap;
-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -13,6 +11,7 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -27,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.LongSupplier;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -40,13 +40,14 @@ public final class PrintWorkflowScheduler {
     private static final int MAX_STARTED_TASKS = 128;
     private final LongSupplier tickClock;
     private final StrippableBlockPort strippableBlocks;
+    private final Consumer<BlockPos> reofferEvicted;
     private final Map<BlockPos, PrintTask> tasks = new LinkedHashMap<>();
     private final Set<BlockPos> unstartedTargets = new LinkedHashSet<>();
     private final LongSet startedKeys = new LongOpenHashSet();
     private final LongSet readyKeys = new LongOpenHashSet();
     private final LongSet wakeKeys = new LongOpenHashSet();
-    private final LongSet materialBlockedKeys = new LongOpenHashSet();
-    private final Long2LongMap materialRetryAfter = new Long2LongOpenHashMap();
+    private record MaterialWait(Item[] alternatives, long retryAt) {}
+    private final Long2ObjectOpenHashMap<MaterialWait> materialWaits = new Long2ObjectOpenHashMap<>();
     // A manual-water decision is not pending work and must survive retries and moving the work window.
     private final Long2ObjectOpenHashMap<BlockState> manualWaterTargets = new Long2ObjectOpenHashMap<>();
     private WeakReference<ClientLevel> manualWaterLevel = new WeakReference<>(null);
@@ -54,8 +55,13 @@ public final class PrintWorkflowScheduler {
     private long lastRefreshTick = Long.MIN_VALUE;
 
     public PrintWorkflowScheduler(LongSupplier tickClock, StrippableBlockPort strippableBlocks) {
+        this(tickClock, strippableBlocks, pos -> {});
+    }
+
+    public PrintWorkflowScheduler(LongSupplier tickClock, StrippableBlockPort strippableBlocks, Consumer<BlockPos> reofferEvicted) {
         this.tickClock = tickClock;
         this.strippableBlocks = strippableBlocks;
+        this.reofferEvicted = reofferEvicted;
     }
 
     public boolean hasActiveWorkflow() {
@@ -104,8 +110,7 @@ public final class PrintWorkflowScheduler {
         this.startedKeys.clear();
         this.readyKeys.clear();
         this.wakeKeys.clear();
-        this.materialBlockedKeys.clear();
-        this.materialRetryAfter.clear();
+        this.materialWaits.clear();
         this.lastRefreshTick = Long.MIN_VALUE;
     }
 
@@ -136,19 +141,19 @@ public final class PrintWorkflowScheduler {
             // Deferred queue callbacks may update ownership without returning through this scheduler.
             this.trackOwnership(task);
             long key = task.pos().asLong();
-            boolean materialRetryDue = this.materialBlockedKeys.contains(key)
-                    && this.materialRetryAfter.getOrDefault(key, Long.MAX_VALUE) <= now;
+            MaterialWait wait = this.materialWaits.get(key);
+            boolean materialRetryDue = wait != null && wait.retryAt() <= now;
             boolean due = this.wakeKeys.remove(key) || materialRetryDue || task.nextCheckTick() <= now;
             if (!due) continue;
             if (!task.shouldKeep(level, schematic)) {
                 iterator.remove();
                 this.readyKeys.remove(key);
-                this.clearMaterialWait(key);
+                this.materialWaits.remove(key);
                 this.unstartedTargets.remove(task.pos());
                 this.startedKeys.remove(key);
                 continue;
             }
-            if (materialRetryDue) this.clearMaterialWait(key);
+            if (materialRetryDue) this.materialWaits.remove(key);
             this.updateReady(task, level, schematic);
         }
         this.trimUnstarted();
@@ -199,7 +204,7 @@ public final class PrintWorkflowScheduler {
             this.remove(task.pos());
             return withoutAutomaticWater(context.requiredState);
         }
-        if (this.materialBlockedKeys.contains(task.pos().asLong())) {
+        if (this.materialWaits.containsKey(task.pos().asLong())) {
             return PrintTaskBuildResult.SKIP;
         }
         this.trackOwnership(task);
@@ -272,19 +277,31 @@ public final class PrintWorkflowScheduler {
     }
 
     public void onMaterialUnavailable(SchematicBlockContext context, boolean pending) {
+        this.onMaterialUnavailable(context, pending, null);
+    }
+
+    public void onMaterialUnavailable(SchematicBlockContext context, boolean pending, Item[] alternatives) {
         PrintTask task = this.tasks.get(context.blockPos);
         if (task == null) return;
         long key = task.pos().asLong();
         this.readyKeys.remove(key);
         this.wakeKeys.remove(key);
-        this.materialBlockedKeys.add(key);
-        this.materialRetryAfter.put(key, this.tickClock.getAsLong() + (pending ? 1L : 20L));
+        this.materialWaits.put(key, new MaterialWait(alternatives, this.tickClock.getAsLong() + (pending ? 1L : 20L)));
     }
 
     public void onInventoryAvailabilityChanged() {
-        this.wakeKeys.addAll(this.materialBlockedKeys);
-        this.materialBlockedKeys.clear();
-        this.materialRetryAfter.clear();
+        this.wakeMaterials(items -> true);
+    }
+
+    public void wakeMaterials(Predicate<Item[]> gained) {
+        var iterator = this.materialWaits.long2ObjectEntrySet().fastIterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            if (gained.test(entry.getValue().alternatives())) {
+                this.wakeKeys.add(entry.getLongKey());
+                iterator.remove();
+            }
+        }
     }
 
     private void afterAction(SchematicBlockContext context) {
@@ -292,14 +309,14 @@ public final class PrintWorkflowScheduler {
         if (task == null) return;
         this.trackOwnership(task);
         this.trimUnstarted();
-        this.clearMaterialWait(task.pos().asLong());
+        this.materialWaits.remove(task.pos().asLong());
         this.readyKeys.remove(task.pos().asLong());
         this.wakeKeys.add(task.pos().asLong());
     }
 
     private void updateReady(PrintTask task, ClientLevel level, WorldSchematic schematic) {
         long key = task.pos().asLong();
-        if (this.materialBlockedKeys.contains(key)
+        if (this.materialWaits.containsKey(key)
                 || task.isWaitingForWorldUpdate(level, schematic)
                 || !task.shouldKeep(level, schematic)) this.readyKeys.remove(key);
         else this.readyKeys.add(key);
@@ -311,12 +328,7 @@ public final class PrintWorkflowScheduler {
         this.startedKeys.remove(pos.asLong());
         this.readyKeys.remove(pos.asLong());
         this.wakeKeys.remove(pos.asLong());
-        this.clearMaterialWait(pos.asLong());
-    }
-
-    private void clearMaterialWait(long key) {
-        this.materialBlockedKeys.remove(key);
-        this.materialRetryAfter.remove(key);
+        this.materialWaits.remove(pos.asLong());
     }
 
     private void trackOwnership(PrintTask task) {
@@ -334,7 +346,10 @@ public final class PrintWorkflowScheduler {
             BlockPos oldest = this.unstartedTargets.iterator().next();
             PrintTask task = this.tasks.get(oldest);
             if (task != null && task.hasStarted()) this.trackOwnership(task);
-            else this.remove(oldest);
+            else {
+                this.remove(oldest);
+                this.reofferEvicted.accept(oldest);
+            }
         }
     }
 }

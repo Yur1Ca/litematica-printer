@@ -41,10 +41,10 @@ final class ModuleRuntimeLoop {
             this.owner.resetPlayerTracking();
             return;
         }
+        this.wakeForInventoryChange();
         long preprocessStart = this.owner.timing.start();
         try { this.owner.preprocess(); }
         finally { this.owner.timing.finish(this.owner.getId(), Stage.MODULE_PREPROCESS, preprocessStart); }
-        this.wakeForInventoryChange();
         if (!this.owner.runIterationIfNeeded()) {
             this.owner.resetPlayerTracking();
         }
@@ -80,8 +80,9 @@ final class ModuleRuntimeLoop {
             return;
         }
         if (this.lastInventoryGainRevision == revision) return;
+        long previous = this.lastInventoryGainRevision;
         this.lastInventoryGainRevision = revision;
-        this.owner.onInventoryAvailabilityChanged();
+        this.owner.onInventoryAvailabilityChanged(items -> this.owner.inventoryAvailability.gainedSince(items, previous));
     }
 
     private void wakeForSchematicChange(@Nullable WorldSchematic schematic) {

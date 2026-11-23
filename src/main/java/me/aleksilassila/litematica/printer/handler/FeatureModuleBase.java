@@ -10,6 +10,7 @@ import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming.Stage;
 import me.aleksilassila.litematica.printer.enums.*;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
+import me.aleksilassila.litematica.printer.handler.scan.ScanWorkSlice;
 import me.aleksilassila.litematica.printer.printer.action.ActionPort;
 import me.aleksilassila.litematica.printer.runtime.PrinterRuntime;
 import me.aleksilassila.litematica.printer.printer.*;
@@ -23,6 +24,7 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -189,7 +191,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     void rememberIterationPreviewScope(PrinterBox box) {
-        if (!Configs.Highlight.ENABLED.getBooleanValue()) {
+        if (!Configs.Highlight.NEXT_ENABLED.getBooleanValue()) {
             this.previewPlayerPosition = null;
             this.previewSources = List.of();
             return;
@@ -199,7 +201,8 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     public final me.aleksilassila.litematica.printer.render.OperationHighlights.Preview nextIterationPreview() {
-        if (this.player == null || this.level == null || this.mc == null || this.mc.level != this.level
+        if (!Configs.Highlight.NEXT_ENABLED.getBooleanValue()
+                || this.player == null || this.level == null || this.mc == null || this.mc.level != this.level
                 || this.previewPlayerPosition == null || !this.previewPlayerPosition.equals(this.player.position())
                 || !this.isConfigAllowExecute() || this.playerInteractionBox == null
                 || this.playerInteractionBox.get() == null
@@ -244,6 +247,10 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     protected void stopIteration(boolean interrupt) {
+    }
+
+    protected void stopIteration(boolean interrupt, ScanWorkSlice work, long actionNanos) {
+        this.stopIteration(interrupt);
     }
 
     /** Retains a consumed candidate whose timer or input owner has not become ready yet. */
@@ -336,6 +343,10 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
     }
 
     /** Inventory gains wake only the feature that explicitly owns a waiting target. */
+    protected void onInventoryAvailabilityChanged(Predicate<Item[]> gained) {
+        this.onInventoryAvailabilityChanged();
+    }
+
     protected void onInventoryAvailabilityChanged() {
         this.scanEngine.resetOwner(this.id);
         this.requestFullScan();
@@ -389,7 +400,7 @@ public abstract class FeatureModuleBase extends ConfigUtils implements RuntimeCo
         this.additionalIterationActionNanos += Math.max(0L, nanos);
     }
 
-    final long additionalIterationActionNanos() {
+    protected final long additionalIterationActionNanos() {
         return this.additionalIterationActionNanos;
     }
 

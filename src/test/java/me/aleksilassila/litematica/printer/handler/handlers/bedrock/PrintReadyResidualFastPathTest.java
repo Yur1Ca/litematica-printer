@@ -66,6 +66,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacementRegressionTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -77,13 +79,17 @@ class PrintReadyResidualFastPathTest {
 
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
 
-    @Test void nextPreviewReadsOnlyQueueMetadataAndClearsWhenMovingOrSwitchingModes() throws Exception {
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void operationHistoryAndNextPreviewCanBeUsedIndependently(boolean historyOn, boolean previewOn) throws Exception {
         boolean oldHighlights = Configs.Highlight.ENABLED.getBooleanValue();
+        boolean oldPreview = Configs.Highlight.NEXT_ENABLED.getBooleanValue();
         boolean oldWork = Configs.Core.WORK_SWITCH.getBooleanValue();
         var oldMode = Configs.Core.WORK_MODE_TYPE.getOptionListValue();
         var oldWorkingMode = Configs.Core.WORK_MODE.getOptionListValue();
         try (var f = new FastPathFixture(4096, new PrinterBox(0, 0, 0, 15, 15, 15))) {
-            Configs.Highlight.ENABLED.setBooleanValue(true);
+            Configs.Highlight.ENABLED.setBooleanValue(historyOn);
+            Configs.Highlight.NEXT_ENABLED.setBooleanValue(previewOn);
             Configs.Core.WORK_SWITCH.setBooleanValue(true);
             Configs.Core.WORK_MODE.setOptionListValue(me.aleksilassila.litematica.printer.enums.WorkingModeType.SINGLE);
             Configs.Core.WORK_MODE_TYPE.setOptionListValue(me.aleksilassila.litematica.printer.enums.PrintModeType.PRINTER);
@@ -91,8 +97,14 @@ class PrintReadyResidualFastPathTest {
             set(f.runtime, PrinterRuntime.class, "operationHighlights", trace);
             f.handler.playerInteractionBox.set(f.scope);
             f.dispatchFirstResidual();
-            assertEquals(me.aleksilassila.litematica.printer.enums.HighlightType.PLACE, trace.snapshot(5000).getFirst().type());
+            var operations = trace.snapshot(5000);
+            assertEquals(historyOn, !operations.isEmpty());
+            if (historyOn) assertEquals(me.aleksilassila.litematica.printer.enums.HighlightType.PLACE, operations.getFirst().type());
             var preview = f.handler.nextIterationPreview();
+            if (!previewOn) {
+                assertNull(preview);
+                return;
+            }
             assertNotNull(preview);
             assertTrue(preview.knownTarget());
             assertEquals(RESIDUALS.get(1), preview.pos(), "Preview must match the next ready round, not a cold refill duplicate");
@@ -108,6 +120,7 @@ class PrintReadyResidualFastPathTest {
             assertNull(f.handler.nextIterationPreview());
         } finally {
             Configs.Highlight.ENABLED.setBooleanValue(oldHighlights);
+            Configs.Highlight.NEXT_ENABLED.setBooleanValue(oldPreview);
             Configs.Core.WORK_SWITCH.setBooleanValue(oldWork);
             Configs.Core.WORK_MODE_TYPE.setOptionListValue(oldMode);
             Configs.Core.WORK_MODE.setOptionListValue(oldWorkingMode);

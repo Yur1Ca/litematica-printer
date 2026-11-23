@@ -72,6 +72,8 @@ final class SectionScanSession {
     private int lastChunkZ = Integer.MIN_VALUE;
     private boolean lastChunkLoaded;
     private final ChunkCandidateCache chunkCandidateCache = new ChunkCandidateCache();
+    final ChunkRechecks chunkRechecks = new ChunkRechecks();
+    private BlockPos prefetchedDelivery;
 
     SectionScanSession(
             ScanRegion region,
@@ -206,6 +208,7 @@ final class SectionScanSession {
 
     private void resetProgress() {
         this.recordReason(Reason.PASS_RESTART);
+        this.chunkRechecks.resetPass();
         this.repairBoxes = null;
         this.rebuildDistanceCursor();
         this.dirtyPositions.clear();
@@ -355,6 +358,27 @@ final class SectionScanSession {
         this.paused = false;
     }
 
+    boolean refreshChunk(int chunkX, int chunkZ) {
+        if (!(distanceCursor instanceof ConstructionPositionCursor cursor)) return false;
+        chunkCandidateCache.invalidate(chunkX, chunkZ);
+        lastChunkX = Integer.MIN_VALUE;
+        long previous = chunkRechecks.version();
+        if (chunkRechecks.record(chunkX, chunkZ, sourceBoxes, cursor) && cursorPrepared) {
+            cursor.addBox(new PrinterBox(cursorPosition));
+            cursorPrepared = false;
+        }
+        if (prefetchedDelivery != null && chunkRechecks.current(prefetchedDelivery, previous)) {
+            // hasNext advanced the cursor but the consumer never received this unaffected position.
+            this.reoffer(prefetchedDelivery);
+        }
+        prefetchedDelivery = null;
+        exhaustedUntilTick = Long.MIN_VALUE;
+        paused = false;
+        return true;
+    }
+
+    void prefetch(BlockPos pos) { prefetchedDelivery = pos; }
+
     /** Stages unowned deliveries beyond the current iterator's duplicate-suppression lifetime. */
     void reoffer(BlockPos pos) {
         if (this.closed || pos == null || !ScanGeometry.containsAny(this.sourceBoxes, pos)) return;
@@ -371,6 +395,7 @@ final class SectionScanSession {
     }
 
     long beginDeliveryIterator() {
+        prefetchedDelivery = null;
         int remaining = Configs.Core.WORK_PER_TICK.getIntegerValue();
         for (Iterator<BlockPos> iterator = this.pendingReoffers.iterator(); remaining > 0 && iterator.hasNext(); remaining--) {
             BlockPos pos = iterator.next();
@@ -649,14 +674,18 @@ final class SectionScanSession {
             // Starting repair replaces the cursor. Preserve a pending full traversal so
             // repeated dirty deferrals cannot suppress repair or disappear behind it.
             this.deferredDirtyRescan = needsRescan;
+            this.chunkRechecks.finishPass(this.sourceBoxes, (ConstructionPositionCursor) this.distanceCursor);
             return false;
         }
         if (needsRescan) {
             this.recordReason(Reason.SOURCE_CHANGED);
             this.repairBoxes = null;
+            this.chunkRechecks.resetPass();
             this.rebuildDistanceCursor();
             return false;
         }
+        if (this.distanceCursor instanceof ConstructionPositionCursor cursor
+                && this.chunkRechecks.finishPass(this.sourceBoxes, cursor)) return false;
         // Legacy diagnostic cursors restart next tick. Production worksets sleep until a local
         // change or due repair; the outer coordinator never delays admission.
         this.exhaustedUntilTick = this.snapshots == null ? tickTime + 1 : Long.MAX_VALUE;

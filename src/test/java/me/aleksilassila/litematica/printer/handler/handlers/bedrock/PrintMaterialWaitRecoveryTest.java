@@ -11,10 +11,14 @@ import java.util.function.Predicate;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.core.diagnostics.RuntimeTiming;
 import me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch;
+import me.aleksilassila.litematica.printer.core.runtime.RuntimeEvent;
+import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
 import me.aleksilassila.litematica.printer.handler.InventoryAvailabilityTracker;
 import me.aleksilassila.litematica.printer.handler.handlers.PrintHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.print.FallingPlacementTracker;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTargetScheduler;
+import me.aleksilassila.litematica.printer.handler.handlers.print.SortedSchematicTargetQueue;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanEngine;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
@@ -33,8 +37,11 @@ import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -49,6 +56,78 @@ class PrintMaterialWaitRecoveryTest {
     private static final BlockPos TARGET = new BlockPos(0, 64, 0);
 
     @BeforeAll static void bootstrap() { BedrockPlacementRegressionTest.bootstrap(); }
+
+    @Test void unrelatedGainsPreserveMaterialWaitsAndMatchingGainsWakeTheOriginalTarget() throws Exception {
+        try (var f = new MaterialFixture()) {
+            var loop = get(f.handler, FeatureModuleBase.class, "runtimeLoop");
+            var inventoryChanged = loop.getClass().getDeclaredMethod("wakeForInventoryChange");
+            inventoryChanged.setAccessible(true);
+            Configs.Print.PRINT_RESERVE_ITEMS.setBooleanValue(false);
+            f.availability.tick(f.client.player);
+            inventoryChanged.invoke(loop);
+            f.advance(1);
+            assertEquals(List.of(TARGET), f.handler.positions());
+            assertTrue(f.handler.canIterationBlockPos(TARGET));
+            f.handler.execute();
+            assertEquals(1, f.handler.getPendingIterationWorkCount());
+
+            f.client.player.getInventory().setItem(1, new ItemStack(Items.DIRT));
+            f.availability.tick(f.client.player);
+            inventoryChanged.invoke(loop);
+            f.advance(2);
+            assertTrue(f.handler.positions().isEmpty());
+            assertEquals(1, f.handler.getPendingIterationWorkCount(), "Dirt must preserve the stone wait");
+
+            long beforeDelivery = f.availability.gainRevision();
+            f.client.player.getInventory().setItem(0, new ItemStack(Items.STONE));
+            f.client.player.getInventory().setItem(3, new ItemStack(Items.SAND));
+            f.availability.tick(f.client.player);
+            assertTrue(f.availability.gainedSince(new Item[]{Items.SAND}, beforeDelivery));
+            f.client.player.getInventory().setItem(2, new ItemStack(Items.GRAVEL));
+            f.availability.tick(f.client.player);
+            inventoryChanged.invoke(loop);
+            f.advance(3);
+            assertEquals(List.of(TARGET), f.handler.positions(), "A slower module must still observe the stone gain");
+        }
+    }
+
+    @Test void aNewQuickShulkerMakesItsContentsAvailableBeforeTheFallback() throws Exception {
+        boolean oldQuick = Configs.Placement.QUICK_SHULKER.getBooleanValue();
+        try (var f = new MaterialFixture()) {
+            Configs.Placement.QUICK_SHULKER.setBooleanValue(true);
+            f.availability.tick(f.client.player);
+            long before = f.availability.gainRevision();
+            ItemStack box = new ItemStack(Items.SHULKER_BOX);
+            box.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(List.of(new ItemStack(Items.STONE))));
+            f.client.player.getInventory().setItem(0, box);
+            f.availability.tick(f.client.player);
+            assertTrue(f.availability.gainedSince(new Item[]{Items.STONE}, before));
+            assertFalse(f.availability.gainedSince(new Item[]{Items.DIRT}, before));
+        } finally {
+            Configs.Placement.QUICK_SHULKER.setBooleanValue(oldQuick);
+        }
+    }
+
+    @Test void providerStockWakesMaterialWaitsWithoutDiscardingBufferedOrWorldBlockedWork() throws Exception {
+        try (var f = new MaterialFixture()) {
+            Configs.Print.PRINT_SORT_TARGETS.setBooleanValue(true);
+            f.advance(1);
+            var targets = (PrintTargetScheduler) get(f.handler, PrintHandler.class, "targets");
+            var sorted = (SortedSchematicTargetQueue) get(targets, PrintTargetScheduler.class, "sortedTargets");
+            BlockPos ready = TARGET.below(), worldBlocked = TARGET.above();
+            sorted.requeue(ready);
+            targets.deferUntil(worldBlocked, 10);
+            targets.waitForMaterial(TARGET, 1, false, new Item[]{Items.STONE});
+
+            f.runtime.events().publish(new RuntimeEvent.MaterialAvailabilityChanged());
+
+            var round = targets.readyOrdinaryTargets(2).iterator();
+            assertEquals(ready, round.next());
+            assertEquals(TARGET, round.next());
+            assertFalse(round.hasNext());
+            assertTrue(targets.retainedTargets().contains(worldBlocked));
+        }
+    }
 
     @Test void loweringTheReserveWithoutAnInventoryGainCannotParkAnOrdinaryTargetForever() throws Exception {
         try (var f = new MaterialFixture()) {

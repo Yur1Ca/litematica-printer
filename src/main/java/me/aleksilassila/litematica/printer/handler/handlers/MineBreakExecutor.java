@@ -10,6 +10,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,18 +25,20 @@ final class MineBreakExecutor {
     private final TweakerooAdapter tweakeroo;
     private final Map<BlockState, Float> currentProgressCache = new IdentityHashMap<>();
     private final Map<BlockState, ToolChoice> bestToolCache = new IdentityHashMap<>();
-    private int inventorySignature;
     private boolean resolveBestTool;
+    private ItemStack analyzedHand;
+    private DataComponentPatch analyzedComponents;
+    private int analyzedCount;
+    private int analyzedSlot;
+    private int inventoryRevision;
 
     MineBreakExecutor(Minecraft client, TweakerooAdapter tweakeroo) {
         this.client = client;
         this.tweakeroo = tweakeroo;
     }
 
-    public void beginTick() {
-        this.currentProgressCache.clear();
-        this.bestToolCache.clear();
-        this.inventorySignature = Integer.MIN_VALUE;
+    public void beginBatch() {
+        this.reset();
         this.resolveBestTool = Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()
                 || this.tweakeroo.isToolSwitchEnabled();
     }
@@ -43,30 +46,16 @@ final class MineBreakExecutor {
     public void reset() {
         this.currentProgressCache.clear();
         this.bestToolCache.clear();
-        this.inventorySignature = Integer.MIN_VALUE;
+        this.analyzedHand = null;
+        this.analyzedComponents = null;
         this.resolveBestTool = false;
     }
 
     @Nullable
-    public Target analyze(BlockPos pos) {
-        return this.analyze(pos, null);
-    }
-
-    @Nullable
-    public Target analyze(BlockPos pos, @Nullable BlockState observedState) {
+    public Target analyze(BlockPos pos, BlockState state) {
         LocalPlayer player = this.client.player;
         ClientLevel level = this.client.level;
-        if (player == null || level == null || this.client.gameMode == null || pos == null) {
-            return null;
-        }
-        this.refreshInventoryCaches(player);
-        BlockState state = observedState == null ? level.getBlockState(pos) : observedState;
-        if (state.isAir()
-                || state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock
-                || !level.getWorldBorder().isWithinBounds(pos)
-                || (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue()
-                && state.getDestroySpeed(level, pos) < 0.0F)
-                || player.blockActionRestricted(level, pos, this.client.gameMode.getPlayerMode())) {
+        if (player == null || level == null || !level.getWorldBorder().isWithinBounds(pos)) {
             return null;
         }
         ItemStack currentStack = player.getMainHandItem();
@@ -82,6 +71,7 @@ final class MineBreakExecutor {
                     false
             );
         }
+        this.refreshToolContext(player, currentStack);
         float currentProgress = this.getCurrentProgress(player, level, state, currentStack, pos);
         ToolChoice toolChoice = this.getBestToolChoice(player, level, state, currentStack, currentProgress, pos);
         float bestProgress = toolChoice.progress();
@@ -113,6 +103,23 @@ final class MineBreakExecutor {
 
     public boolean hasSameBestTool(Target target, @Nullable Item item) {
         return target != null && target.bestToolItem == item;
+    }
+
+    /** Same-tick dispatch may switch, replace or damage the tool between two ranked positions. */
+    private void refreshToolContext(LocalPlayer player, ItemStack hand) {
+        var inventory = player.getInventory();
+        int slot = InventoryUtils.getSelectedSlot(inventory);
+        int revision = inventory.getTimesChanged();
+        var components = hand.getComponentsPatch();
+        if (hand == this.analyzedHand && slot == this.analyzedSlot && revision == this.inventoryRevision
+                && hand.getCount() == this.analyzedCount && components.equals(this.analyzedComponents)) return;
+        this.currentProgressCache.clear();
+        this.bestToolCache.clear();
+        this.analyzedHand = hand;
+        this.analyzedSlot = slot;
+        this.inventoryRevision = revision;
+        this.analyzedCount = hand.getCount();
+        this.analyzedComponents = components;
     }
 
     private ToolChoice getBestToolChoice(
@@ -198,23 +205,6 @@ final class MineBreakExecutor {
         float progress = this.getDestroyProgress(player, level, state, stack, pos);
         this.currentProgressCache.put(state, progress);
         return progress;
-    }
-
-    /**
-     * A tool can be changed after a target was analyzed in the same client tick. The old caches
-     * were keyed only by BlockState, so the next target reused the broken tool's speed and best
-     * tool choice until the following tick, producing an avoidable pause at tool exhaustion.
-     */
-    private void refreshInventoryCaches(LocalPlayer player) {
-        int signature = InventoryUtils.getSelectedSlot(player.getInventory());
-        for (ItemStack stack : InventoryUtils.getMainStacks(player.getInventory())) {
-            signature = 31 * signature + stack.hashCode();
-        }
-        if (this.inventorySignature != Integer.MIN_VALUE && this.inventorySignature != signature) {
-            this.currentProgressCache.clear();
-            this.bestToolCache.clear();
-        }
-        this.inventorySignature = signature;
     }
 
     public static final class Target {

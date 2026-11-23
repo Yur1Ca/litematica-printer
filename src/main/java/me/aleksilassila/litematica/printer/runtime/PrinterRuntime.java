@@ -37,6 +37,7 @@ import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehou
 import me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseReturnController;
 import net.minecraft.client.Minecraft;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.render.OperationHighlights;
 import me.aleksilassila.litematica.printer.guide.guides.RailGuide;
 
 import java.util.ArrayList;
@@ -68,7 +69,7 @@ public final class PrinterRuntime {
     private final InteractionUtils interactionUtils;
     private final MissingMaterialTracker missingMaterials;
     private final HudStatsManager hudStats;
-    private final me.aleksilassila.litematica.printer.render.OperationHighlights operationHighlights;
+    private final OperationHighlights operationHighlights;
     private final QuickShulkerAdapter quickShulkerAdapter;
     private final ChestTrackerAdapter chestTrackerAdapter;
     private final InventorySwitchGuard inventorySwitchGuard;
@@ -83,7 +84,7 @@ public final class PrinterRuntime {
 
     public PrinterRuntime() {
         Minecraft client = Minecraft.getInstance();
-        this.operationHighlights = new me.aleksilassila.litematica.printer.render.OperationHighlights();
+        this.operationHighlights = new OperationHighlights();
         this.scope.register(this.operationHighlights);
         this.scope.register(this.diagnostics);
         this.cooldownUtils = new CooldownUtils();
@@ -185,7 +186,7 @@ public final class PrinterRuntime {
         return this.hudStats;
     }
 
-    public me.aleksilassila.litematica.printer.render.OperationHighlights operationHighlights() {
+    public OperationHighlights operationHighlights() {
         return this.operationHighlights;
     }
 
@@ -311,17 +312,16 @@ public final class PrinterRuntime {
                 this.timing.finish("runtime", Stage.MINING_TICK, miningStart);
             }
             this.modules.tick();
-            if (Configs.Highlight.ENABLED.getBooleanValue()) {
-                var previews = new java.util.ArrayList<me.aleksilassila.litematica.printer.render.OperationHighlights.Preview>();
-                if (Configs.Highlight.NEXT_ENABLED.getBooleanValue()) {
-                    for (var module : this.modules.values()) {
-                        var preview = module.nextIterationPreview();
-                        if (preview != null) previews.add(preview);
-                    }
+            if (!Configs.Highlight.ENABLED.getBooleanValue()) this.operationHighlights.clearHistory();
+            if (Configs.Highlight.NEXT_ENABLED.getBooleanValue()) {
+                var previews = new ArrayList<OperationHighlights.Preview>();
+                for (var module : this.modules.values()) {
+                    var preview = module.nextIterationPreview();
+                    if (preview != null) previews.add(preview);
                 }
                 this.operationHighlights.setPreviews(previews);
             } else {
-                this.operationHighlights.clear();
+                this.operationHighlights.setPreviews(List.of());
             }
             // 放在最后：这一 tick 的取料/放置都已结算，看到的是背包的最终状态。
             this.warehouseReturn.tick();

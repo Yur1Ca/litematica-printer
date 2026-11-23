@@ -43,6 +43,48 @@ class ThirdReviewShapeCoverageTest {
 
     @ParameterizedTest
     @EnumSource(value = RadiusShapeType.class, names = {"CUBE", "OCTAHEDRON"})
+    void nativeReachRechecksSubBlockMovementAndAttributeChanges(RadiusShapeType shape) throws Exception {
+        try (var f = new ScanIntegrationFixture(0); var reach = new NativeReachContext(f)) {
+            Configs.Core.ITERATOR_SHAPE.setOptionListValue(shape);
+            Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.setBooleanValue(true);
+            setPlayerField(f, "blockPosition", BlockPos.ZERO);
+            var boxes = List.of(rawBox(0, 0, 0, 3, 0, 0));
+            for (int tick = 1; tick <= 4; tick++) {
+                setPlayerField(f, "position", new Vec3(tick <= 2 ? 0.125 : 0.25, 0, 0));
+                if (tick == 4) f.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE).setBaseValue(5.25D);
+                f.tick(tick);
+                ScanIntegrationFixture.drain(f.cache.iterable("mine", boxes, f.level, f.schematic,
+                        f.player, 0, ScanIntent.MINE, pos -> true));
+                assertEquals(tick != 2, f.cache.metricsFor("mine").scannedBlocks() > 0, "tick " + tick);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RadiusShapeType.class, names = {"CUBE", "OCTAHEDRON", "SPHERE"})
+    void sameBlockMotionOnlyRevisitsGeometryThatUsesPreciseCoordinates(RadiusShapeType shape) throws Exception {
+        int previousRange = Configs.Core.WORK_RANGE.getIntegerValue();
+        try (var f = new ScanIntegrationFixture(0)) {
+            Configs.Core.ITERATOR_SHAPE.setOptionListValue(shape);
+            Configs.Core.WORK_RANGE.setIntegerValue(6);
+            var boxes = List.of(rawBox(0, 0, 0, 5, 0, 0));
+            for (int tick = 1; tick <= 4; tick++) {
+                double x = tick <= 2 ? 0.125 : tick == 3 ? 0.25 : 1.25;
+                setPlayerField(f, "position", new Vec3(x, 0, 0));
+                setPlayerField(f, "blockPosition", BlockPos.containing(x, 0, 0));
+                f.tick(tick);
+                ScanIntegrationFixture.drain(f.cache.iterable("mine", boxes, f.level, f.schematic,
+                        f.player, 0, ScanIntent.MINE, pos -> true));
+                boolean shouldScan = tick == 1 || tick == 4 || tick == 3 && shape == RadiusShapeType.SPHERE;
+                assertEquals(shouldScan, f.cache.metricsFor("mine").scannedBlocks() > 0, "tick " + tick);
+            }
+        } finally {
+            Configs.Core.WORK_RANGE.setIntegerValue(previousRange);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RadiusShapeType.class, names = {"CUBE", "OCTAHEDRON"})
     void aHighEyeBlockCenteredSourceKeepsTargetsInsideNativeReach(RadiusShapeType shape) throws Exception {
         int previousRange = Configs.Core.WORK_RANGE.getIntegerValue();
         try (var fixture = new ScanIntegrationFixture(0);

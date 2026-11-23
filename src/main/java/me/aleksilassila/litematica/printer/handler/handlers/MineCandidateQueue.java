@@ -3,8 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -18,12 +17,10 @@ import java.util.function.Predicate;
  * feature.</p>
  */
 final class MineCandidateQueue {
-    private final LinkedHashMap<BlockPos, MineBreakExecutor.Target> entries = new LinkedHashMap<>();
+    private final LinkedHashSet<BlockPos> entries = new LinkedHashSet<>();
 
-    void add(MineBreakExecutor.Target target) {
-        if (target != null && target.pos() != null) {
-            this.entries.put(target.pos().immutable(), target);
-        }
+    void add(BlockPos pos) {
+        if (pos != null) this.entries.add(pos.immutable());
     }
 
     boolean isEmpty() {
@@ -34,14 +31,8 @@ final class MineCandidateQueue {
         return this.entries.size();
     }
 
-    List<MineBreakExecutor.Target> ordered(Comparator<MineBreakExecutor.Target> comparator) {
-        List<MineBreakExecutor.Target> result = new ArrayList<>(this.entries.values());
-        result.sort(comparator);
-        return result;
-    }
-
-    List<MineBreakExecutor.Target> snapshot() {
-        return new ArrayList<>(this.entries.values());
+    List<BlockPos> snapshot() {
+        return new ArrayList<>(this.entries);
     }
 
     void remove(BlockPos pos) {
@@ -50,8 +41,8 @@ final class MineCandidateQueue {
         }
     }
 
-    void removeIf(Predicate<MineBreakExecutor.Target> predicate) {
-        this.entries.entrySet().removeIf(entry -> predicate.test(entry.getValue()));
+    void removeIf(Predicate<BlockPos> predicate) {
+        this.entries.removeIf(predicate);
     }
 
     void clear() {

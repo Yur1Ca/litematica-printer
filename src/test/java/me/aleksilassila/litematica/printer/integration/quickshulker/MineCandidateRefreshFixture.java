@@ -21,6 +21,7 @@ import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
 import me.aleksilassila.litematica.printer.enums.SelectionType;
 import me.aleksilassila.litematica.printer.handler.FeatureModuleBase;
+import me.aleksilassila.litematica.printer.handler.scan.ScanWorkSlice;
 import me.aleksilassila.litematica.printer.handler.handlers.MineHandler;
 import me.aleksilassila.litematica.printer.integration.tweakeroo.TweakerooAdapter;
 import me.aleksilassila.litematica.printer.integration.litematica.LitematicaAdapter;
@@ -30,15 +31,18 @@ import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.EntityFluidInteraction;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeMap;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -56,11 +60,10 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
     private static final Class<?> ANALYZER = type("MineBreakExecutor");
     private static final Class<?> TARGET = type("MineBreakExecutor$Target");
     private static final Class<?> QUEUE = type("MineCandidateQueue");
-    private static final Method ANALYZE = method(ANALYZER, "analyze", BlockPos.class);
-    private static final Method BEGIN_TICK = method(ANALYZER, "beginTick");
-    private static final Method ADD = method(QUEUE, "add", TARGET);
+    private static final Method BEGIN_BATCH = method(ANALYZER, "beginBatch");
+    private static final Method ADD = method(QUEUE, "add", BlockPos.class);
     private static final Method CLEAR = method(QUEUE, "clear");
-    private static final Method REFRESH = method(MineHandler.class, "refreshCandidateTargets");
+    private static final Method REFRESH = method(MineHandler.class, "refreshCandidateTargets", ScanWorkSlice.class, long.class);
     private static final Method POS = method(TARGET, "pos");
     private static final Method STATE = method(TARGET, "state");
     private static final Method CURRENT = method(TARGET, "currentProgress");
@@ -74,6 +77,7 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
     private final SelectionMode oldSelectionMode = selectionManager.getSelectionMode();
     private final IConfigOptionListEntry oldSelectionType = Configs.Mine.MINE_SELECTION_TYPE.getOptionListValue();
     final MiningInteractionRegressionTest.Fixture mining = new MiningInteractionRegressionTest.Fixture(1.0F, false);
+    final CountingInventory inventory = new CountingInventory(mining.player);
     final CountingLevel level = MiningInteractionRegressionTest.alloc(CountingLevel.class);
     private final boolean oldCheckRange = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue();
     private final boolean oldHardness = Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue();
@@ -87,7 +91,6 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
     private final List<TagKey<Block>> oldStoneTags = stoneHolder().tags().toList();
     private final Object analyzer;
     private final Object queue;
-    final Map<BlockPos, BlockState> observedStates = new HashMap<>();
 
     MineCandidateRefreshFixture(boolean creative) throws Exception {
         MiningInteractionRegressionTest.set(null, ConfigUtils.class, "client", mining.client);
@@ -127,6 +130,7 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         MiningInteractionRegressionTest.set(mining.player, Entity.class, "fluidInteraction",
                 new EntityFluidInteraction(Set.of(FluidTags.WATER, FluidTags.LAVA)));
         MiningInteractionRegressionTest.set(mining.player, Entity.class, "onGround", true);
+        mining.player.inventory = inventory;
         setSlot(0, new ItemStack(Items.WOODEN_PICKAXE));
         setSlot(1, new ItemStack(Items.IRON_PICKAXE));
         selectSlot(0);
@@ -141,16 +145,26 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "tweakeroo", tweakeroo);
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "toolSession", session);
         MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "candidates", queue);
-        MiningInteractionRegressionTest.set(mining.mineHandler, MineHandler.class, "candidateStates", observedStates);
+    }
+
+    static final class CountingInventory extends Inventory {
+        int mainListReads;
+        CountingInventory(Player player) { super(player, new EntityEquipment()); }
+        @Override public NonNullList<ItemStack> getNonEquipmentItems() {
+            this.mainListReads++;
+            return super.getNonEquipmentItems();
+        }
     }
 
     static final class CountingLevel extends MiningInteractionRegressionTest.Level {
         LevelChunkSection section;
         int trenchReads;
+        Set<BlockPos> observedReads;
         int trenchReadLimit;
         Map<BlockPos, BlockState> trenchWorld;
         @Override public boolean hasChunk(int x, int z) { return true; }
         @Override public BlockState getBlockState(BlockPos pos) {
+            if (this.observedReads != null) this.observedReads.add(pos.immutable());
             if (++this.trenchReads > this.trenchReadLimit && this.trenchReadLimit > 0) {
                 throw new AssertionError("Trench discovery exceeded its bounded world-read slice");
             }
@@ -176,7 +190,7 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         MiningInteractionRegressionTest.set(mining.player, Entity.class, "position", position);
     }
 
-    void beginTick() throws Exception { BEGIN_TICK.invoke(analyzer); }
+    void beginTick() throws Exception { BEGIN_BATCH.invoke(analyzer); }
 
     void seed(int count, boolean mixed) throws Exception {
         CLEAR.invoke(queue);
@@ -188,10 +202,19 @@ final class MineCandidateRefreshFixture implements AutoCloseable {
         }
     }
 
-    void enqueue(BlockPos pos) throws Exception { ADD.invoke(queue, ANALYZE.invoke(analyzer, pos)); }
+    void enqueue(BlockPos pos) throws Exception { ADD.invoke(queue, pos); }
 
-    @SuppressWarnings("unchecked")
-    List<?> refresh() throws Exception { return (List<?>) REFRESH.invoke(mining.mineHandler); }
+    int queuedCount() throws Exception { return (int) method(QUEUE, "size").invoke(queue); }
+
+    java.util.Iterator<?> refreshIterator() throws Exception {
+        return (java.util.Iterator<?>) REFRESH.invoke(mining.mineHandler, null, 0L);
+    }
+
+    List<?> refresh() throws Exception {
+        var targets = new ArrayList<>();
+        refreshIterator().forEachRemaining(targets::add);
+        return targets;
+    }
 
     List<TargetView> views(List<?> targets) throws Exception {
         var result = new ArrayList<TargetView>(targets.size());

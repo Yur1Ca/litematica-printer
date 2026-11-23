@@ -84,6 +84,7 @@ final class ScanCandidateSourceFactory {
                 this.generationSequence
         );
         long sourceRevision = session.sourceRevision();
+        long chunkRevision = session.chunkRechecks.version();
         return new ScanCandidateIterable() {
             private final ScanAvailability[] state = {session.hasPendingSource(tickTime)
                     ? ScanAvailability.READY : ScanAvailability.COMPLETE};
@@ -94,12 +95,21 @@ final class ScanCandidateSourceFactory {
             }
 
             @Override public boolean isValid() {
+                return this.isScopeCurrent() && session.chunkRechecks.version() == chunkRevision;
+            }
+
+            @Override public boolean isChunkCurrent(BlockPos pos) {
+                return session.chunkRechecks.current(pos, chunkRevision);
+            }
+
+            @Override public boolean isScopeCurrent() {
                 return session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
                         && session.sourceRevision() == sourceRevision;
             }
 
             @Override
             public Iterator<BlockPos> iterator() {
+                if (!this.isValid()) return java.util.Collections.emptyIterator();
                 return new Iterator<>() {
                     private final long deliveryGeneration = session.beginDeliveryIterator();
                     private final LongSet emitted = new LongOpenHashSet();
@@ -114,9 +124,7 @@ final class ScanCandidateSourceFactory {
                     private int considered;
 
                     private void prepare() {
-                        if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
-                                || session.sourceRevision() != sourceRevision
-                                || !session.acceptsDeliveryIterator(this.deliveryGeneration)) {
+                        if (!isValid() || !session.acceptsDeliveryIterator(this.deliveryGeneration)) {
                             this.next = null;
                             this.prepared = true;
                             state[0] = ScanAvailability.COMPLETE;
@@ -156,8 +164,7 @@ final class ScanCandidateSourceFactory {
                                         unbounded,
                                         () -> unbounded || ScanCandidateSourceFactory.this.budget.tryAdvance()
                                 );
-                                if (!session.belongsTo(ScanCandidateSourceFactory.this.runtimeEpoch)
-                                        || session.sourceRevision() != sourceRevision) {
+                                if (!isValid()) {
                                     break;
                                 }
                                 if (candidate == null) {
@@ -188,6 +195,7 @@ final class ScanCandidateSourceFactory {
                                 if (this.emitted.add(ScanCache.key(pos))) {
                                     metrics.acceptedTargets++;
                                     this.next = pos;
+                                    session.prefetch(pos);
                                     return;
                                 }
                             }
@@ -225,6 +233,7 @@ final class ScanCandidateSourceFactory {
                             throw new NoSuchElementException("scan candidate source is exhausted");
                         }
                         BlockPos result = this.next;
+                        session.prefetch(null);
                         this.next = null;
                         this.prepared = false;
                         if (!session.hasPendingSource(tickTime)) {

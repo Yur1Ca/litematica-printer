@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.HashSet;
+import net.minecraft.world.item.Item;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import net.minecraft.core.Direction;
@@ -27,7 +27,7 @@ public final class PrintTargetScheduler {
     private final SortedSchematicTargetQueue sortedTargets;
     private final Runnable resetScanSources;
     private final Map<BlockPos, Long> retryAfter = new HashMap<>();
-    private final Set<BlockPos> materialWaiting = new HashSet<>();
+    private final Map<BlockPos, Item[]> materialWaiting = new HashMap<>();
     private final Set<BlockPos> retryTargets = new BoundedTargetSet(BoundedTargetSet.DEFAULT_CAPACITY,
             pos -> {
                 this.retryAfter.remove(pos);
@@ -93,7 +93,7 @@ public final class PrintTargetScheduler {
         var order = this.sortedTargets.targetComparator();
         for (int i = this.readyRoundIndex; i < this.readyRound.size(); i++) {
             BlockPos pos = this.readyRound.get(i);
-            if (this.retryTargets.contains(pos) && !this.materialWaiting.contains(pos)
+            if (this.retryTargets.contains(pos) && !this.materialWaiting.containsKey(pos)
                     && this.retryAfter.getOrDefault(pos, Long.MIN_VALUE) <= now
                     && (next == null || order.compare(pos, next) < 0)) next = pos;
         }
@@ -102,7 +102,7 @@ public final class PrintTargetScheduler {
         // round may look into that refill; it must not jump ahead of its remaining tail.
         next = this.sortedTargets.peekPosition(pos -> !this.retryTargets.contains(pos));
         for (BlockPos pos : this.retryTargets) {
-            if (!this.materialWaiting.contains(pos) && this.retryAfter.getOrDefault(pos, Long.MIN_VALUE) <= now
+            if (!this.materialWaiting.containsKey(pos) && this.retryAfter.getOrDefault(pos, Long.MIN_VALUE) <= now
                     && (next == null || order.compare(pos, next) < 0)) next = pos;
         }
         return next;
@@ -184,10 +184,12 @@ public final class PrintTargetScheduler {
         boolean retryReady = this.hasReadyRetry(now);
         if (this.warmRound != null && !this.warmRound.isValid()) {
             BlockPos retained = this.nextWarmTarget;
+            boolean retainLookahead = retained != null && this.warmRound.isChunkCurrent(retained)
+                    && this.sortedTargets.canRetain(retained, this.warmReplacementGeneration);
             this.warmRound = null;
             this.warmRoundIterator = null;
             this.nextWarmTarget = null;
-            if (retained != null && this.sortedTargets.canRetain(retained, this.warmReplacementGeneration)) {
+            if (retainLookahead) {
                 // A moved scope invalidates the old iterator after it removed this lookahead.
                 // Return that reference before capturing the newly ordered retained buffer.
                 this.sortedTargets.requeue(retained);
@@ -235,8 +237,20 @@ public final class PrintTargetScheduler {
     }
 
     public void waitForMaterial(BlockPos pos, long now, boolean submissionPending) {
+        this.waitForMaterial(pos, now, submissionPending, null);
+    }
+
+    public void waitForMaterial(BlockPos pos, long now, boolean submissionPending, Item[] alternatives) {
         this.deferUntil(pos, now + (submissionPending ? 1L : 20L));
-        this.materialWaiting.add(pos.immutable());
+        this.materialWaiting.put(pos.immutable(), alternatives);
+    }
+
+    public void wakeMaterials(Predicate<Item[]> gained) {
+        this.materialWaiting.entrySet().removeIf(entry -> {
+            if (!gained.test(entry.getValue())) return false;
+            this.retryAfter.remove(entry.getKey());
+            return true;
+        });
     }
 
     /** Local world changes wake timed conditions; material waits require an inventory gain. */
@@ -247,7 +261,7 @@ public final class PrintTargetScheduler {
 
     private void wakeTimed(BlockPos pos) {
         Long deadline = this.retryAfter.get(pos);
-        if (deadline != null && !this.materialWaiting.contains(pos)) this.retryAfter.remove(pos);
+        if (deadline != null && !this.materialWaiting.containsKey(pos)) this.retryAfter.remove(pos);
     }
 
     public boolean acceptScanCandidate(BlockPos pos) {

@@ -856,15 +856,13 @@ class SurvivalMineToolSwitchTest {
                 assertEquals(Blocks.STONE.defaultBlockState(), f.candidates.level.getBlockState(pos));
                 f.iterate(pos);
             }
-            Object queue = get(f.mining.mineHandler, MineHandler.class, "candidates");
-            var entries = (Map<?, ?>) get(queue, queue.getClass(), "entries");
-            assertEquals(64, entries.size(), "The real source must have filled a substantial blocked batch");
+            assertEquals(64, f.candidates.queuedCount(), "The real source must have filled a substantial blocked batch");
             long dirty = scan.dirtyVersion();
 
             f.dispatch();
 
             assertTrue(tool.connection.packets.isEmpty());
-            assertTrue(entries.isEmpty(), "An entirely blocked batch must yield once, not discard one coordinate every tick while hiding the source tail");
+            assertEquals(0, f.candidates.queuedCount(), "An entirely blocked batch must yield once, not discard one coordinate every tick while hiding the source tail");
             for (int tick = 1; tick <= 3 && tool.connection.heldAtStart.isEmpty(); tick++) {
                 f.candidates.level.tick = tick;
                 set(RuntimeAccess.get(), PrinterRuntime.class, "currentTick", (long) tick);

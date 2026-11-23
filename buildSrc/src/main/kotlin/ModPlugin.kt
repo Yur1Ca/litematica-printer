@@ -136,6 +136,9 @@ abstract class ModPlugin : Plugin<Project> {
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils::sendPacket")
             // Pending queries share the same Unsafe-replaced final client in queue/rail fixtures.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.InteractionUtils::isPendingDelayedDestroy")
+            // Mining fixtures replace the same final client. A warmed canBreakBlock can otherwise
+            // keep reading stone from the preceding fixture after the new world contains air.
+            jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.utils.InteractionUtils::canBreakBlock")
             // Print fixtures replace ConfigUtils' final client; a hot inherited read must not
             // bind a later schematic context to an earlier fixture's player and inventory.
             jvmArgs("-XX:CompileCommand=exclude,me.aleksilassila.litematica.printer.handler.handlers.PrintHandler::canIterationBlockPos")

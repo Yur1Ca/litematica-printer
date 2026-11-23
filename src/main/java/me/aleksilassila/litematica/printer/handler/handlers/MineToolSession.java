@@ -6,8 +6,6 @@ import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.Item;
 
-import java.util.List;
-
 final class MineToolSession {
     private Item sessionToolItem;
     private int remainingInstantBudget;
@@ -27,14 +25,6 @@ final class MineToolSession {
         // 0 = unlimited: batch-dispatch the whole candidate set per tick. The interaction service
         // owns durability protection independently of this batch budget.
         this.remainingInstantBudget = configuredBudget <= 0 ? -1 : configuredBudget;
-    }
-
-    MineBreakExecutor.Target selectTarget(List<MineBreakExecutor.Target> candidates) {
-        // The running vanilla target continues in MineHandler before fresh selection. Completed,
-        // failed or deferred candidates re-enter their original rank instead of tool affinity.
-        MineBreakExecutor.Target selected = candidates.get(0);
-        this.sessionToolItem = selected.bestToolItem();
-        return selected;
     }
 
     void startSession(MineBreakExecutor.Target firstTarget) {

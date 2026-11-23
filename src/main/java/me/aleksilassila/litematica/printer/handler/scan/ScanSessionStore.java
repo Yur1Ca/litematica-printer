@@ -10,6 +10,7 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -117,6 +118,7 @@ final class ScanSessionStore implements AutoCloseable {
             SectionScanSession session = iterator.next();
             if (session.intersectsChunkAndNeighbors(chunkX, chunkZ)) {
                 session.recordReason(Reason.CHUNK_REPLACED);
+                if (session.refreshChunk(chunkX, chunkZ)) continue;
                 session.close();
                 iterator.remove();
             }
@@ -238,12 +240,16 @@ final class ScanSessionStore implements AutoCloseable {
             session.updateRegion(region, sourceBoxes);
         }
         long eligibility = Configs.Core.WORK_RANGE.getIntegerValue();
-        eligibility = 31L * eligibility + Configs.Core.ITERATOR_SHAPE.getOptionListValue().hashCode();
-        eligibility = 31L * eligibility + Boolean.hashCode(Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue());
-        if (player != null) {
+        var shape = Configs.Core.ITERATOR_SHAPE.getOptionListValue();
+        boolean nativeReach = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue();
+        eligibility = 31L * eligibility + shape.hashCode();
+        eligibility = 31L * eligibility + Boolean.hashCode(nativeReach);
+        // updateRegion already compares the integer center used by cube and octahedron.
+        if (player != null && (nativeReach || shape == RadiusShapeType.SPHERE)) {
             eligibility = 31L * eligibility + Double.doubleToLongBits(player.getX());
             eligibility = 31L * eligibility + Double.doubleToLongBits(player.getEyeY());
             eligibility = 31L * eligibility + Double.doubleToLongBits(player.getZ());
+            if (nativeReach) eligibility = 31L * eligibility + Double.doubleToLongBits(player.blockInteractionRange());
         }
         session.updateEligibility(eligibility);
         return session;

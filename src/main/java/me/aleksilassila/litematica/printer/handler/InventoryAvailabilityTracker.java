@@ -20,11 +20,13 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Tracks material gains once per client tick without treating normal consumption as a rescan event. */
 public final class InventoryAvailabilityTracker implements RuntimeComponent {
     private final Map<Item, Integer> previousCounts = new IdentityHashMap<>();
     private final Map<Item, Integer> currentCounts = new IdentityHashMap<>();
+    private final Map<Item, Long> lastGainByItem = new IdentityHashMap<>();
     private final Set<Item> previousAvailableItems = new HashSet<>();
     private final Set<Item> availableItems = new HashSet<>();
     private volatile Set<Item> availableItemsSnapshot = Collections.emptySet();
@@ -55,8 +57,8 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
                 this.currentCounts.merge(stack.getItem(), stack.getCount(), Integer::sum);
                 if (trackAvailability) {
                     this.availableItems.add(stack.getItem());
-                    if (isShulkerBox(stack)) {
-                        this.collectShulkerContents(stack);
+                    if (isShulkerBox(stack.getItem())) {
+                        collectShulkerContents(stack, this.availableItems::add);
                     }
                 }
             }
@@ -74,12 +76,7 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
             this.availableItems.addAll(TakeItOutUtils.getAvailableItems());
         }
         if (this.initialized) {
-            for (Map.Entry<Item, Integer> entry : this.currentCounts.entrySet()) {
-                if (entry.getValue() > this.previousCounts.getOrDefault(entry.getKey(), 0)) {
-                    this.gainRevision++;
-                    break;
-                }
-            }
+            this.recordGains(player);
         } else {
             this.initialized = true;
         }
@@ -106,16 +103,39 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         }
     }
 
-    private static boolean isShulkerBox(ItemStack stack) {
-        return !stack.isEmpty()
-                && BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().contains("shulker_box");
+    private void recordGains(LocalPlayer player) {
+        long nextRevision = this.gainRevision + 1;
+        Set<Item> gainedBoxes = null;
+        for (var entry : this.currentCounts.entrySet()) {
+            Item item = entry.getKey();
+            if (entry.getValue() <= this.previousCounts.getOrDefault(item, 0)) continue;
+            this.gainRevision = nextRevision;
+            this.lastGainByItem.put(item, nextRevision);
+            if (Configs.Placement.QUICK_SHULKER.getBooleanValue() && isShulkerBox(item)) {
+                if (gainedBoxes == null) gainedBoxes = new HashSet<>();
+                gainedBoxes.add(item);
+            }
+        }
+        if (gainedBoxes == null) return;
+        // Quick Shulker can supply the contents of a newly acquired singleton box immediately.
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack box = inventory.getItem(slot);
+            if (box.getCount() == 1 && gainedBoxes.contains(box.getItem())) {
+                collectShulkerContents(box, stored -> this.lastGainByItem.put(stored, nextRevision));
+            }
+        }
     }
 
-    private void collectShulkerContents(ItemStack stack) {
+    private static boolean isShulkerBox(Item item) {
+        return BuiltInRegistries.ITEM.getKey(item).toString().contains("shulker_box");
+    }
+
+    private static void collectShulkerContents(ItemStack stack, Consumer<Item> accept) {
         try {
             for (ItemStack stored : InventoryUtils.getStoredItems(stack, -1)) {
                 if (!stored.isEmpty()) {
-                    this.availableItems.add(stored.getItem());
+                    accept.accept(stored.getItem());
                 }
             }
         } catch (Exception ignored) {
@@ -145,6 +165,15 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
         return this.gainRevision;
     }
 
+    /** Include every gain since this module last ran, even across skipped ticks. */
+    public boolean gainedSince(Item[] alternatives, long revision) {
+        if (alternatives == null || alternatives.length == 0) return this.gainRevision > revision;
+        for (Item item : alternatives) {
+            if (this.lastGainByItem.getOrDefault(item, Long.MIN_VALUE) > revision) return true;
+        }
+        return false;
+    }
+
     public long availabilityRevision() {
         return this.availabilityRevision;
     }
@@ -154,6 +183,7 @@ public final class InventoryAvailabilityTracker implements RuntimeComponent {
     }
 
     public void reset() {
+        this.lastGainByItem.clear();
         this.previousCounts.clear();
         this.currentCounts.clear();
         this.previousAvailableItems.clear();

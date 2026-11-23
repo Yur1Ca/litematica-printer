@@ -40,6 +40,7 @@ final class ModuleIterationRunner {
             Iterable<BlockPos> positions = module.getIterationPositions(interactionBox);
             module.rememberIterationPreviewScope(interactionBox);
             Iterator<BlockPos> iterator = positions.iterator();
+            boolean emptyList = positions instanceof java.util.List<?> list && list.isEmpty();
             while (true) {
                 if (++budgetChecks % BUDGET_CHECK_INTERVAL == 0
                         && workSlice.isExceeded(actionExecutionNanos + module.additionalIterationActionNanos())) {
@@ -55,6 +56,7 @@ final class ModuleIterationRunner {
                     break;
                 }
                 // hasNext() may advance a live scan; check every iteration guard before probing it.
+                if (emptyList) break;
                 if (!workSlice.tryAdvance()) {
                     interrupt = true;
                     break;
@@ -112,7 +114,7 @@ final class ModuleIterationRunner {
             boolean completedPass = module.scanEngine.metricsFor(module.getId()).completedPasses() > completedPassesBefore
                     || positions instanceof ScanCandidateIterable source
                     && source.availability() == ScanAvailability.COMPLETE;
-            module.stopIteration(interrupt);
+            module.stopIteration(interrupt, workSlice, actionExecutionNanos);
             return new FeatureModuleBase.IterationOutcome(interrupt, didWork, foundCandidate, completedPass, scanPaused);
         } finally {
             workSlice.finish(actionExecutionNanos + module.additionalIterationActionNanos());

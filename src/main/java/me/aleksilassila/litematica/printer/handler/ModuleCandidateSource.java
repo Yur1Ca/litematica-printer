@@ -23,10 +23,14 @@ final class ModuleCandidateSource {
         if (sourceBoxes.isEmpty()) return List.of();
         Predicate<BlockPos> selection = module.createSelectionRangePredicate();
         Predicate<BlockPos> reach = module.createScanReachPredicate();
+        Predicate<BlockPos> preFilter = reach.and(selection);
+        // PRINT classifies mismatches from cached flags. Its retry ownership must be
+        // checked even when classification needs no exact predicate.
+        if (intent == ScanIntent.PRINT) preFilter = preFilter.and(candidatePredicate);
         return module.scanEngine.iterable(
                 module.getId(), sourceBoxes, module.level,
                 SchematicWorldHandler.getSchematicWorld(), module.player,
                 module.getScanGuardLimit(), intent, candidatePredicate,
-                pos -> reach.test(pos) && selection.test(pos));
+                preFilter);
     }
 }

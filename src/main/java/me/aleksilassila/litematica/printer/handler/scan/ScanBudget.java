@@ -93,7 +93,12 @@ final class ScanBudget {
             @Override
             public boolean isExceeded(long excludedNanos) {
                 return ScanBudget.this.iterationCandidates >= Configs.Core.WORK_PER_TICK.getIntegerValue()
-                        || iterationBefore + this.planningNanos(excludedNanos)
+                        || this.isTimeExceeded(excludedNanos);
+            }
+
+            @Override
+            public boolean isTimeExceeded(long excludedNanos) {
+                return iterationBefore + this.planningNanos(excludedNanos)
                         >= Math.max(1L, ScanBudget.this.iterationBudgetNanosSupplier.getAsLong());
             }
 

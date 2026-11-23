@@ -79,6 +79,9 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
             @Override public boolean isValid() {
                 return viewGeneration == generation && (guard == null || guard.isValid());
             }
+            @Override public boolean isChunkCurrent(BlockPos pos) {
+                return guard == null || guard.isChunkCurrent(pos);
+            }
             @Override public ScanAvailability availability() {
                 return this.isValid() ? SortedSchematicTargetQueue.this.availability() : ScanAvailability.COMPLETE;
             }
@@ -106,7 +109,8 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
 
     /** Scope changes retain delivery ownership; cleared or replaced sources do not. */
     boolean canRetain(BlockPos pos, long replacementGeneration) {
-        return this.replacementGeneration == replacementGeneration && this.isValid()
+        return this.replacementGeneration == replacementGeneration
+                && (this.sourceGuard == null || this.sourceGuard.isScopeCurrent())
                 && this.boxes.stream().anyMatch(box -> box.contains(pos));
     }
 
@@ -174,10 +178,15 @@ public final class SortedSchematicTargetQueue implements ScanCandidateIterable {
                       LocalPlayer player, int scanGuardLimit, boolean fillWhenBuffered,
                       Predicate<BlockPos> candidateFilter) {
         if (!this.isValid()) {
-            this.queue.clear();
-            this.insertionOrdered = true;
+            if (this.sourceGuard.isScopeCurrent()) {
+                this.queue.values().removeIf(pos -> !this.sourceGuard.isChunkCurrent(pos));
+                if (this.queue.size() <= 1) this.insertionOrdered = true;
+            } else {
+                this.queue.clear();
+                this.insertionOrdered = true;
+                this.replacementGeneration++;
+            }
             this.generation++;
-            this.replacementGeneration++;
             this.hasMoreSource = true;
             this.lastFillTick = Long.MIN_VALUE;
         }

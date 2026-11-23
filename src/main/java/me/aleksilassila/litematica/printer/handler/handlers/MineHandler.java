@@ -40,14 +40,14 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 
@@ -57,11 +57,11 @@ public class MineHandler extends FeatureModuleBase {
     private final TweakerooAdapter tweakeroo;
     private final MineToolSession toolSession;
     private final MineCandidateQueue candidates = new MineCandidateQueue();
-    private final Map<BlockPos, BlockState> candidateStates = new HashMap<>();
     private final TrenchFillState trenchFill = new TrenchFillState();
     private List<String> trenchFillFilters;
     private Item[] trenchFillItems = new Item[0];
     private boolean trenchSupportBlockedThisTick;
+    private boolean resumingMineBatch;
     @Nullable private Integer observedEligibilityConfigHash;
     @Nullable
     private BlockPos activeMinePos;
@@ -129,6 +129,7 @@ public class MineHandler extends FeatureModuleBase {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        this.resumingMineBatch = !this.candidates.isEmpty();
         if (this.hasTrenchWork()) {
             if (this.trenchFill.hasBreakTargets()) {
                 List<BlockPos> breakTargets = this.trenchFill.readyBreakTargets(
@@ -179,7 +180,7 @@ public class MineHandler extends FeatureModuleBase {
                 this.player,
                 this.getScanGuardLimit(),
                 ScanIntent.MINE,
-                pos -> this.isMineScanCandidate(pos, false),
+                pos -> this.getMineCandidateState(pos, false) != null,
                 pos -> reachPredicate.test(pos) && selectionPredicate.test(pos)
         );
     }
@@ -194,8 +195,8 @@ public class MineHandler extends FeatureModuleBase {
         }
         BlockPos next = null;
         var order = this.scanEngine.targetComparator(NAME);
-        for (var target : this.candidates.snapshot()) {
-            if (next == null || order.compare(target.pos(), next) < 0) next = target.pos();
+        for (BlockPos pos : this.candidates.snapshot()) {
+            if (next == null || order.compare(pos, next) < 0) next = pos;
         }
         return next;
     }
@@ -215,13 +216,8 @@ public class MineHandler extends FeatureModuleBase {
         }
         this.observedEligibilityConfigHash = eligibilityConfigHash;
         this.trenchSupportBlockedThisTick = false;
-        this.analyzer.beginTick();
         this.toolSession.beginTick();
-        this.candidates.removeIf(target -> {
-            if (this.isInSelectionRange(target.pos())) return false;
-            this.candidateStates.remove(target.pos());
-            return true;
-        });
+        this.candidates.removeIf(pos -> !this.isInSelectionRange(pos));
         this.trenchFill.beginTick(this.level.getGameTime());
         this.refreshTrenchFillTargets();
         this.continueActiveMineTarget();
@@ -257,7 +253,6 @@ public class MineHandler extends FeatureModuleBase {
     protected void onRuntimeReset() {
         this.scanEngine.resetOwner("trench");
         this.candidates.clear();
-        this.candidateStates.clear();
         this.activeMinePos = null;
         this.trenchFill.clear();
         this.trenchFillFilters = null;
@@ -305,7 +300,7 @@ public class MineHandler extends FeatureModuleBase {
         if (this.hasTrenchWork() && this.trenchFill.hasBreakTarget(pos)) {
             return this.level != null && this.isTrenchBreakTarget(pos, this.level.getBlockState(pos));
         }
-        return this.isMineScanCandidate(pos, true);
+        return this.getMineCandidateState(pos, true) != null;
     }
 
     @Override
@@ -323,49 +318,45 @@ public class MineHandler extends FeatureModuleBase {
             skipIteration.set(true);
             return;
         }
-        MineBreakExecutor.Target target = this.analyzer.analyze(blockPos, this.candidateStates.remove(blockPos));
-        if (target == null) {
-            this.setIterationConsumedEffectiveExecution(false);
-            return;
-        }
-        this.candidates.add(target);
+        this.candidates.add(blockPos);
         this.setIterationConsumedEffectiveExecution(false);
     }
 
     @Override
     protected void stopIteration(boolean interrupt) {
-        if (this.trenchSupportBlockedThisTick || this.actionBroker.isWaitingForLook()
-                || this.activeMinePos != null || this.candidates.isEmpty()) {
-            return;
-        }
-        List<MineBreakExecutor.Target> orderedCandidates = this.refreshCandidateTargets();
-        if (orderedCandidates.isEmpty()) {
-            return;
-        }
-        MineBreakExecutor.Target selected = this.toolSession.selectTarget(orderedCandidates);
-        this.executeToolSession(selected, orderedCandidates);
+        this.stopIteration(interrupt, null, 0L);
     }
 
-    private List<MineBreakExecutor.Target> refreshCandidateTargets() {
-        List<MineBreakExecutor.Target> refreshed = new ArrayList<>();
-        for (MineBreakExecutor.Target queued : this.candidates.snapshot()) {
-            BlockPos pos = queued.pos();
-            this.candidateStates.remove(pos);
-            if (!this.isInSelectionRange(pos) || !this.isMineScanCandidate(pos, true)) {
-                this.candidates.remove(pos);
-                continue;
-            }
-            MineBreakExecutor.Target current = this.analyzer.analyze(pos);
-            if (current == null) {
-                this.candidates.remove(pos);
-                continue;
-            }
-            this.candidates.add(current);
-            refreshed.add(current);
+    @Override
+    protected void stopIteration(boolean interrupt, @Nullable ScanWorkSlice work, long actionNanos) {
+        if (this.trenchSupportBlockedThisTick || this.actionBroker.isWaitingForLook()
+                || this.activeMinePos != null || this.candidates.isEmpty() || !this.toolSession.hasInstantBudget()) {
+            return;
         }
-        refreshed.sort(java.util.Comparator.comparing(MineBreakExecutor.Target::pos,
-                this.scanEngine.targetComparator(NAME)));
-        return refreshed;
+        this.executeToolSession(this.refreshCandidateTargets(work, actionNanos));
+    }
+
+    private Iterator<MineBreakExecutor.Target> refreshCandidateTargets(@Nullable ScanWorkSlice work, long actionNanos) {
+        // New coordinates already paid the runner's candidate quota. For a retained batch,
+        // reserve its first live recheck before copying or sorting anything.
+        if (this.resumingMineBatch && work != null && !work.tryAdvance()) return java.util.Collections.emptyIterator();
+        var positions = this.candidates.snapshot();
+        positions.sort(this.scanEngine.targetComparator(NAME));
+        this.analyzer.beginBatch();
+        return IntStream.range(0, positions.size())
+                .takeWhile(index -> index == 0 || work == null
+                        || !work.isTimeExceeded(actionNanos + this.additionalIterationActionNanos())
+                        && (!this.resumingMineBatch || work.tryAdvance()))
+                .mapToObj(index -> this.refreshCandidate(positions.get(index)))
+                .filter(java.util.Objects::nonNull).iterator();
+    }
+
+    @Nullable
+    private MineBreakExecutor.Target refreshCandidate(BlockPos pos) {
+        BlockState state = this.isInSelectionRange(pos) ? this.getMineCandidateState(pos, true) : null;
+        MineBreakExecutor.Target target = state == null ? null : this.analyzer.analyze(pos, state);
+        if (target == null) this.candidates.remove(pos);
+        return target;
     }
 
     private void continueActiveMineTarget() {
@@ -401,38 +392,39 @@ public class MineHandler extends FeatureModuleBase {
         return inRange && InteractionUtils.canBreakBlock(pos) && this.mineRestriction(state);
     }
 
-    private boolean isMineScanCandidate(BlockPos pos, boolean checkReach) {
+    @Nullable
+    private BlockState getMineCandidateState(BlockPos pos, boolean checkReach) {
         if (pos == null || this.level == null || this.player == null || this.gameMode == null) {
-            return false;
+            return null;
         }
 
         if (!MinePlanner.canInspect(InteractionUtils.getRuntime().isRecentlyBroken(pos),
                 InteractionUtils.getRuntime().isPendingDelayedDestroy(pos))) {
-            return false;
+            return null;
         }
 
         BlockState state = this.level.getBlockState(pos);
         if (!MinePlanner.isSolidTarget(state)) {
-            return false;
+            return null;
         }
 
         boolean checkHardness = Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue();
         if (!MinePlanner.hardnessAllowed(checkHardness, checkHardness ? state.getDestroySpeed(this.level, pos) : 0.0F)) {
-            return false;
+            return null;
         }
 
         if (!MinePlanner.allowed(!checkReach || this.canReachIterationPosition(pos),
                 () -> !this.player.blockActionRestricted(this.level, pos, this.gameMode.getPlayerMode()),
                 () -> mineRestriction(state))) {
-            return false;
+            return null;
         }
-        this.candidateStates.put(pos.immutable(), state);
-        return true;
+        return state;
     }
 
-    private void executeToolSession(MineBreakExecutor.Target firstTarget,
-                                    List<MineBreakExecutor.Target> orderedCandidates) {
-        int firstIndex = 0;
+    private void executeToolSession(Iterator<MineBreakExecutor.Target> orderedCandidates) {
+        if (!orderedCandidates.hasNext()) return;
+        MineBreakExecutor.Target firstTarget = orderedCandidates.next();
+        List<BlockPos> blocked = null;
         Set<ToolPreparationKey> failedPreparations = null;
         BlockBreakResult result;
         while (true) {
@@ -449,17 +441,19 @@ public class MineHandler extends FeatureModuleBase {
                 if (failedPreparations == null) failedPreparations = new HashSet<>();
                 failedPreparations.add(preparation);
             }
+            if (blocked == null) blocked = new ArrayList<>();
+            blocked.add(firstTarget.pos());
             // Keep a durability-blocked target at its rank for the next pass, while allowing
             // a later target to prepare a different safe tool through the same guard.
-            if (++firstIndex >= orderedCandidates.size()) {
+            if (!orderedCandidates.hasNext()) {
                 // This action batch cannot use the hand. Leave its positive scan facts and
                 // source cursor intact so later source slices can discover a safe tool target.
                 // Inventory wakeup or repair may offer these coordinates again at their rank.
-                this.candidates.clear();
-                this.candidateStates.clear();
+                // A work limit may leave uninspected ranks in this queue.
+                blocked.forEach(this.candidates::remove);
                 return;
             }
-            firstTarget = orderedCandidates.get(firstIndex);
+            firstTarget = orderedCandidates.next();
         }
         // Batch dispatch: the per-tick budget lives on the session (BREAK_BLOCKS_PER_TICK,
         // 0 = unlimited). The controller has no per-call fast budget — delta>=0.7 blocks always
@@ -468,12 +462,10 @@ public class MineHandler extends FeatureModuleBase {
         if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {
             return;
         }
-        for (int index = firstIndex + 1; index < orderedCandidates.size(); index++) {
-            MineBreakExecutor.Target queuedTarget = orderedCandidates.get(index);
-            if (!this.toolSession.hasInstantBudget()) {
-                break;
-            }
-            boolean switchTool = !this.toolSession.matchesSessionTool(this.analyzer, queuedTarget);
+        while (this.toolSession.hasInstantBudget() && orderedCandidates.hasNext()) {
+            MineBreakExecutor.Target queuedTarget = orderedCandidates.next();
+            boolean switchTool = !this.toolSession.matchesSessionTool(this.analyzer, queuedTarget)
+                    || !this.analyzer.isCurrentToolEffective(queuedTarget);
             if (!this.toolSession.ensureHandToolProtected(this.player, queuedTarget)) {
                 break;
             }
@@ -531,7 +523,6 @@ public class MineHandler extends FeatureModuleBase {
             return;
         }
         this.candidates.remove(pos);
-        this.candidateStates.remove(pos);
     }
 
     private boolean hasTrenchWork() {

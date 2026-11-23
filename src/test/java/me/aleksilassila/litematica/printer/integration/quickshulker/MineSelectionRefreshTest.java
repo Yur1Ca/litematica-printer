@@ -53,6 +53,75 @@ class MineSelectionRefreshTest {
 
     @BeforeAll static void bootstrap() { InventoryRegressionTest.bootstrap(); }
 
+    @Test void oneBreakBudgetAnalyzesOnlyTheNextRankEachTick() throws Exception {
+        try (var f = new Fixture(true)) {
+            Configs.Break.BREAK_BLOCKS_PER_TICK.setIntegerValue(1);
+            f.bounds(FIRST, new BlockPos(15, 0, 1));
+            f.candidates.seed(32, false);
+            f.candidates.level.observedReads = new java.util.HashSet<>();
+            for (BlockPos expected : List.of(FIRST, SECOND)) {
+                f.callToolSession("beginTick");
+                f.candidates.level.observedReads.clear();
+                f.dispatch();
+                assertEquals(java.util.Set.of(expected), f.candidates.level.observedReads,
+                        "Retained positions should be validated only when their rank is dispatched");
+                f.advanceTick();
+            }
+        }
+    }
+
+    @Test void retainedMiningUsesTheCurrentSharedPlanningAllowanceAndResumesAtTheNextRank() throws Exception {
+        int oldWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new Fixture(true)) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            var end = MineCandidateRefreshFixture.position(2);
+            var scope = new PrinterBox(FIRST, end);
+            f.bounds(FIRST, end);
+            f.candidates.seed(3, false);
+            var scan = f.installScan();
+            scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+            var other = scan.openWorkSlice("print");
+            for (int i = 0; i < 255; i++) assertTrue(other.tryAdvance());
+            other.finish(0);
+            invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+            assertEquals(List.of(FIRST), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList(),
+                    "A retained queue shares this tick's remaining work");
+            f.advanceTick();
+            Configs.Core.WORK_PER_TICK.setIntegerValue(8192);
+            scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+            invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+            assertEquals(List.of(FIRST, MineCandidateRefreshFixture.position(1), end),
+                    f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList());
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(oldWork);
+        }
+    }
+
+    @Test void freshCandidatesSharePlanningTimeAndKeepTheirAlreadyReservedPermits() throws Exception {
+        int oldWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var f = new Fixture(true); var schematic = new HeadlessSchematicBinding()) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            var scope = new PrinterBox(FIRST, SECOND);
+            f.candidates.state(FIRST, Blocks.STONE.defaultBlockState());
+            f.candidates.state(SECOND, Blocks.STONE.defaultBlockState());
+            // Reach the planning deadline exactly after dispatching the first discovered target.
+            var scan = f.installScan(() -> f.mining.connection.packets.isEmpty() ? 0L : 1_000_000_000_000L);
+            scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+            var other = scan.openWorkSlice("print");
+            for (int i = 0; i < 254; i++) assertTrue(other.tryAdvance());
+            other.finish(0);
+            invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+            assertEquals(List.of(FIRST), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList());
+            assertEquals(1, f.candidates.queuedCount(), "The second discovered target survives the planning deadline");
+            f.advanceTick();
+            scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+            invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+            assertEquals(List.of(FIRST, SECOND), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList());
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(oldWork);
+        }
+    }
+
     @Test void aDryTrenchLeavesDiscoveryAllowanceForMiningInTheSameTick() throws Exception {
         int previousWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
         try (var f = new Fixture(true); var schematic = new HeadlessSchematicBinding()) {
@@ -707,6 +776,45 @@ class MineSelectionRefreshTest {
         }
     }
 
+    @Test void blockedLastPermitLeavesUninspectedSafeTargetsForTheNextTick() throws Exception {
+        int oldWork = Configs.Core.WORK_PER_TICK.getIntegerValue();
+        try (var policy = new TweakerooOnlyPolicy(); var f = new Fixture(false)) {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(256);
+            Configs.Core.WORK_RANGE.setIntegerValue(6);
+            Configs.Break.BREAK_BLOCKS_PER_TICK.setIntegerValue(4);
+            f.callToolSession("beginTick");
+            var pick = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WOODEN_PICKAXE);
+            pick.setDamageValue(pick.getMaxDamage() - 1);
+            f.candidates.setSlot(0, pick);
+            f.candidates.setSlot(1, net.minecraft.world.item.ItemStack.EMPTY);
+            f.candidates.setSlot(2, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_SHOVEL));
+            f.candidates.selectSlot(0);
+            f.queue(FIRST);
+            f.queue(SECOND);
+            f.candidates.state(SECOND, Blocks.DIRT.defaultBlockState());
+            var scan = f.installScan();
+            var scope = new PrinterBox(FIRST, SECOND);
+            try (var bindings = new DurabilityGuardBindings(pos -> {
+                if (SECOND.equals(pos)) f.candidates.selectSlot(2);
+            })) {
+                scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+                var other = scan.openWorkSlice("print");
+                for (int i = 0; i < 255; i++) assertTrue(other.tryAdvance());
+                other.finish(0);
+                invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+                assertEquals(List.of(), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList(),
+                        "Only the worn-tool target may be inspected on the first tick, preparations " + bindings.switches);
+                assertEquals(List.of(FIRST), bindings.switches);
+                f.advanceTick();
+                scan.beginTick(f.candidates.level, null, f.candidates.level.tick);
+                invoke(FeatureModuleBase.class, f.mining.mineHandler, "runIteration", new Class<?>[]{PrinterBox.class}, scope);
+                assertEquals(List.of(SECOND), f.mining.connection.packets.stream().map(packet -> packet.getPos()).toList());
+            }
+        } finally {
+            Configs.Core.WORK_PER_TICK.setIntegerValue(oldWork);
+        }
+    }
+
     @Test void anEntireDurabilityBlockedBatchYieldsToLaterSourceWorkAndReentersOnMaterialWakeup() throws Exception {
         try (var policy = new TweakerooOnlyPolicy(); var f = new Fixture(false); var schematic = new HeadlessSchematicBinding()) {
             Configs.Core.WORK_RANGE.setIntegerValue(6);
@@ -938,10 +1046,14 @@ class MineSelectionRefreshTest {
         }
 
         me.aleksilassila.litematica.printer.handler.scan.ScanEngine installScan() throws Exception {
+            return installScan(() -> 0L);
+        }
+
+        me.aleksilassila.litematica.printer.handler.scan.ScanEngine installScan(java.util.function.LongSupplier clock) throws Exception {
             set(mining.player, net.minecraft.world.entity.Entity.class, "blockPosition", FIRST);
             var cache = new me.aleksilassila.litematica.printer.handler.scan.ScanCache();
             var budget = get(cache, cache.getClass(), "budget");
-            set(budget, budget.getClass(), "nanoClock", (java.util.function.LongSupplier) () -> 0L);
+            set(budget, budget.getClass(), "nanoClock", clock);
             var scan = new me.aleksilassila.litematica.printer.handler.scan.ScanEngine(
                     () -> me.aleksilassila.litematica.printer.core.runtime.RuntimeEpoch.INITIAL,
                     () -> candidates.level, cache);

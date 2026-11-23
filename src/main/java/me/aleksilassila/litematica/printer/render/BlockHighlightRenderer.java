@@ -48,7 +48,7 @@ public final class BlockHighlightRenderer implements IRenderer {
     //#else
     //$$ public void onRenderWorldLast(Matrix4f matrices, Matrix4f projection) {
     //#endif
-        if (!Configs.Highlight.ENABLED.getBooleanValue()) return;
+        if (!Configs.Highlight.ENABLED.getBooleanValue() && !Configs.Highlight.NEXT_ENABLED.getBooleanValue()) return;
         var runtime = RuntimeAccess.currentOrNull();
         if (runtime == null || runtime.client().level == null || runtime.operationHighlights() == null) return;
         //#if MC >= 260100
@@ -57,23 +57,33 @@ public final class BlockHighlightRenderer implements IRenderer {
         //$$ Vec3 cameraPos = fi.dy.masa.malilib.render.RenderUtils.camPos();
         //#endif
         var trace = runtime.operationHighlights();
-        long duration = Configs.Highlight.FADE_DURATION.getIntegerValue() * 100L;
         long now = trace.now();
-        var style = (HighlightStyleType) Configs.Highlight.STYLE.getOptionListValue();
-        List<HighlightEntry> entries = new ArrayList<>();
-        var previews = trace.previews();
-        var previewPositions = new HashSet<BlockPos>();
-        float previewFill = 0.13f + 0.04f * (float) Math.sin(now % 1800L * (Math.PI * 2.0 / 1800.0));
-        for (var preview : previews) {
-            if (previewPositions.add(preview.pos())) entries.add(entry(preview.pos(), Configs.Highlight.NEXT.getIntegerValue(), 1f,
-                    HighlightStyleType.BOTH, true, cameraPos));
+        var entries = frameEntries(trace, cameraPos, now);
+        if (!entries.isEmpty()) {
+            float previewFill = 0.13f + 0.04f * (float) Math.sin(now % 1800L * (Math.PI * 2.0 / 1800.0));
+            this.draw(entries, cameraPos, previewFill);
         }
+    }
+
+    static List<HighlightEntry> frameEntries(OperationHighlights trace, Vec3 cameraPos, long now) {
+        List<HighlightEntry> entries = new ArrayList<>();
+        var previewPositions = new HashSet<BlockPos>();
+        if (Configs.Highlight.NEXT_ENABLED.getBooleanValue()) {
+            for (var preview : trace.previews()) {
+                if (previewPositions.add(preview.pos())) entries.add(entry(preview.pos(), Configs.Highlight.NEXT.getIntegerValue(), 1f,
+                        HighlightStyleType.BOTH, true, cameraPos));
+            }
+        }
+        if (!Configs.Highlight.ENABLED.getBooleanValue()) return entries;
+
+        long duration = Configs.Highlight.FADE_DURATION.getIntegerValue() * 100L;
+        var style = (HighlightStyleType) Configs.Highlight.STYLE.getOptionListValue();
         for (var operation : trace.snapshot(duration)) {
             if (previewPositions.contains(operation.pos())) continue;
             float fade = 1f - Math.clamp((float)(now - operation.time()) / duration, 0f, 1f);
             entries.add(entry(operation.pos(), color(operation.type()), fade, style, false, cameraPos));
         }
-        if (!entries.isEmpty()) this.draw(entries, cameraPos, previewFill);
+        return entries;
     }
 
     private static int color(HighlightType type) {
@@ -183,5 +193,5 @@ public final class BlockHighlightRenderer implements IRenderer {
         buf.addVertex(x1, y1, z1).setColor(r, g, b, a).setLineWidth(1.0f);
         buf.addVertex(x2, y2, z2).setColor(r, g, b, a).setLineWidth(1.0f);
     }
-    private record HighlightEntry(BlockPos pos, float alpha, double distSq, int r, int g, int b, HighlightStyleType style, boolean preview) { }
+    record HighlightEntry(BlockPos pos, float alpha, double distSq, int r, int g, int b, HighlightStyleType style, boolean preview) { }
 }
